@@ -2,19 +2,8 @@
 set -uo pipefail
 
 standards=$(cd "$(dirname "$0")" && pwd)
+source "$standards/../lib.sh"
 cd "${1:-.}" || exit 2
-failed=()
-
-step() {
-	local name=$1
-	shift
-	if ! command -v "$1" >/dev/null; then
-		echo "== $name: skipped, $1 not installed"
-		return
-	fi
-	echo "== $name"
-	"$@" || failed+=("$name")
-}
 
 mapfile -t lints < <(awk '
 	/^\[lints\.rust\]/ { prefix = ""; on = 1; next }
@@ -26,14 +15,14 @@ mapfile -t lints < <(awk '
 	}
 ' "$standards/Cargo.fragment.toml")
 
-step format cargo +nightly fmt --check -- --config-path "$standards/rustfmt.toml"
-step lint cargo +nightly clippy --all-targets -- "${lints[@]}"
-step test cargo +nightly test --quiet
-step unused-dependencies cargo machete
-step duplication npx -y jscpd@latest --config "$standards/../jscpd.json" --format rust --silent .
-step volume scc --include-ext rs --no-cocomo .
+step format "count '^Diff in' differences" \
+	cargo +nightly fmt --check -- --config-path "$standards/rustfmt.toml"
+step lint "last '[0-9]+ previous errors?|Finished'" \
+	cargo +nightly clippy --all-targets -- "${lints[@]}"
+step test "summed 'passed|failed'" cargo +nightly test --quiet
+step unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
+step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+	npx -y jscpd@latest --config "$standards/../jscpd.json" --format rust --silent .
+step volume totals scc --include-ext rs --no-cocomo .
 
-if ((${#failed[@]})); then
-	echo "== failed: ${failed[*]}"
-	exit 1
-fi
+finish
