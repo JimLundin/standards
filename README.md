@@ -62,7 +62,9 @@ not have this folder, so a project that runs checks in CI copies the file.
 | Mutation tests | `mutmut run` | `cargo mutants` | `stryker run` |
 | Unused code | Ruff, `vulture` | rustc, `cargo machete` | `knip` |
 | Duplication | `jscpd` | `jscpd` | `jscpd` |
-| Volume, comment lines | `tokei`, `scc` | `tokei`, `scc` | `tokei`, `scc` |
+| Volume, comment lines | `scc` | `scc` | `scc` |
+| Hotspots, coupling (git history) | `scc --hotspots`, `scc --coupling` | same | same |
+| Import boundaries | import-linter (where a project has layers) | | |
 | Structure | CodeScene Code Health | same | same |
 
 ## Adoption notes
