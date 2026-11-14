@@ -1,0 +1,18 @@
+# Standard Python tool settings that cannot be inherited from a shared file.
+# mypy and vulture have no "extend" mechanism: copy these sections into the
+# project's pyproject.toml and add project-specific keys (files, mypy_path, ...).
+
+[tool.ruff]
+extend = "../standards/python/ruff.toml"
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+enable_error_code = ["explicit-override", "ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[tool.vulture]
+min_confidence = 80
+ignore_decorators = ["@pytest.fixture", "@override"]
+
+[dependency-groups]
+dev = ["ruff", "mypy", "vulture", "pytest"]

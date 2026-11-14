@@ -1,0 +1,17 @@
+{
+	"minTokens": 70,
+	"minLines": 8,
+	"reporters": ["console"],
+	"silent": false,
+	"gitignore": true,
+	"ignore": [
+		"**/node_modules/**",
+		"**/target/**",
+		"**/.venv/**",
+		"**/dist/**",
+		"**/build/**",
+		"**/*.lock",
+		"**/package-lock.json",
+		"**/docs/reviews/**"
+	]
+}
