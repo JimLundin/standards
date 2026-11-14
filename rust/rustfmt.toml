@@ -1,4 +1,3 @@
-# Standard rustfmt settings (stable options only). Copy next to Cargo.toml.
-newline_style = "Unix"
-use_field_init_shorthand = true
-use_try_shorthand = true
+# Standard rustfmt settings. The only non-default: readable on a phone.
+# The style edition follows the crate's edition (2024).
+max_width = 80

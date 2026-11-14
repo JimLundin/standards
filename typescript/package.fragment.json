@@ -1,0 +1,18 @@
+{
+	"//": "Merge into the project's package.json. Node runs .ts directly (type stripping), so there is no build step. Stryker's defaults run `npm test`; it needs no config file.",
+	"type": "module",
+	"engines": { "node": ">=26" },
+	"scripts": {
+		"test": "node --test",
+		"check": "tsc && biome check",
+		"mutate": "stryker run"
+	},
+	"devDependencies": {
+		"typescript": "latest",
+		"@types/node": "latest",
+		"@biomejs/biome": "latest",
+		"fast-check": "latest",
+		"@stryker-mutator/core": "latest",
+		"knip": "latest"
+	}
+}

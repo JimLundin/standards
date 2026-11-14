@@ -1,27 +1,21 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.6.5/schema.json",
-	"formatter": { "indentStyle": "tab", "lineWidth": 120 },
-	"javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } },
+	"$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
 	"linter": {
-		"enabled": true,
-		"rules": {
-			"preset": "recommended",
-			"complexity": {
-				"noExcessiveCognitiveComplexity": { "level": "warn", "options": { "maxAllowedComplexity": 20 } }
-			},
-			"correctness": {
-				"noUnusedImports": "error",
-				"noUnusedVariables": "warn",
-				"noUnusedFunctionParameters": "warn"
-			},
-			"style": {
-				"useConst": "error",
-				"noParameterAssign": "warn"
-			},
-			"suspicious": {
-				"noConsole": { "level": "warn", "options": { "allow": ["error", "warn"] } }
-			}
+		"rules": { "preset": "all", "nursery": "warn" },
+		"domains": {
+			"astro": "none",
+			"drizzle": "none",
+			"next": "none",
+			"playwright": "none",
+			"qwik": "none",
+			"react": "none",
+			"reactNative": "none",
+			"solid": "none",
+			"svelte": "none",
+			"tailwind": "none",
+			"tanstackQuery": "none",
+			"turborepo": "none",
+			"vue": "none"
 		}
-	},
-	"assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } }
+	}
 }
