@@ -3,7 +3,7 @@ requires-python = ">=3.15"
 
 [dependency-groups]
 dev = [
-    "ruff", "basedpyright", "vulture",
+    "ruff", "basedpyright", "vulture", "import-linter",
     "pytest", "coverage", "hypothesis", "mutmut",
 ]
 
