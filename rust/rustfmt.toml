@@ -1,3 +1,1 @@
-# Standard rustfmt settings. The only non-default: readable on a phone.
-# The style edition follows the crate's edition (2024).
 max_width = 80

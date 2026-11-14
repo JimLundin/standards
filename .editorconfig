@@ -1,5 +1,3 @@
-# Standard editor settings. Copy to a project root (EditorConfig does not
-# follow references; it only walks up from the file being edited).
 root = true
 
 [*]

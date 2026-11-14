@@ -1,41 +1,27 @@
-# Standard Python tool configuration: each tool's strictest preset, on the
-# latest Python and tool releases, with as little configuration as possible.
-#
-# Ruff inherits it. In the project's pyproject.toml:
-#   [tool.ruff]
-#   extend = "../standards/python/pyproject.toml"
-# The other tools cannot inherit a shared file; copy their sections (they are
-# one or two lines each).
-
 [project]
-requires-python = ">=3.15"   # latest stable; also test on the 3.16 pre-release
+requires-python = ">=3.15"
 
 [dependency-groups]
-# Lint, types and dead code; then tests with coverage, property tests
-# (hypothesis) and mutation tests (mutmut). Neither of the last two needs
-# configuration.
 dev = [
     "ruff", "basedpyright", "vulture",
     "pytest", "coverage", "hypothesis", "mutmut",
 ]
 
 [tool.ruff]
-line-length = 80   # the only non-default: readable on a phone
-preview = true     # newest rules
+line-length = 80
+preview = true
 
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "D203",    # contradicts D211; one of the pair must go
-    "D213",    # contradicts D212; one of the pair must go
+    "D",       # no required docstrings
+    "DOC",     # no required docstring sections
+    "E501",    # line length is the formatter's job
+    "W505",    # doc line length is the formatter's job
     "COM812",  # conflicts with the formatter
-    "CPY001",  # copyright headers are policy, not strictness
+    "CPY001",  # no copyright headers
 ]
 
-# Ruff resolves per-file-ignores relative to the file that defines them, so
-# the project adds its own: "tests/**" = ["S101"] (pytest is built on assert).
-
-# One type checker, in its strictest mode: every diagnostic is an error.
 [tool.basedpyright]
 typeCheckingMode = "all"
 
@@ -44,9 +30,3 @@ strict = true
 
 [tool.coverage.run]
 branch = true
-
-[tool.coverage.report]
-fail_under = 100
-
-# vulture's defaults are already its strictest (it reports every confidence
-# level), so it needs no section.

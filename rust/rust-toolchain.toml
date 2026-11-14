@@ -1,4 +1,3 @@
-# Standard toolchain: nightly, for the newest language features and lints.
 [toolchain]
 channel = "nightly"
 components = ["clippy", "rustfmt"]

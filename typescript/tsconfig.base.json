@@ -1,19 +1,12 @@
 {
 	"$schema": "https://json.schemastore.org/tsconfig",
 	"compilerOptions": {
-		// TypeScript 7 already defaults to strict, noUncheckedSideEffectImports
-		// and forceConsistentCasingInFileNames. Only what it does not turn on:
 		"target": "esnext",
 		"module": "nodenext",
-
-		// Only syntax that type stripping can erase: no enums, namespaces or
-		// parameter properties, so Node runs the .ts files directly.
 		"erasableSyntaxOnly": true,
 		"verbatimModuleSyntax": true,
 		"allowImportingTsExtensions": true,
 		"noEmit": true,
-
-		// Strictness beyond `strict`.
 		"noUncheckedIndexedAccess": true,
 		"exactOptionalPropertyTypes": true,
 		"noPropertyAccessFromIndexSignature": true,

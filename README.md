@@ -1,91 +1,77 @@
 # Standards
 
 Shared tool configuration for the Python, Rust and TypeScript projects in
-this folder, plus a report-only scanner that checks every project against
-it. No project has adopted it yet; see [findings.md](findings.md).
+this folder. No project has adopted it yet; see [findings.md](findings.md).
 
 ## Principles
 
-1. **Start from each tool's strictest preset.** Ruff `ALL`, basedpyright
-   `all`, Clippy's groups, Biome's `all`, pytest's `strict`, TypeScript's
-   `strict`. Configure as little as possible on top.
-2. **Only remove a rule when it contradicts another rule or the formatter,
-   or cannot apply** (for example Biome's framework domains). Each removal
-   is commented in the config.
-3. **Extra strictness goes on top, labelled,** where a tool keeps useful
-   checks outside its presets (Clippy restriction lints, TypeScript flags
-   beyond `strict`).
-4. **Latest releases, nightly where available:** Python 3.15 (tested on the
-   3.16 pre-release), Rust nightly with edition 2024, TypeScript 7, Node 26,
-   latest Ruff, Biome and friends. Projects lock versions and upgrade
-   regularly.
-5. **80-column lines** in every language, so code reads on a phone.
+1. **Existing tools before our own.** The standard is configuration for
+   established tools. Nothing here is custom tooling.
+2. **Start from each tool's strictest preset** (Ruff `ALL`, basedpyright
+   `all`, Clippy's lint groups, Biome `all`, pytest `strict`, TypeScript 7's
+   strict defaults) and configure as little as possible. Remove a rule only
+   when it conflicts with the formatter or with another rule of the same
+   tool, or cannot apply (Biome's framework domains). Add strictness on top
+   where a tool keeps useful checks outside its presets.
+3. **The code is the specification.** No lint may require comments or
+   docstrings: prose that restates the code drifts from it and misleads
+   whoever reads both. Required prose is limited to what a tool demands
+   because the code cannot express it: Rust's safety invariants for
+   `unsafe` (`undocumented_unsafe_blocks`, `# Safety`), Rust's `# Errors`
+   and `# Panics` sections, and the reason on a lint suppression. Comment
+   volume is measured and pushed down.
+4. **Formatters own layout.** Lines are 80 columns so code reads on a
+   phone; the formatter wraps them, and no lint checks line length.
+5. **Latest releases, nightly where available:** Python 3.15 (also tested
+   on the 3.16 pre-release), Rust nightly with edition 2024, TypeScript 7,
+   Node 26, and the latest Ruff, Biome and other tools.
 6. **TypeScript uses only erasable syntax** (`erasableSyntaxOnly`): no
    enums, namespaces or parameter properties, so Node runs `.ts` directly.
-7. **Coverage is backed by mutation and property testing.** A 100% branch
-   coverage bar only proves code ran; mutation tests prove the tests notice
-   changed behaviour, and property tests check rules over generated input.
+7. **Measure tests, do not target them.** Coverage, mutation and property
+   tests show where tests are weak. There is no coverage or mutation-score
+   threshold, because chasing a number distorts the code and the tests.
+8. **Languages follow their own conventions.** Rules that differ between
+   languages are not reconciled.
 
 ## Layout
 
-| File | Contents | How a project uses it |
-|---|---|---|
-| `python/pyproject.toml` | Ruff, basedpyright, pytest, coverage, dev dependencies | Ruff: `extend = "../standards/python/pyproject.toml"`. Copy the other sections (one or two lines each); they cannot inherit. |
-| `rust/Cargo.fragment.toml` | Lint levels, proptest | Copy into `Cargo.toml` (Cargo cannot inherit lints from outside a workspace) |
-| `rust/rust-toolchain.toml` | Nightly toolchain | Copy next to `Cargo.toml` |
-| `rust/rustfmt.toml` | 80 columns | Copy next to `Cargo.toml` |
-| `typescript/tsconfig.base.json` | Compiler flags beyond TS 7's defaults | `"extends": "../standards/typescript/tsconfig.base.json"` |
-| `typescript/biome.json` | Lint: all rules, nursery, no framework domains | `"extends": ["../standards/typescript/biome.json"]`, then enable the project's framework domain |
-| `typescript/package.fragment.json` | Node version, scripts, dev dependencies | Merge into `package.json` |
-| `jscpd.json` | Duplicate-code detection, all languages | Used by the scanner |
-| `.editorconfig` | Editor basics | Copy to the project root |
-| `scan.py` | Runs everything above | `python standards/scan.py [project ...]` |
+| File | How a project uses it |
+|---|---|
+| `python/pyproject.toml` | Ruff: `extend = "../standards/python/pyproject.toml"` under `[tool.ruff]`. Copy the other sections; basedpyright, pytest and coverage cannot inherit. |
+| `rust/Cargo.fragment.toml` | Copy into `Cargo.toml`; Cargo cannot inherit lints from outside a workspace. |
+| `rust/rust-toolchain.toml`, `rust/rustfmt.toml` | Copy next to `Cargo.toml`. |
+| `typescript/tsconfig.base.json` | `"extends": "../standards/typescript/tsconfig.base.json"` |
+| `typescript/biome.json` | `"extends": ["../standards/typescript/biome.json"]`, then turn on the project's framework domain. |
+| `typescript/package.fragment.json` | Merge into `package.json`. |
+| `jscpd.json` | `npx jscpd --config ../standards/jscpd.json .` |
+| `.editorconfig` | Copy to the project root. |
 
-Relative `extend`/`extends` paths assume the project sits directly in this
-folder (a nested project such as `keyframe/keyframe` needs one more `../`).
-CI checkouts will not find these files, so a project that runs checks in CI
-should copy the file instead.
+Relative paths assume the project sits directly in this folder (nested
+projects such as `keyframe/keyframe` need one more `../`). CI checkouts do
+not have this folder, so a project that runs checks in CI copies the file.
 
-## Tools by concern
+## Tools
 
 | Concern | Python | Rust | TypeScript |
 |---|---|---|---|
-| Lint, format | Ruff | Clippy, rustfmt | Biome |
-| Types | basedpyright (`all`) | the compiler | `tsc` |
-| Unit tests, coverage | pytest, coverage (100% branch) | `cargo test`, cargo-llvm-cov | `node --test` (built-in coverage) |
+| Format | `ruff format` | `cargo fmt` | `biome format` |
+| Lint | `ruff check` | `cargo clippy` | `biome lint` |
+| Types | `basedpyright` | the compiler | `tsc` |
+| Tests, coverage | `pytest`, `coverage` | `cargo test`, `cargo llvm-cov` | `node --test --experimental-test-coverage` |
 | Property tests | hypothesis | proptest | fast-check |
-| Mutation tests | mutmut | cargo-mutants | Stryker |
-| Unused code | Ruff, vulture | rustc lints, cargo-machete | knip |
-| Duplication | jscpd | jscpd | jscpd |
-| Volume | `scan.py` | `scan.py` | `scan.py` |
-| Structure | CodeScene Code Health (MCP server) | same | same |
-
-Mutation testing has no pass mark yet. Equivalent mutants make 100%
-unreachable, so set a bar per project after its first run.
-
-## Running the scanner
-
-```bash
-python standards/scan.py              # every project in AGENTS.md
-python standards/scan.py subset       # one project
-```
-
-It needs `git`, `uv` (for `uvx`) and Node with `npx`; knip runs on Node 26
-through `npx -p node@26`. Clippy and cargo-machete use a local `cargo`, or
-`cargo` inside WSL on Windows. Each project is judged by the standard
-configs, not its own, so the report shows what adopting the standards would
-surface. Reports and build output go to the system temp folder; projects
-are not modified.
+| Mutation tests | `mutmut run` | `cargo mutants` | `stryker run` |
+| Unused code | Ruff, `vulture` | rustc, `cargo machete` | `knip` |
+| Duplication | `jscpd` | `jscpd` | `jscpd` |
+| Volume, comment lines | `tokei`, `scc` | `tokei`, `scc` | `tokei`, `scc` |
+| Structure | CodeScene Code Health | same | same |
 
 ## Adoption notes
 
-- **Python:** keep project-specific settings (naming exceptions for
-  Windows or Qt APIs, for example) in the project's `[tool.ruff]` after
-  `extend`. Add `[tool.ruff.lint.per-file-ignores] "tests/**" = ["S101"]`
-  locally: Ruff resolves per-file-ignores relative to the file that
-  defines them, so the shared file cannot do it. Leave `target-version`
+- **Python:** add `[tool.ruff.lint.per-file-ignores] "tests/**" = ["S101"]`
+  in the project. Ruff resolves per-file-ignores relative to the file that
+  defines them, so the shared file cannot do it. Keep naming exceptions for
+  external APIs (Windows, Qt) in the project too. Leave `target-version`
   unset; Ruff reads `requires-python`.
-- **Rust:** a crate that needs `unsafe` (FFI bindings) allows it locally;
-  so does a crate whose house rules conflict with a lint.
+- **Rust:** a crate that needs `unsafe` (FFI bindings) allows it locally.
 - **TypeScript:** knip needs a `knip.json` listing extra entry points
   (files started as processes or loaded from HTML).
