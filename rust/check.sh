@@ -4,6 +4,8 @@ set -uo pipefail
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
 cd "${1:-.}" || exit 2
+export CLIPPY_CONF_DIR
+CLIPPY_CONF_DIR=$(native "$standards")
 
 mapfile -t lints < <(awk '
 	/^\[lints\.rust\]/ { prefix = ""; on = 1; next }

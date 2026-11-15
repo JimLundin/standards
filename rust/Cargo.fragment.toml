@@ -1,5 +1,6 @@
 [lints.rust]
 warnings = "deny"
+unsafe_code = "deny"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -12,8 +13,14 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 dbg_macro = "deny"
+allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 undocumented_unsafe_blocks = "deny"
+shadow_reuse = "deny"
+shadow_same = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "deny"
 
 [dev-dependencies]
 proptest = "1"
