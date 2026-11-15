@@ -1,5 +1,6 @@
 logs=$(mktemp -d)
 failed=()
+profile=fast
 
 native() {
 	if command -v cygpath >/dev/null; then cygpath -m "$1"; else echo "$1"; fi
@@ -49,7 +50,11 @@ step() {
 	line "$name" "$status" "$(eval "$summary \"\$log\"")"
 }
 
+full() {
+	[ "$profile" = full ]
+}
+
 finish() {
-	echo "logs: $(native "$logs")"
+	echo "profile: $profile, logs: $(native "$logs")"
 	((${#failed[@]} == 0))
 }

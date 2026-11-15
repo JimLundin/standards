@@ -99,9 +99,12 @@ forbidden_modules = [
 [tool.basedpyright]
 typeCheckingMode = "all"
 
+# Plain pytest runs the fast profile; check.sh full overrides both options.
 [tool.pytest]
 strict = true
 testpaths = ["tests"]
+addopts = ["--hypothesis-profile=fast", "-m", "not slow"]
+markers = ["slow: runs only in the full profile"]
 
 [tool.mutmut]
 source_paths = ["src/"]
@@ -109,3 +112,4 @@ pytest_add_cli_args = ["--hypothesis-profile=mutation"]  # from conftest.py
 
 [tool.coverage.run]
 branch = true
+source = ["src"]

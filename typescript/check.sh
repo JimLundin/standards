@@ -3,6 +3,7 @@ set -uo pipefail
 
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
+case ${1:-} in fast | full) profile=$1 && shift ;; esac
 cd "${1:-.}" || exit 2
 project=$(pwd)
 biome="$(native "$standards/biome.json")"
@@ -26,9 +27,19 @@ if [ -f package.json ]; then
 	step unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p node@26 -p knip@latest knip --no-progress
 fi
-step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-	npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
-	--format typescript,javascript,css --silent .
-step volume totals scc --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
+if grep -qs '"test"' package.json; then
+	step test "joined '(pass|fail) [0-9]+'" npm test --silent
+fi
+if full; then
+	if [ -e node_modules/@stryker-mutator/core ]; then
+		step mutation "last 'mutation score of [0-9.]+'" npx --no-install stryker run
+	else
+		line mutation skip "@stryker-mutator/core not installed"
+	fi
+	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
+		--format typescript,javascript,css --silent .
+	step volume totals scc --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
+fi
 
 finish

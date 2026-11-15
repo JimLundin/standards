@@ -3,6 +3,7 @@ set -uo pipefail
 
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
+case ${1:-} in fast | full) profile=$1 && shift ;; esac
 cd "${1:-.}" || exit 2
 
 has() {
@@ -38,21 +39,51 @@ if ! grep -qsE '^\[(workspace\.)?lints' Cargo.toml; then
 	' "$standards/Cargo.fragment.toml")
 fi
 
+if full; then
+	export PROPTEST_CASES=1024
+elif ! grep -qs PROPTEST_CASES .cargo/config.toml; then
+	export PROPTEST_CASES=16
+fi
+mutation=()
+if [ ! -e .cargo/mutants.toml ]; then
+	mutation+=(--config "$(native "$standards/mutants.toml")")
+	if ! grep -qs '^\[profile\.mutants\]' Cargo.toml; then
+		mutation+=(--profile test)
+	fi
+fi
+tests=()
+if command -v cargo-nextest >/dev/null; then
+	tests=(nextest run --no-tests=warn --hide-progress-bar)
+	mutation+=(--test-tool nextest)
+	if full; then
+		tests+=(--no-fail-fast --run-ignored all)
+	fi
+else
+	tests=(test --quiet)
+	if full; then
+		tests+=(--no-fail-fast -- --include-ignored)
+	fi
+fi
+
 step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 step lint "last '[0-9]+ previous errors?|Finished'" \
 	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
-if command -v cargo-nextest >/dev/null; then
-	step test "summed 'passed|failed'" \
-		"${cargo[@]}" nextest run --no-tests=warn --hide-progress-bar
-	if find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
+step test "summed 'passed|failed'" "${cargo[@]}" "${tests[@]}"
+if full; then
+	if [ "${tests[0]}" = nextest ] &&
+		find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
 		step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
 	fi
-else
-	step test "summed 'passed|failed'" "${cargo[@]}" test --quiet
+	if command -v cargo-mutants >/dev/null; then
+		step mutation "last '[0-9]+ mutants tested.*'" \
+			env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
+	else
+		line mutation skip "cargo-mutants not installed"
+	fi
+	step unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
+	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" --format rust --silent .
+	step volume totals scc --include-ext rs --no-cocomo .
 fi
-step unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
-step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-	npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" --format rust --silent .
-step volume totals scc --include-ext rs --no-cocomo .
 
 finish

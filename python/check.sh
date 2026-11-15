@@ -4,6 +4,7 @@ set -uo pipefail
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
 config="$standards/pyproject.toml"
+case ${1:-} in fast | full) profile=$1 && shift ;; esac
 cd "${1:-.}" || exit 2
 
 ruff_config=(--config "$config")
@@ -11,6 +12,20 @@ if grep -qs '^\[tool\.ruff' pyproject.toml; then
 	ruff_config=()
 fi
 mapfile -t sources < <(git ls-files '*.py' '*.pyw')
+
+mutants() {
+	plain "$1" | tr '\r' '\n' | grep -oE '(🎉|🙁) [0-9]+' | tail -2 |
+		sed 's/🎉/killed/; s/🙁/survived/' |
+		awk '{ printf "%s%s %s", s, $2, $1; s = ", " }'
+}
+
+mutate() {
+	uv run --frozen -q mutmut run || return
+	local remaining
+	remaining=$(uv run --frozen -q mutmut results)
+	echo "$remaining"
+	[ -z "$remaining" ]
+}
 
 step format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q ruff@latest format "${ruff_config[@]}" --check .
@@ -32,8 +47,19 @@ print(json.dumps({**config, "extraPaths": sys.argv[2:]}))' \
 	step types "last '[0-9]+ errors?, [0-9]+ warnings?'" \
 		uvx -q basedpyright@latest --project "$types_config" \
 		--pythonpath "$environment" "${sources[@]}"
-	step test "summed 'passed|failed|errors?'" \
-		uv run --frozen -q python -m pytest -q
+	if full; then
+		thorough=(-m "")
+		if grep -rqsE --include=conftest.py 'register_profile\(\s*"full"' .; then
+			thorough+=(--hypothesis-profile=full)
+		fi
+		step test "summed 'passed|failed|errors?'" uv run --frozen -q \
+			python -m coverage run -m pytest -q "${thorough[@]}"
+		step coverage "last '[0-9]+%'" \
+			uv run --frozen -q python -m coverage report
+	else
+		step test "summed 'passed|failed|errors?'" \
+			uv run --frozen -q python -m pytest -q
+	fi
 else
 	line types skip "no uv.lock"
 	line test skip "no uv.lock"
@@ -52,9 +78,18 @@ lint_imports_command()')
 	fi
 	step imports "last 'Contracts: .*|Could not find .*'" "${imports[@]}"
 fi
-step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-	npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
-	--format python --silent .
-step volume totals scc --include-ext py,pyw --no-cocomo .
+if full; then
+	if [ ! -f uv.lock ]; then
+		line mutation skip "no uv.lock"
+	elif ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
+		line mutation skip "mutmut needs os.fork (Linux, macOS or WSL)"
+	else
+		step mutation mutants mutate
+	fi
+	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
+		--format python --silent .
+	step volume totals scc --include-ext py,pyw --no-cocomo .
+fi
 
 finish

@@ -1,0 +1,4 @@
+# Copy to .cargo/config.toml: plain cargo test runs the fast profile, and
+# check.sh full overrides it from the environment.
+[env]
+PROPTEST_CASES = "16"
