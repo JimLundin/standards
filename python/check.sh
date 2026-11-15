@@ -25,7 +25,10 @@ if [ -f uv.lock ]; then
 else
 	line types skip "no uv.lock"
 fi
-step unused "count ': unused ' findings" uvx -q vulture "${sources[@]}"
+step immutability "last 'Found [0-9]+ issues|All checks passed'" \
+	uv run --no-project -q --python 3.15 python -I "$(native "$standards/immutability.py")" \
+	"${sources[@]}"
+step unused "count ': unused ' findings" uvx -q --python 3.15 vulture "${sources[@]}"
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
 	step imports "last 'Contracts: .*'" uvx -q --from import-linter lint-imports
 fi

@@ -24,9 +24,63 @@ ignore = [
     "COM812",  # conflicts with the formatter
     "CPY001",  # no copyright headers
 ]
+external = ["IMM"]  # reported by immutability.py
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"os.environ".msg = "ambient input: pass configuration in"
+"os.getenv".msg = "ambient input: pass configuration in"
+"os.getcwd".msg = "ambient input: pass configuration in"
+"os.putenv".msg = "side effect: keep I/O at the boundary"
+"os.system".msg = "side effect: keep I/O at the boundary"
+"sys.argv".msg = "ambient input: pass configuration in"
+"sys.stdin".msg = "side effect: keep I/O at the boundary"
+"sys.stdout".msg = "side effect: keep I/O at the boundary"
+"sys.stderr".msg = "side effect: keep I/O at the boundary"
+"subprocess".msg = "side effect: keep I/O at the boundary"
+"socket".msg = "side effect: keep I/O at the boundary"
+"shutil".msg = "side effect: keep I/O at the boundary"
+"threading".msg = "shared mutable state: return new values instead"
+"multiprocessing".msg = "shared mutable state: return new values instead"
+"time.time".msg = "nondeterministic: pass the time in"
+"time.time_ns".msg = "nondeterministic: pass the time in"
+"time.monotonic".msg = "nondeterministic: pass the time in"
+"time.perf_counter".msg = "nondeterministic: pass the time in"
+"time.sleep".msg = "side effect: keep I/O at the boundary"
+"datetime.datetime.now".msg = "nondeterministic: pass the time in"
+"datetime.datetime.utcnow".msg = "nondeterministic: pass the time in"
+"datetime.datetime.today".msg = "nondeterministic: pass the time in"
+"datetime.date.today".msg = "nondeterministic: pass the time in"
+"uuid.uuid1".msg = "nondeterministic: pass the id in"
+"uuid.uuid4".msg = "nondeterministic: pass the id in"
+"secrets".msg = "nondeterministic: inject a random.Random"
+"random.random".msg = "nondeterministic: inject a random.Random"
+"random.randint".msg = "nondeterministic: inject a random.Random"
+"random.randrange".msg = "nondeterministic: inject a random.Random"
+"random.uniform".msg = "nondeterministic: inject a random.Random"
+"random.choice".msg = "nondeterministic: inject a random.Random"
+"random.choices".msg = "nondeterministic: inject a random.Random"
+"random.sample".msg = "nondeterministic: inject a random.Random"
+"random.shuffle".msg = "nondeterministic: inject a random.Random"
+"random.getrandbits".msg = "nondeterministic: inject a random.Random"
+"random.seed".msg = "nondeterministic: inject a random.Random"
 
 [tool.uv]
 required-version = ">=0.13"
+
+# Template: rename app to the project's package; app.core holds the pure code.
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "core is pure"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = [
+    "os", "sys", "io", "pathlib", "shutil", "tempfile", "glob", "socket",
+    "ssl", "http", "urllib", "subprocess", "signal", "threading",
+    "multiprocessing", "asyncio", "concurrent", "logging", "sqlite3",
+]
 
 [tool.basedpyright]
 typeCheckingMode = "all"
