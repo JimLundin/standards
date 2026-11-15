@@ -8,12 +8,7 @@ cd "${1:-.}" || exit 2
 project=$(pwd)
 biome=()
 if [ ! -e biome.json ] && [ ! -e biome.jsonc ]; then
-	# Biome reads package.json from its config's folder, so the fallback config
-	# sits next to a copy of it and points at the plugins by absolute path.
-	sed "s|\"\./biome-plugins/|\"$(native "$standards")/biome-plugins/|" \
-		"$standards/biome.json" >"$logs/biome.json"
-	cp package.json "$logs/" 2>/dev/null
-	biome=(--config-path="$(native "$logs/biome.json")")
+	biome=(--config-path="$(native "$standards/biome.json")")
 fi
 
 mapfile -t sources < <(git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' |
