@@ -6,15 +6,23 @@ source "$standards/../lib.sh"
 case ${1:-} in fast | full) profile=$1 && shift ;; esac
 cd "${1:-.}" || exit 2
 project=$(pwd)
-biome="$(native "$standards/biome.json")"
+biome=()
+if [ ! -e biome.json ] && [ ! -e biome.jsonc ]; then
+	# Biome reads package.json from its config's folder, so the fallback config
+	# sits next to a copy of it and points at the plugins by absolute path.
+	sed "s|\"\./biome-plugins/|\"$(native "$standards")/biome-plugins/|" \
+		"$standards/biome.json" >"$logs/biome.json"
+	cp package.json "$logs/" 2>/dev/null
+	biome=(--config-path="$(native "$logs/biome.json")")
+fi
 
 mapfile -t sources < <(git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' |
 	grep -vE '(^|/)(package-lock|tsconfig)\.json$')
 
 step format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
-	npx -y @biomejs/biome@latest format --config-path="$biome" "${sources[@]}"
+	npx -y @biomejs/biome@latest format "${biome[@]}" "${sources[@]}"
 step lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
-	npx -y @biomejs/biome@latest lint --config-path="$biome" "${sources[@]}"
+	npx -y @biomejs/biome@latest lint "${biome[@]}" "${sources[@]}"
 if [ -f tsconfig.json ]; then
 	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"]}}\n' \
 		"$(native "$project/tsconfig.json")" \
@@ -27,12 +35,21 @@ if [ -f package.json ]; then
 	step unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p node@26 -p knip@latest knip --no-progress
 fi
-if grep -qs '"test"' package.json; then
-	step test "joined '(pass|fail) [0-9]+'" npm test --silent
+tests=(test)
+if full && grep -qs '"test:full"' package.json; then
+	tests=(run test:full)
+fi
+if grep -qs '"test' package.json; then
+	step test "joined '(pass|fail) [0-9]+'" npm "${tests[@]}" --silent
 fi
 if full; then
+	mutation=()
+	if ! compgen -G 'stryker.conf*' >/dev/null && ! compgen -G 'stryker.config.*' >/dev/null; then
+		mutation=("$(native "$standards/stryker.config.json")")
+	fi
 	if [ -e node_modules/@stryker-mutator/core ]; then
-		step mutation "last 'mutation score of [0-9.]+'" npx --no-install stryker run
+		step mutation "last 'mutation score (of )?[0-9.]+'" \
+			npx --no-install stryker run "${mutation[@]}"
 	else
 		line mutation skip "@stryker-mutator/core not installed"
 	fi
