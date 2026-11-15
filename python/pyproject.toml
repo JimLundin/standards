@@ -1,10 +1,13 @@
 [project]
+name = "app"
+version = "0.1.0"
 requires-python = ">=3.15"
 
 [dependency-groups]
 dev = [
     "ruff", "basedpyright", "vulture", "import-linter",
-    "pytest", "coverage", "hypothesis", "mutmut",
+    "pytest", "coverage", "hypothesis",
+    "mutmut; sys_platform != 'win32'",  # mutmut needs WSL on Windows
 ]
 
 [tool.ruff]
@@ -17,14 +20,17 @@ skip-magic-trailing-comma = true
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "D",       # no required docstrings
-    "DOC",     # no required docstring sections
-    "E501",    # line length is the formatter's job
-    "W505",    # doc line length is the formatter's job
-    "COM812",  # conflicts with the formatter
-    "CPY001",  # no copyright headers
+    "D",  # no required docstrings
+    "DOC",  # no required docstring sections
+    "line-too-long",  # line length is the formatter's job
+    "doc-line-too-long",  # doc line length is the formatter's job
+    "missing-trailing-comma",  # conflicts with the formatter
+    "missing-copyright-notice",  # no copyright headers
 ]
 external = ["IMM"]  # reported by immutability.py
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "os.environ".msg = "ambient input: pass configuration in"

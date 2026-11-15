@@ -19,8 +19,12 @@ step lint "last 'Found [0-9]+ errors?|All checks passed'" \
 	uvx -q ruff@latest check "${ruff_config[@]}" --config "$tests" .
 if [ -f uv.lock ]; then
 	environment=$(uv run --frozen python -c 'import sys; print(sys.executable)')
+	types_config=$config
+	if grep -qs '^\[tool\.basedpyright\]' pyproject.toml; then
+		types_config=pyproject.toml
+	fi
 	step types "last '[0-9]+ errors?, [0-9]+ warnings?'" \
-		uvx -q basedpyright@latest --project "$config" \
+		uvx -q basedpyright@latest --project "$types_config" \
 		--pythonpath "$environment" "${sources[@]}"
 else
 	line types skip "no uv.lock"
@@ -30,7 +34,14 @@ step immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	"${sources[@]}"
 step unused "count ': unused ' findings" uvx -q --python 3.15 vulture "${sources[@]}"
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
-	step imports "last 'Contracts: .*'" uvx -q --from import-linter lint-imports
+	imports=(uvx -q --from import-linter lint-imports)
+	if [ -f uv.lock ]; then
+		# Windows application control can block venv entry-point launchers.
+		imports=(uv run --frozen -q python -c
+			'from importlinter.cli import lint_imports_command
+lint_imports_command()')
+	fi
+	step imports "last 'Contracts: .*|Could not find .*'" "${imports[@]}"
 fi
 step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
 	npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
