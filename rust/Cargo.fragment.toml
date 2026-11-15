@@ -24,3 +24,7 @@ exit = "deny"
 
 [dev-dependencies]
 proptest = "1"
+
+[profile.mutants]
+inherits = "test"
+debug = "none"

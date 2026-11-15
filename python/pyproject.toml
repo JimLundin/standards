@@ -29,6 +29,14 @@ ignore = [
 ]
 external = ["IMM"]  # reported by immutability.py
 
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = [
+    "assert",
+    "implicit-namespace-package",
+    "magic-value-comparison",
+]
+"**/test_*.py" = ["assert", "magic-value-comparison"]
+
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false
 
@@ -93,6 +101,11 @@ typeCheckingMode = "all"
 
 [tool.pytest]
 strict = true
+testpaths = ["tests"]
+
+[tool.mutmut]
+source_paths = ["src/"]
+pytest_add_cli_args = ["--hypothesis-profile=mutation"]  # from conftest.py
 
 [tool.coverage.run]
 branch = true

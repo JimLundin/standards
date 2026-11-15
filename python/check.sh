@@ -10,13 +10,12 @@ ruff_config=(--config "$config")
 if grep -qs "standards/python/pyproject.toml" pyproject.toml; then
 	ruff_config=()
 fi
-tests="lint.per-file-ignores={'**/tests/**'=['S101'],'**/test_*.py'=['S101']}"
 mapfile -t sources < <(git ls-files '*.py' '*.pyw')
 
 step format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q ruff@latest format "${ruff_config[@]}" --check .
 step lint "last 'Found [0-9]+ errors?|All checks passed'" \
-	uvx -q ruff@latest check "${ruff_config[@]}" --config "$tests" .
+	uvx -q ruff@latest check "${ruff_config[@]}" .
 if [ -f uv.lock ]; then
 	environment=$(uv run --frozen python -c 'import sys; print(sys.executable)')
 	types_config=$config
