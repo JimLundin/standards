@@ -61,15 +61,21 @@ ending() {
 	plain "$1" | tail -1
 }
 
+metadata=$(native "$logs/metadata.json")
+listed=1
+libraries=()
+if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; then
+	listing=$(exceptions core-libraries "$metadata")
+	listed=$?
+	mapfile -t libraries < <(grep . <<<"$listing")
+fi
+
 core() {
-	local listed output status=0 library libraries=() packages=()
-	"${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json" ||
-		return
-	listed=$(exceptions core-libraries "$(native "$logs/metadata.json")") || {
-		echo "$listed"
+	local output status=0 library packages=()
+	if ((listed != 0)); then
+		echo "${listing:-cargo metadata failed}"
 		return 1
-	}
-	mapfile -t libraries < <(grep . <<<"$listed")
+	fi
 	if ((${#libraries[@]} == 0)); then
 		echo "no libraries"
 		return
@@ -89,6 +95,23 @@ core() {
 			cut -d'`' -f2 | sort -u | paste -sd ' ' -)"
 	fi
 	return "$status"
+}
+
+api() {
+	local library skips=()
+	if ((listed != 0 || ${#libraries[@]} == 0)); then
+		echo "no libraries"
+		return
+	fi
+	for library in "${libraries[@]}"; do
+		"${cargo[@]}" rustdoc -q --lib -p "$library" -- -Zunstable-options \
+			--output-format json --document-hidden-items || return
+	done
+	while IFS= read -r glob; do
+		skips+=("--skip=$glob")
+	done < <(exceptions globs api)
+	pyrun "$(native "$standards/api.py")" "${skips[@]}" "$metadata" \
+		"${libraries[@]}"
 }
 
 tests=()
@@ -111,6 +134,7 @@ step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@
 step lint "last '[0-9]+ previous errors?|Finished'" \
 	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
 step core ending core
+step api "last 'Found [0-9]+ issues|All checks passed|no libraries'" api
 step test "summed 'passed|failed'" "${cargo[@]}" "${tests[@]}"
 if full; then
 	if [ "${tests[0]}" = nextest ] &&

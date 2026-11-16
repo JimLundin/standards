@@ -34,6 +34,7 @@ RANKS = MappingProxyType({
 })
 PROPTEST_CASES = 16
 LIBRARY_KINDS = frozenset({"lib", "rlib"})
+RUST_RULES = frozenset({"std", "api", "shell"})
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
 PYTHON_MARKERS = (
@@ -160,7 +161,7 @@ def load() -> tuple[tuple[Waiver, ...], tuple[Issue, ...]]:
 
 
 def kind(language: str, rule: str) -> str:
-    if rule == "mutation" or (language == "rust" and rule == "std"):
+    if rule == "mutation" or (language == "rust" and rule in RUST_RULES):
         return rule
     if rule.startswith("drift:"):
         return "drift"
