@@ -1,0 +1,9 @@
+[[exception]]
+path = "pyproject.toml"
+rule = "drift:tool.importlinter.layers"
+reason = "a single pure module with no shell, so there are no layers"
+
+[[exception]]
+path = "src/ordered/_ordered.py"
+rule = "meta-class-abc-meta"
+reason = "ABC types its __slots__ as tuple[()], so basedpyright rejects a slotted subclass such as FrozenOrderedSet; ABCMeta has no slots"

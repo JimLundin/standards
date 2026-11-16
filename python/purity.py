@@ -42,6 +42,7 @@ PURE_MODULES = frozenset({
     "math",
     "numbers",
     "operator",
+    "ordered",
     "random",
     "re",
     "shlex",

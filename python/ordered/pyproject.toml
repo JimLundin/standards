@@ -1,0 +1,33 @@
+[project]
+name = "ordered"
+version = "0.1.0"
+description = "Collections whose iteration order is part of their type"
+requires-python = ">=3.15"
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff", "basedpyright", "vulture", "import-linter",
+    "pytest", "coverage", "hypothesis",
+    "mutmut; sys_platform != 'win32'",  # mutmut needs WSL on Windows
+]
+
+[tool.uv]
+required-version = ">=0.13"
+
+[tool.pytest]
+strict = true
+testpaths = ["tests"]
+addopts = ["--hypothesis-profile=fast", "-m", "not slow"]
+markers = ["slow: runs only in the full profile"]
+
+[tool.mutmut]
+source_paths = ["src/"]
+pytest_add_cli_args = ["--hypothesis-profile=mutation"]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
