@@ -114,6 +114,28 @@ api() {
 		"${libraries[@]}"
 }
 
+shell() {
+	local target skips=() targets=(--bins)
+	if ! grep -qE '"kind":\[[^]]*"bin"' "$logs/metadata.json"; then
+		echo "no binaries"
+		return
+	fi
+	if grep -qE '"kind":\[[^]]*"r?lib"' "$logs/metadata.json"; then
+		targets+=(--lib)
+	fi
+	target=$(sed -E 's/.*"target_directory":"([^"]*)".*/\1/; s#\\\\#/#g' \
+		"$logs/metadata.json")
+	CLIPPY_CONF_DIR=$(native "$standards/measure") "${cargo[@]}" clippy \
+		--workspace "${targets[@]}" --target-dir "${target:-target}/shell" \
+		--message-format=json -- --cap-lints warn -W clippy::cognitive_complexity \
+		>"$logs/complexity.jsonl" || return
+	while IFS= read -r glob; do
+		skips+=("--skip=$glob")
+	done < <(exceptions globs shell)
+	pyrun "$(native "$standards/shell.py")" "${skips[@]}" \
+		"$(native "$logs/complexity.jsonl")" "$(native "$logs/shell-files.txt")"
+}
+
 tests=()
 if command -v cargo-nextest >/dev/null; then
 	tests=(nextest run --no-tests=warn --hide-progress-bar)
@@ -135,11 +157,17 @@ step lint "last '[0-9]+ previous errors?|Finished'" \
 	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
 step core ending core
 step api "last 'Found [0-9]+ issues|All checks passed|no libraries'" api
+step shell "last 'Found [0-9]+ issues|shell makes .*|no binaries'" shell
 step test "summed 'passed|failed'" "${cargo[@]}" "${tests[@]}"
 if full; then
 	if [ "${tests[0]}" = nextest ] &&
 		find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
 		step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
+	fi
+	if [ -f "$logs/shell-files.txt" ]; then
+		while IFS= read -r file; do
+			mutation+=(--exclude "$file")
+		done <"$logs/shell-files.txt"
 	fi
 	if command -v cargo-mutants >/dev/null; then
 		step mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \

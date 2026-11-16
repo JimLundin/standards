@@ -3,7 +3,9 @@
 # and a reason. Rules are tool rule names (banned-api, IMM002,
 # clippy::shadow_reuse, lint/style/noRestrictedGlobals), "mutation", "unused",
 # "std" (a Rust package, by its Cargo.toml, that may use std), "api" (a Rust
-# file whose public items may take more than data), or a drift:…
+# file whose public items may take more than data), "shell" (a Rust binary
+# file whose functions may be complex, or Cargo.toml for the shell's share of
+# decisions), or a drift:…
 # rule printed by the check.
 #
 # [[exception]]
