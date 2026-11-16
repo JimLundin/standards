@@ -36,6 +36,7 @@ PROPTEST_CASES = 16
 LIBRARY_KINDS = frozenset({"lib", "rlib"})
 RUST_RULES = frozenset({"std", "api", "shell"})
 IMMUTABILITY = re.compile(r"IMM\d{3}")
+PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
 PYTHON_MARKERS = (
     r"noqa\b",
@@ -177,6 +178,8 @@ def kind(language: str, rule: str) -> str:
 def python_kind(rule: str) -> str:
     if IMMUTABILITY.fullmatch(rule):
         return "immutability"
+    if PURITY.fullmatch(rule):
+        return "purity"
     return "unused" if rule == "unused" else "ruff"
 
 
@@ -480,24 +483,23 @@ def python_drift(standards: Path, files: tuple[str, ...]) -> Iterator[Issue]:
     )
 
 
-def forbidden(data: Mapping[str, object]) -> tuple[str, ...]:
-    return tuple(
-        module
+def layered(data: Mapping[str, object]) -> bool:
+    return any(
+        table(contract).get("type") == "layers"
+        and table(contract).get("exhaustive") is True
         for contract in entries(lookup(data, "tool.importlinter.contracts"))
-        if table(contract).get("type") == "forbidden"
-        for module in strings(table(contract).get("forbidden_modules"))
     )
 
 
 def import_drift(
     standard: Mapping[str, object], project: Mapping[str, object]
 ) -> Iterator[Issue]:
-    yield from missing(
-        "pyproject.toml",
-        "tool.importlinter.forbidden_modules",
-        forbidden(standard),
-        forbidden(project),
-    )
+    if layered(standard) and not layered(project):
+        yield drift(
+            "pyproject.toml",
+            "tool.importlinter.layers",
+            "tool.importlinter lacks an exhaustive layers contract",
+        )
 
 
 def level(value: object) -> str:
@@ -805,6 +807,16 @@ def immutability_args() -> tuple[str, ...]:
     )
 
 
+def purity_args() -> tuple[str, ...]:
+    waivers, _ = load()
+    pairs = [
+        [waiver.rule, waiver.path]
+        for waiver in waivers
+        if kind("python", waiver.rule) == "purity"
+    ]
+    return (f"--skips={json.dumps(pairs)}",) if pairs else ()
+
+
 def without(rule: str, files: Iterable[str]) -> tuple[str, ...]:
     waivers, _ = load()
     return tuple(file for file in files if not waived(waivers, file, rule))
@@ -931,6 +943,7 @@ def main(arguments: tuple[str, ...]) -> int:
     outputs = {
         "ruff-config": lambda: (ruff_config(),),
         "immutability-args": immutability_args,
+        "purity-args": purity_args,
         "without": lambda: without(rest[0], rest[1:]),
         "globs": lambda: globs(rest[0]),
         "biome-groups": lambda: biome_groups(rest),

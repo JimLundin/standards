@@ -80,20 +80,17 @@ split-on-trailing-comma = false
 [tool.uv]
 required-version = ">=0.13"
 
-# Template: rename app to the project's package; app.core holds the pure code.
+# Template: rename app to the project's package. app.core holds the pure code
+# and app.shell everything else; purity.py checks the last layer as the core.
 [tool.importlinter]
 root_package = "app"
-include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "core is pure"
-type = "forbidden"
-source_modules = ["app.core"]
-forbidden_modules = [
-    "os", "sys", "io", "pathlib", "shutil", "tempfile", "glob", "socket",
-    "ssl", "http", "urllib", "subprocess", "signal", "threading",
-    "multiprocessing", "asyncio", "concurrent", "logging", "sqlite3",
-]
+name = "core is the bottom layer"
+type = "layers"
+containers = ["app"]
+layers = ["(__main__)", "shell", "core"]
+exhaustive = true
 
 [tool.basedpyright]
 typeCheckingMode = "all"

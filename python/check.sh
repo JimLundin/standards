@@ -18,6 +18,7 @@ if [ -n "$ruff_exceptions" ]; then
 	ruff_config+=(--config "$ruff_exceptions")
 fi
 mapfile -t immutability_skips < <(exceptions immutability-args)
+mapfile -t purity_skips < <(exceptions purity-args)
 mapfile -t unused_sources < <(exceptions without unused "${sources[@]}")
 
 mutants() {
@@ -76,6 +77,9 @@ fi
 step immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	uv run --no-project -q --python 3.15 python -I "$(native "$standards/immutability.py")" \
 	"${immutability_skips[@]}" "${sources[@]}"
+step purity "last 'Found [0-9]+ issues|All checks passed'" \
+	uv run --no-project -q --python 3.15 python -I "$(native "$standards/purity.py")" \
+	"${purity_skips[@]}" "${sources[@]}"
 if ((${#unused_sources[@]} > 0)); then
 	step unused "count ': unused ' findings" \
 		uvx -q --python 3.15 vulture "${unused_sources[@]}"
