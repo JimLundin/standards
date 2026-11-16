@@ -46,11 +46,6 @@ def listing(lines: Sequence[str]) -> Outcome:
 def waiver_issues(
     language: str, waivers: Sequence[Waiver], snapshot: Snapshot
 ) -> FrozenList[Issue]:
-    attributes = (
-        used_attributes(snapshot.project)
-        if language == "rust"
-        else FrozenOrderedSet[tuple[str, str]]()
-    )
     issues: FrozenList[Issue] = FrozenList()
     for waiver in waivers:
         rule_kind = kind(language, waiver.rule)
@@ -67,7 +62,8 @@ def waiver_issues(
         ):
             issues += (Issue(where, "path matches no Cargo.toml"),)
         elif rule_kind == "attribute" and not any(
-            (file, waiver.rule) in attributes for file in matched
+            (file, waiver.rule) in used_attributes(snapshot.project)
+            for file in matched
         ):
             message = "no matching #[expect] attribute; remove the entry"
             issues += (Issue(where, message),)
@@ -229,9 +225,7 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
             for line in inputs.stdin.splitlines()
             if not any(
                 waived(waivers, file, "mutation")
-                for file in module_files(
-                    line.strip().split(":")[0].rsplit(".", 1)[0]
-                )
+                for file in module_files(line.strip().rsplit(".", 1)[0])
             )
         )
     )
@@ -256,14 +250,14 @@ def target_kinds(package: Mapping[str, object]) -> FrozenOrderedSet[str]:
 
 
 def manifest(root: str, package: Mapping[str, object]) -> str:
-    path = PurePosixPath(posix(str(package.get("manifest_path", ""))))
+    path = PurePosixPath(posix(str(package.get("manifest_path"))))
     return path.relative_to(posix(root)).as_posix()
 
 
 def core_libraries(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     waivers = waivers_of(inputs)
     metadata = parse_json(inputs.texts.get(arguments[0]))
-    root = str(metadata.get("workspace_root", ""))
+    root = str(metadata.get("workspace_root"))
     packages = FrozenList(
         table(item) for item in entries(metadata.get("packages"))
     )

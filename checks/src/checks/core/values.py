@@ -4,9 +4,11 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import cast
+from typing import TypeIs
 
 from ordered import FrozenList, FrozenOrderedDict
+
+from checks.core.decoding import decode
 
 EMPTY: FrozenOrderedDict[str, object] = FrozenOrderedDict()
 DRIVE = re.compile(r"[A-Za-z]:/")
@@ -36,16 +38,20 @@ class Outcome:
     )
 
 
+def is_table(value: object) -> TypeIs[Mapping[str, object]]:
+    return isinstance(value, Mapping)
+
+
+def is_list(value: object) -> TypeIs[list[object]]:
+    return isinstance(value, list)
+
+
 def table(value: object) -> Mapping[str, object]:
-    if isinstance(value, Mapping):
-        return cast("Mapping[str, object]", value)
-    return EMPTY
+    return value if is_table(value) else EMPTY
 
 
 def entries(value: object) -> FrozenList[object]:
-    if isinstance(value, list):
-        return FrozenList(cast("Sequence[object]", value))
-    return FrozenList()
+    return FrozenList(value) if is_list(value) else FrozenList()
 
 
 def strings(value: object) -> FrozenList[str]:
@@ -62,16 +68,17 @@ def lookup(data: Mapping[str, object], dotted: str) -> object:
 def parse_toml(text: str | None) -> Mapping[str, object]:
     if text is None:
         return EMPTY
-    return cast("Mapping[str, object]", tomllib.loads(text))
+    return tomllib.loads(text)
 
 
 def parse_json(text: str | None) -> Mapping[str, object]:
     if text is None:
         return EMPTY
     try:
-        return table(cast("object", json.loads(text)))
+        loaded = decode(text)
     except json.JSONDecodeError:
         return EMPTY
+    return table(loaded)
 
 
 def matches(path: str, glob: str) -> bool:
@@ -85,10 +92,12 @@ def posix(path: str) -> str:
 def normalized(path: str) -> str:
     parts: FrozenList[str] = FrozenList()
     for part in posix(path).split("/"):
-        if part == ".." and parts and parts[-1] not in {"", ".."}:
-            parts = parts[:-1]
-        elif part != "." and (part or not parts):
-            parts += (part,)
+        if part == "." or (not part and parts):
+            continue
+        if part == ".." and parts and parts[-1] != "..":
+            parts = parts if parts == ("",) else parts[:-1]
+            continue
+        parts = FrozenList((*parts, part))
     return "/".join(parts)
 
 

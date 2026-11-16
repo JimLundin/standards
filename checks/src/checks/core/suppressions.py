@@ -1,5 +1,5 @@
 import re
-from functools import partial
+from io import StringIO
 from tokenize import COMMENT, TokenError, generate_tokens
 from typing import TYPE_CHECKING
 
@@ -64,9 +64,8 @@ def is_source(language: str, file: str) -> bool:
 
 
 def python_markers(text: str) -> Iterator[tuple[int, str]]:
-    lines = iter(text.splitlines(keepends=True))
     try:
-        tokens = FrozenList(generate_tokens(partial(next, lines, "")))
+        tokens = FrozenList(generate_tokens(StringIO(text).readline))
     except SyntaxError, TokenError:
         return
     yield from (
@@ -91,7 +90,7 @@ def attribute_lints(arguments: str) -> FrozenList[str]:
 
 def rust_attributes(text: str) -> Iterator[tuple[int, str, str]]:
     for match in RUST_ATTRIBUTE.finditer(text):
-        line = text.count("\n", 0, match.start()) + 1
+        line = text[: match.start()].count("\n") + 1
         yield line, match["name"], match["args"] or ""
 
 

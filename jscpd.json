@@ -7,7 +7,10 @@
 	"ignore": [
 		"**/node_modules/**",
 		"**/target/**",
-		"**/.venv/**",
+		"**/.venv*/**",
+		"**/mutants/**",
+		"**/mutants.out*/**",
+		"**/.stryker-tmp/**",
 		"**/dist/**",
 		"**/build/**",
 		"**/*.lock",

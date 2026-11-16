@@ -177,7 +177,7 @@ if full; then
 	step unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
 	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
 		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" --format rust --silent .
-	step volume totals scc --include-ext rs --no-cocomo .
+	step volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext rs --no-cocomo .
 fi
 
 finish

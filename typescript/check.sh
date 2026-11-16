@@ -88,7 +88,7 @@ if full; then
 	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
 		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
 		--format typescript,javascript,css --silent .
-	step volume totals scc --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
+	step volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
 fi
 
 finish

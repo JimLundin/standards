@@ -296,9 +296,9 @@ def rust_lint_drift(
         key = f"lints.{group}"
         wanted, actual = table(standard.get(group)), table(project.get(group))
         for name, value in wanted.items():
-            if RANKS.get(level(actual.get(name)), -1) < RANKS.get(
-                level(value), 0
-            ):
+            needed = RANKS.get(level(value))
+            current = RANKS.get(level(actual.get(name)))
+            if needed is not None and (current is None or current < needed):
                 yield drift(
                     "Cargo.toml",
                     f"{key}.{name}",
@@ -307,7 +307,11 @@ def rust_lint_drift(
         yield from (
             drift("Cargo.toml", f"{key}.{name}", f"{key}.{name} relaxes a lint")
             for name, value in actual.items()
-            if name not in wanted and RANKS.get(level(value), 0) < RANKS["deny"]
+            if name not in wanted
+            and (
+                (rank := RANKS.get(level(value))) is None
+                or rank < RANKS["deny"]
+            )
         )
 
 
@@ -466,7 +470,7 @@ def biome_drift(
 
 
 def runs(text: str | None) -> int | None:
-    match = NUM_RUNS.search(text or "")
+    match = NUM_RUNS.search(text) if text is not None else None
     return int(match[1]) if match else None
 
 
@@ -517,19 +521,22 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         )
     compiler = "compilerOptions"
     options = table(snapshot.json("tsconfig.json").get(compiler))
+    base = table(
+        snapshot.standard_json(f"{folder}tsconfig.base.json").get(compiler)
+    )
+    switched_off = FrozenList(
+        name
+        for name, value in base.items()
+        if value is True and options.get(name) is False
+    )
+    if options.get("strict") is False and "strict" not in switched_off:
+        switched_off = FrozenList(("strict", *switched_off))
     yield from (
         drift(
             "tsconfig.json", f"{compiler}.{name}", f"{compiler}.{name} is false"
         )
-        for name, value in table(
-            snapshot.standard_json(f"{folder}tsconfig.base.json").get(compiler)
-        ).items()
-        if value is True and options.get(name) is False
+        for name in switched_off
     )
-    if options.get("strict") is False:
-        yield drift(
-            "tsconfig.json", f"{compiler}.strict", f"{compiler}.strict is false"
-        )
     yield from stryker_drift(
         snapshot.standard_json(f"{folder}stryker.config.json"),
         snapshot.json("stryker.config.json"),

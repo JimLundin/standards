@@ -1,12 +1,12 @@
 import ast
-import json
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
+from checks.core.decoding import decode
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -72,6 +72,7 @@ PURE_MODULES = FrozenOrderedSet((
     "zlib",
 ))
 PURE_NAMES = FrozenOrderedSet((
+    "io.StringIO",
     "pathlib.PurePath",
     "pathlib.PurePosixPath",
     "pathlib.PureWindowsPath",
@@ -140,7 +141,8 @@ def core_modules(pyproject: str | None) -> FrozenList[str]:
         for layers in (entries(table(contract).get("layers")),)
         if layers
         for container in entries(table(contract).get("containers"))
-        for name in cast("list[str]", LAYER.findall(str(layers[-1])))
+        for found in LAYER.finditer(str(layers[-1]))
+        for name in (found[0],)
     )
 
 
@@ -160,7 +162,7 @@ def within(module: str, roots: Sequence[str]) -> bool:
 
 def resolve(node: ast.ImportFrom, origin: Source) -> str:
     if node.level == 0:
-        return node.module or ""
+        return str(node.module)
     base = origin.module if origin.package else origin.module.rpartition(".")[0]
     for _ in range(node.level - 1):
         base = base.rpartition(".")[0]
@@ -214,10 +216,10 @@ def builtin_findings(tree: ast.Module) -> Iterator[Finding]:
     )
 
 
-def base_name(node: ast.expr) -> str:
+def base_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Attribute):
         return node.attr
-    return node.id if isinstance(node, ast.Name) else ""
+    return node.id if isinstance(node, ast.Name) else None
 
 
 def ports(tree: ast.Module) -> FrozenOrderedSet[str]:
@@ -245,7 +247,7 @@ def names(annotation: ast.expr | None) -> Iterator[str]:
                 yield from names(ast.parse(node.value, mode="eval").body)
             except SyntaxError:
                 continue
-        name = base_name(node) if isinstance(node, ast.expr) else ""
+        name = base_name(node)
         if name:
             yield name
 
@@ -272,7 +274,7 @@ def bounds(node: ast.FunctionDef | ast.ClassDef) -> Iterator[ast.expr | None]:
 
 
 def api_inputs(
-    body: Sequence[ast.stmt], *, in_class: bool
+    body: Sequence[ast.stmt], *, in_class: bool = False
 ) -> Iterator[tuple[str, ast.stmt, Iterator[ast.expr | None]]]:
     for node in body:
         if isinstance(node, ast.FunctionDef) and is_public(node.name):
@@ -293,7 +295,7 @@ def api_findings(
     tree: ast.Module, local_ports: FrozenOrderedSet[str]
 ) -> Iterator[Finding]:
     forbidden = EFFECT_TYPES | local_ports
-    for name, node, annotations in api_inputs(tree.body, in_class=False):
+    for name, node, annotations in api_inputs(tree.body):
         taken = dict.fromkeys(
             found
             for annotation in annotations
@@ -364,7 +366,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     skips = FrozenList(
         (str(rule), str(glob))
         for option in options(arguments, "--skips=")
-        for pair in entries(cast("object", json.loads(option)))
+        for pair in entries(decode(option))
         for rule, glob in (entries(pair),)
     )
     cores = core_modules(inputs.texts.get("pyproject.toml"))

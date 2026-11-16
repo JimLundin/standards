@@ -136,7 +136,7 @@ def item_parts(item: Mapping[str, object]) -> Iterator[object]:
         yield details.get("generics")
         if owner == "type_alias":
             yield details.get("type")
-        if owner == "impl" and details.get("trait") is not None:
+        if owner == "impl":
             yield table(table(details.get("trait")).get("args"))
 
 
@@ -173,11 +173,8 @@ def item_findings(
 def crate_findings(document: Mapping[str, object]) -> FrozenList[Finding]:
     version = document.get("format_version")
     if version not in FORMATS:
-        message = (
-            f"rustdoc JSON format {version} is untested; check api.py "
-            "against it and add it to FORMATS"
-        )
-        return FrozenList((Finding("api.py", 0, message),))
+        message = f"rustdoc JSON format {version} is untested; check rust_api.py against it and add it to FORMATS"
+        return FrozenList((Finding("rust_api.py", 0, message),))
     crate = Crate(table(document.get("index")), table(document.get("paths")))
     excluded = foreign_methods(crate)
     return FrozenList(

@@ -103,7 +103,7 @@ if full; then
 	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
 		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
 		--format python --silent .
-	step volume totals scc --include-ext py,pyw --no-cocomo .
+	step volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext py,pyw --no-cocomo .
 fi
 
 finish

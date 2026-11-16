@@ -53,6 +53,7 @@ NAMED_COLLECTIONS = FrozenOrderedDict({
     "MappingProxyType": "FrozenOrderedDict[K, V]",
     "frozendict": "FrozenOrderedDict[K, V]",
 })
+ITEM_AND_ELLIPSIS = 2
 SET_CONSTRUCTORS = FrozenOrderedSet(("set", "frozenset"))
 MUTABLE_TYPES = FrozenOrderedSet((
     "list",
@@ -84,14 +85,14 @@ class Finding:
     message: str
 
 
-def name_of(node: ast.expr) -> str:
+def name_of(node: ast.expr) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
         return node.attr
     if isinstance(node, ast.Call):
         return name_of(node.func)
-    return ""
+    return None
 
 
 def is_unfrozen_dataclass(decorator: ast.expr) -> bool:
@@ -122,7 +123,8 @@ def mutable_type(annotation: ast.expr) -> ast.expr | None:
 def is_mutable_value(value: ast.expr | None) -> bool:
     return isinstance(value, MUTABLE_VALUES) or (
         isinstance(value, ast.Call)
-        and name_of(value.func) in MUTABLE_CONSTRUCTORS
+        and isinstance(value.func, ast.Name)
+        and value.func.id in MUTABLE_CONSTRUCTORS
     )
 
 
@@ -190,13 +192,17 @@ def annotation_nodes(
 
 
 def is_homogeneous_tuple(node: ast.expr) -> bool:
-    match node:
-        case ast.Subscript(
-            value=base, slice=ast.Tuple(elts=[_, ast.Constant(value=last)])
-        ):
-            return name_of(base) == "tuple" and last is Ellipsis
-        case _:
-            return False
+    if not (
+        isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Tuple)
+    ):
+        return False
+    elements = node.slice.elts
+    return (
+        name_of(node.value) == "tuple"
+        and len(elements) == ITEM_AND_ELLIPSIS
+        and isinstance(last := elements[-1], ast.Constant)
+        and last.value is Ellipsis
+    )
 
 
 def membership_sets(tree: ast.Module) -> FrozenOrderedSet[int]:
@@ -204,9 +210,10 @@ def membership_sets(tree: ast.Module) -> FrozenOrderedSet[int]:
         id(right)
         for node in ast.walk(tree)
         if isinstance(node, ast.Compare)
-        for operator, right in zip(node.ops, node.comparators, strict=True)
+        for index, operator in enumerate(node.ops)
         if isinstance(operator, ast.In | ast.NotIn)
-        and isinstance(right, ast.Set)
+        for right in (node.comparators[index],)
+        if isinstance(right, ast.Set)
     )
 
 
@@ -238,17 +245,21 @@ def unordered_annotations(tree: ast.Module) -> Iterator[Finding]:
             name = (
                 name_of(node)
                 if isinstance(node, ast.Name | ast.Attribute)
-                else ""
+                else None
             )
-            if name in UNORDERED_TYPES:
+            if name is not None and name in UNORDERED_TYPES:
                 rule = UNORDERED_ANNOTATION
                 message = f"`{name}` {rule.advice}"
                 yield Finding(place.lineno, place.col_offset, rule, message)
-            elif name in NAMED_COLLECTIONS or is_homogeneous_tuple(node):
+            elif name is not None and name in NAMED_COLLECTIONS:
                 rule = UNNAMED_COLLECTION
-                wanted = NAMED_COLLECTIONS.get(name, "FrozenList[T]")
-                spelled = name or "tuple[T, ...]"
-                message = f"`{spelled}` {rule.advice}; use {wanted}"
+                message = (
+                    f"`{name}` {rule.advice}; use {NAMED_COLLECTIONS[name]}"
+                )
+                yield Finding(place.lineno, place.col_offset, rule, message)
+            elif is_homogeneous_tuple(node):
+                rule = UNNAMED_COLLECTION
+                message = f"`tuple[T, ...]` {rule.advice}; use FrozenList[T]"
                 yield Finding(place.lineno, place.col_offset, rule, message)
 
 

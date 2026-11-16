@@ -1,7 +1,5 @@
-import json
 import re
 from dataclasses import dataclass
-from typing import cast
 lazy from collections.abc import Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -14,6 +12,7 @@ from checks.core.values import (
     matches,
     operands,
     options,
+    parse_json,
     table,
 )
 
@@ -32,11 +31,11 @@ class Function:
     path: str
     line: int
     score: int
-    shell: bool
+    binary: bool
 
 
 def function(line: str) -> Function | None:
-    record = table(cast("object", json.loads(line)))
+    record = parse_json(line)
     message = table(record.get("message"))
     if table(message.get("code")).get("code") != LINT:
         return None
@@ -63,7 +62,7 @@ def functions(lines: Sequence[str]) -> FrozenList[Function]:
 
 
 def shell_functions(items: Sequence[Function]) -> FrozenList[Function]:
-    return FrozenList(item for item in items if item.shell)
+    return FrozenList(item for item in items if item.binary)
 
 
 def decisions(items: Sequence[Function]) -> int:
@@ -76,7 +75,7 @@ def findings(
     complex_functions = FrozenList(
         f"{item.path}:{item.line}: {COMPLEX} {item.score} (limit {LIMIT}){MOVE}"
         for item in items
-        if item.shell
+        if item.binary
         and item.score > LIMIT
         and not any(matches(item.path, glob) for glob in skips)
     )
@@ -95,10 +94,10 @@ def findings(
 
 
 def shell_files(items: Sequence[Function]) -> FrozenList[str]:
-    core = FrozenOrderedSet(item.path for item in items if not item.shell)
+    core = FrozenOrderedSet(item.path for item in items if not item.binary)
     return FrozenList(
         dict.fromkeys(
-            item.path for item in items if item.shell and item.path not in core
+            item.path for item in items if item.binary and item.path not in core
         )
     )
 
@@ -106,7 +105,7 @@ def shell_files(items: Sequence[Function]) -> FrozenList[str]:
 def summary(items: Sequence[Function], issues: Sequence[str]) -> str:
     if issues:
         return f"Found {len(issues)} issues"
-    if not any(item.shell for item in items):
+    if not any(item.binary for item in items):
         return "no binaries"
     shell = decisions(shell_functions(items))
     return f"shell makes {shell} of {decisions(items)} decisions"
