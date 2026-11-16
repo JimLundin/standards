@@ -55,6 +55,42 @@ while IFS= read -r glob; do
 	mutation+=(--exclude "$glob")
 done < <(exceptions globs mutation)
 mapfile -t tracked < <(git ls-files)
+core_target=wasm32v1-none
+
+ending() {
+	plain "$1" | tail -1
+}
+
+core() {
+	local listed output status=0 library libraries=() packages=()
+	"${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json" ||
+		return
+	listed=$(exceptions core-libraries "$(native "$logs/metadata.json")") || {
+		echo "$listed"
+		return 1
+	}
+	mapfile -t libraries < <(grep . <<<"$listed")
+	if ((${#libraries[@]} == 0)); then
+		echo "no libraries"
+		return
+	fi
+	for library in "${libraries[@]}"; do
+		packages+=(-p "$library")
+	done
+	output=$("${cargo[@]}" check --lib --target "$core_target" \
+		"${packages[@]}" 2>&1) || status=$?
+	echo "$output"
+	if ((status == 0)); then
+		echo "no_std: ${libraries[*]}"
+	elif grep -q 'may not be installed' <<<"$output"; then
+		echo "rustup target add $core_target"
+	else
+		echo "uses std: $(grep -oE 'could not compile `[^`]+`' <<<"$output" |
+			cut -d'`' -f2 | sort -u | paste -sd ' ' -)"
+	fi
+	return "$status"
+}
+
 tests=()
 if command -v cargo-nextest >/dev/null; then
 	tests=(nextest run --no-tests=warn --hide-progress-bar)
@@ -74,6 +110,7 @@ step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 step lint "last '[0-9]+ previous errors?|Finished'" \
 	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
+step core ending core
 step test "summed 'passed|failed'" "${cargo[@]}" "${tests[@]}"
 if full; then
 	if [ "${tests[0]}" = nextest ] &&

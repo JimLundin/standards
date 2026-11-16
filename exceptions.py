@@ -33,6 +33,7 @@ RANKS = MappingProxyType({
     "forbid": 3,
 })
 PROPTEST_CASES = 16
+LIBRARY_KINDS = frozenset({"lib", "rlib"})
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
 PYTHON_MARKERS = (
@@ -159,8 +160,8 @@ def load() -> tuple[tuple[Waiver, ...], tuple[Issue, ...]]:
 
 
 def kind(language: str, rule: str) -> str:
-    if rule == "mutation":
-        return "mutation"
+    if rule == "mutation" or (language == "rust" and rule == "std"):
+        return rule
     if rule.startswith("drift:"):
         return "drift"
     if language == "python":
@@ -291,6 +292,10 @@ def waiver_issues(
             yield Issue(where, f"unknown rule for {language}")
         elif rule_kind != "drift" and not matched:
             yield Issue(where, "path matches no tracked file")
+        elif rule_kind == "std" and not any(
+            PurePosixPath(file).name == "Cargo.toml" for file in matched
+        ):
+            yield Issue(where, "path matches no Cargo.toml")
         elif rule_kind == "attribute" and not any(
             (file, waiver.rule) in attributes for file in matched
         ):
@@ -867,6 +872,38 @@ def stryker_mutate(config: Path) -> str:
     ))
 
 
+def target_kinds(package: Mapping[str, object]) -> frozenset[str]:
+    return frozenset(
+        kind
+        for target in entries(package.get("targets"))
+        for kind in strings(table(target).get("kind"))
+    )
+
+
+def manifest(root: str, package: Mapping[str, object]) -> str:
+    path = Path(str(package.get("manifest_path", "")))
+    return path.relative_to(root).as_posix()
+
+
+def core_libraries(
+    metadata: Mapping[str, object],
+) -> tuple[tuple[str, ...], tuple[Issue, ...]]:
+    waivers, _ = load()
+    root = str(metadata.get("workspace_root", ""))
+    packages = tuple(table(item) for item in entries(metadata.get("packages")))
+    libraries = tuple(
+        str(package.get("name"))
+        for package in packages
+        if target_kinds(package) & LIBRARY_KINDS
+        and not waived(waivers, manifest(root, package), "std")
+    )
+    binaries = any("bin" in target_kinds(package) for package in packages)
+    if binaries and not libraries and not waived(waivers, "Cargo.toml", "std"):
+        message = "has binaries but no no_std library to hold the pure core"
+        return (), (Issue("Cargo.toml", message),)
+    return libraries, ()
+
+
 def report(issues: Iterable[Issue]) -> int:
     lines = tuple(f"{issue.path}: {issue.message}" for issue in issues)
     summary = f"Found {len(lines)} issues" if lines else "All checks passed"
@@ -883,6 +920,13 @@ def main(arguments: tuple[str, ...]) -> int:
     command, *rest = arguments
     if command == "check":
         return report(check(rest[0], Path(rest[1]), tuple(rest[2:])))
+    if command == "core-libraries":
+        libraries, issues = core_libraries(read_json(Path(rest[0])))
+        write((
+            *libraries,
+            *(f"{issue.path}: {issue.message}" for issue in issues),
+        ))
+        return 1 if issues else 0
     outputs = {
         "ruff-config": lambda: (ruff_config(),),
         "immutability-args": immutability_args,

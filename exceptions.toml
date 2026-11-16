@@ -2,7 +2,8 @@
 # tool configs fail the exceptions step. Each entry needs a path glob, a rule
 # and a reason. Rules are tool rule names (banned-api, IMM002,
 # clippy::shadow_reuse, lint/style/noRestrictedGlobals), "mutation", "unused",
-# or a drift:… rule printed by the check.
+# "std" (a Rust package, by its Cargo.toml, that may use std), or a drift:…
+# rule printed by the check.
 #
 # [[exception]]
 # path = "src/app/main.py"
