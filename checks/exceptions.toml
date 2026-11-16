@@ -1,0 +1,4 @@
+[[exception]]
+path = "src/checks/shell.py"
+rule = "banned-api"
+reason = "the shell reads argv and stdin and writes stdout for the core"

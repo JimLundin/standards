@@ -1,4 +1,5 @@
 logs=$(mktemp -d)
+home=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 failed=()
 profile=fast
 
@@ -50,16 +51,13 @@ step() {
 	line "$name" "$status" "$(eval "$summary \"\$log\"")"
 }
 
-pyrun() {
-	if command -v uv >/dev/null; then
-		uv run --no-project -q --python 3.15 python -I "$@"
-	else
-		python3 -I "$@"
-	fi
+checks() {
+	UV_PROJECT_ENVIRONMENT=$(native "$home/checks/.venv-$(uname -s | cut -d_ -f1)") \
+		uv run --frozen -q --project "$(native "$home/checks")" python -I -m checks "$@"
 }
 
 exceptions() {
-	pyrun "$(native "$standards/../exceptions.py")" "$@"
+	checks exceptions "$@"
 }
 
 full() {

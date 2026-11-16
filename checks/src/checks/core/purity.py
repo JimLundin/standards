@@ -1,19 +1,32 @@
 import ast
 import json
 import re
-import sys
-import tomllib
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
-from types import MappingProxyType
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, cast
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-PURE_MODULES = frozenset({
+from checks.core.values import (
+    Inputs,
+    Outcome,
+    Request,
+    entries,
+    matches,
+    operands,
+    options,
+    parse_toml,
+    summarized,
+    table,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping, Sequence
+
+PURE_MODULES = FrozenOrderedSet((
     "__future__",
     "abc",
+    "ast",
     "base64",
     "binascii",
     "bisect",
@@ -50,14 +63,23 @@ PURE_MODULES = frozenset({
     "string",
     "struct",
     "textwrap",
+    "tomllib",
     "types",
     "typing",
     "unicodedata",
     "urllib.parse",
     "uuid",
     "zlib",
-})
-EFFECT_BUILTINS = frozenset({
+))
+PURE_NAMES = FrozenOrderedSet((
+    "pathlib.PurePath",
+    "pathlib.PurePosixPath",
+    "pathlib.PureWindowsPath",
+    "tokenize.COMMENT",
+    "tokenize.TokenError",
+    "tokenize.generate_tokens",
+))
+EFFECT_BUILTINS = FrozenOrderedSet((
     "__import__",
     "breakpoint",
     "compile",
@@ -69,8 +91,8 @@ EFFECT_BUILTINS = frozenset({
     "input",
     "open",
     "quit",
-})
-EFFECT_TYPES = frozenset({
+))
+EFFECT_TYPES = FrozenOrderedSet((
     "AsyncGenerator",
     "AsyncIterable",
     "AsyncIterator",
@@ -85,8 +107,8 @@ EFFECT_TYPES = frozenset({
     "TextIO",
     "Type",
     "type",
-})
-PORT_BASES = frozenset({"ABC", "Protocol"})
+))
+PORT_BASES = FrozenOrderedSet(("ABC", "Protocol"))
 LAYER = re.compile(r"[\w.]+")
 IMPORTS = "it may import itself, pure standard modules and a PUR001:<module> exception"
 ONLY_DATA = "the core's public API takes only data"
@@ -106,26 +128,12 @@ class Finding:
     message: str
 
 
-def table(value: object) -> Mapping[str, object]:
-    if isinstance(value, dict):
-        return cast("Mapping[str, object]", value)
-    return MappingProxyType({})
-
-
-def entries(value: object) -> tuple[object, ...]:
-    if isinstance(value, list):
-        return tuple(cast("Iterable[object]", value))
-    return ()
-
-
-def core_modules(pyproject: Path) -> tuple[str, ...]:
-    if not pyproject.is_file():
-        return ()
-    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+def core_modules(pyproject: str | None) -> FrozenList[str]:
+    data = parse_toml(pyproject)
     contracts = entries(
         table(table(data.get("tool")).get("importlinter")).get("contracts")
     )
-    return tuple(
+    return FrozenList(
         f"{container}.{name}"
         for contract in contracts
         if table(contract).get("type") == "layers"
@@ -144,7 +152,7 @@ def source(path: str) -> Source:
     return Source(".".join(parts[:-1] if package else parts), package=package)
 
 
-def within(module: str, roots: Iterable[str]) -> bool:
+def within(module: str, roots: Sequence[str]) -> bool:
     return any(
         module == root or module.startswith(f"{root}.") for root in roots
     )
@@ -161,16 +169,22 @@ def resolve(node: ast.ImportFrom, origin: Source) -> str:
 
 def imported(
     tree: ast.Module, origin: Source
-) -> Iterator[tuple[ast.stmt, str]]:
+) -> Iterator[tuple[ast.stmt, str, FrozenList[str]]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            yield from ((node, alias.name) for alias in node.names)
+            yield from (
+                (node, alias.name, FrozenList()) for alias in node.names
+            )
         elif isinstance(node, ast.ImportFrom):
-            yield node, resolve(node, origin)
+            module = resolve(node, origin)
+            members = FrozenList(
+                f"{module}.{alias.name}" for alias in node.names
+            )
+            yield node, module, members
 
 
 def import_findings(
-    tree: ast.Module, origin: Source, cores: tuple[str, ...]
+    tree: ast.Module, origin: Source, cores: Sequence[str]
 ) -> Iterator[Finding]:
     yield from (
         Finding(
@@ -179,8 +193,9 @@ def import_findings(
             f"PUR001:{name}",
             f"the core imports `{name}`; {IMPORTS}",
         )
-        for node, name in imported(tree, origin)
+        for node, name, members in imported(tree, origin)
         if not within(name, (*PURE_MODULES, *cores))
+        and not (members and all(member in PURE_NAMES for member in members))
     )
 
 
@@ -205,8 +220,8 @@ def base_name(node: ast.expr) -> str:
     return node.id if isinstance(node, ast.Name) else ""
 
 
-def ports(tree: ast.Module) -> frozenset[str]:
-    return frozenset(
+def ports(tree: ast.Module) -> FrozenOrderedSet[str]:
+    return FrozenOrderedSet(
         node.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef)
@@ -257,7 +272,7 @@ def bounds(node: ast.FunctionDef | ast.ClassDef) -> Iterator[ast.expr | None]:
 
 
 def api_inputs(
-    body: Iterable[ast.stmt], *, in_class: bool
+    body: Sequence[ast.stmt], *, in_class: bool
 ) -> Iterator[tuple[str, ast.stmt, Iterator[ast.expr | None]]]:
     for node in body:
         if isinstance(node, ast.FunctionDef) and is_public(node.name):
@@ -275,7 +290,7 @@ def api_inputs(
 
 
 def api_findings(
-    tree: ast.Module, local_ports: frozenset[str]
+    tree: ast.Module, local_ports: FrozenOrderedSet[str]
 ) -> Iterator[Finding]:
     forbidden = EFFECT_TYPES | local_ports
     for name, node, annotations in api_inputs(tree.body, in_class=False):
@@ -312,20 +327,20 @@ def covers(rule: str, found: str) -> bool:
 
 
 def skipped(
-    finding: Finding, path: str, skips: tuple[tuple[str, str], ...]
+    finding: Finding, path: str, skips: Sequence[tuple[str, str]]
 ) -> bool:
     return any(
-        covers(rule, finding.rule) and PurePosixPath(path).full_match(glob)
+        covers(rule, finding.rule) and matches(path, glob)
         for rule, glob in skips
     )
 
 
 def check(
     trees: Mapping[str, ast.Module],
-    cores: tuple[str, ...],
-    skips: tuple[tuple[str, str], ...],
+    cores: Sequence[str],
+    skips: Sequence[tuple[str, str]],
 ) -> Iterator[str]:
-    local_ports = frozenset(
+    local_ports = FrozenOrderedSet(
         name for tree in trees.values() for name in ports(tree)
     )
     for path, tree in trees.items():
@@ -341,32 +356,21 @@ def check(
         )
 
 
-def report(arguments: tuple[str, ...]) -> tuple[str, ...]:
-    skips = tuple(
+def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
+    return Request(FrozenList(("pyproject.toml", *operands(arguments))))
+
+
+def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    skips = FrozenList(
         (str(rule), str(glob))
-        for argument in arguments
-        if argument.startswith("--skips=")
-        for pair in entries(
-            cast("object", json.loads(argument.removeprefix("--skips=")))
-        )
+        for option in options(arguments, "--skips=")
+        for pair in entries(cast("object", json.loads(option)))
         for rule, glob in (entries(pair),)
     )
-    cores = core_modules(Path("pyproject.toml"))
-    trees = {
-        path: ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
-        for path in arguments
-        if not path.startswith("--") and within(source(path).module, cores)
-    }
-    return tuple(check(trees, cores, skips))
-
-
-def main() -> int:
-    lines = report(tuple(sys.argv[1:]))
-    summary = f"Found {len(lines)} issues" if lines else "All checks passed"
-    output = "".join(f"{line}\n" for line in (*lines, summary))
-    _ = sys.stdout.write(output)
-    return 1 if lines else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    cores = core_modules(inputs.texts.get("pyproject.toml"))
+    trees = FrozenOrderedDict(
+        (path, ast.parse(inputs.texts[path], filename=path))
+        for path in operands(arguments)
+        if within(source(path).module, cores)
+    )
+    return summarized(FrozenList(check(trees, cores, skips)))

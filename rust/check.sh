@@ -110,8 +110,7 @@ api() {
 	while IFS= read -r glob; do
 		skips+=("--skip=$glob")
 	done < <(exceptions globs api)
-	pyrun "$(native "$standards/api.py")" "${skips[@]}" "$metadata" \
-		"${libraries[@]}"
+	checks rust-api "${skips[@]}" "$metadata" "${libraries[@]}"
 }
 
 shell() {
@@ -132,7 +131,7 @@ shell() {
 	while IFS= read -r glob; do
 		skips+=("--skip=$glob")
 	done < <(exceptions globs shell)
-	pyrun "$(native "$standards/shell.py")" "${skips[@]}" \
+	checks rust-shell "${skips[@]}" \
 		"$(native "$logs/complexity.jsonl")" "$(native "$logs/shell-files.txt")"
 }
 

@@ -91,7 +91,7 @@ split-on-trailing-comma = false
 required-version = ">=0.13"
 
 # Template: rename app to the project's package. app.core holds the pure code
-# and app.shell everything else; purity.py checks the last layer as the core.
+# and app.shell everything else; the purity check treats the last layer as the core.
 [tool.importlinter]
 root_package = "app"
 

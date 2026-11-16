@@ -1,9 +1,21 @@
 import ast
-import sys
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
-from types import MappingProxyType
-lazy from collections.abc import Iterator
+from typing import TYPE_CHECKING
+
+from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
+
+from checks.core.values import (
+    Inputs,
+    Outcome,
+    Request,
+    matches,
+    operands,
+    options,
+    summarized,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,20 +41,20 @@ UNORDERED_ANNOTATION = Rule(
     "promises no order; use OrderedSet or OrderedCollection from ordered, or Container for membership only",
 )
 UNNAMED_COLLECTION = Rule("IMM006", "has a name in ordered")
-UNORDERED_TYPES = frozenset({
+UNORDERED_TYPES = FrozenOrderedSet((
     "AbstractSet",
     "Collection",
     "FrozenSet",
     "Set",
     "frozenset",
     "set",
-})
-NAMED_COLLECTIONS = MappingProxyType({
+))
+NAMED_COLLECTIONS = FrozenOrderedDict({
     "MappingProxyType": "FrozenOrderedDict[K, V]",
     "frozendict": "FrozenOrderedDict[K, V]",
 })
-SET_CONSTRUCTORS = frozenset({"set", "frozenset"})
-MUTABLE_TYPES = frozenset({
+SET_CONSTRUCTORS = FrozenOrderedSet(("set", "frozenset"))
+MUTABLE_TYPES = FrozenOrderedSet((
     "list",
     "dict",
     "set",
@@ -59,9 +71,9 @@ MUTABLE_TYPES = frozenset({
     "Deque",
     "defaultdict",
     "deque",
-})
+))
 MUTABLE_VALUES = (ast.List, ast.Dict, ast.ListComp, ast.DictComp)
-MUTABLE_CONSTRUCTORS = frozenset({"list", "dict", "bytearray"})
+MUTABLE_CONSTRUCTORS = FrozenOrderedSet(("list", "dict", "bytearray"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,13 +126,13 @@ def is_mutable_value(value: ast.expr | None) -> bool:
     )
 
 
-def parameters(arguments: ast.arguments) -> tuple[ast.arg, ...]:
-    return (
+def parameters(arguments: ast.arguments) -> FrozenList[ast.arg]:
+    return FrozenList((
         *arguments.posonlyargs,
         *arguments.args,
         *arguments.kwonlyargs,
         *filter(None, (arguments.vararg, arguments.kwarg)),
-    )
+    ))
 
 
 def annotations(tree: ast.Module) -> Iterator[ast.expr]:
@@ -187,10 +199,22 @@ def is_homogeneous_tuple(node: ast.expr) -> bool:
             return False
 
 
+def membership_sets(tree: ast.Module) -> FrozenOrderedSet[int]:
+    return FrozenOrderedSet(
+        id(right)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        for operator, right in zip(node.ops, node.comparators, strict=True)
+        if isinstance(operator, ast.In | ast.NotIn)
+        and isinstance(right, ast.Set)
+    )
+
+
 def hash_ordered_sets(tree: ast.Module) -> Iterator[Finding]:
     rule = HASH_ORDERED_SET
+    tested = membership_sets(tree)
     for node in ast.walk(tree):
-        if not isinstance(node, ast.expr):
+        if not isinstance(node, ast.expr) or id(node) in tested:
             continue
         built = (
             "a set literal"
@@ -261,16 +285,18 @@ def mutable_globals(tree: ast.Module) -> Iterator[Finding]:
 
 
 def skipped(
-    finding: Finding, path: str, skips: tuple[tuple[str, str], ...]
+    finding: Finding, path: str, skips: Sequence[tuple[str, str]]
 ) -> bool:
     return any(
-        code == finding.rule.code and PurePosixPath(path).full_match(glob)
+        code == finding.rule.code and matches(path, glob)
         for code, glob in skips
     )
 
 
-def check(path: str, skips: tuple[tuple[str, str], ...]) -> tuple[Finding, ...]:
-    tree = ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
+def check(
+    path: str, text: str, skips: Sequence[tuple[str, str]]
+) -> FrozenList[Finding]:
+    tree = ast.parse(text, filename=path)
     findings = (
         *unfrozen_dataclasses(tree),
         *mutable_annotations(tree),
@@ -278,7 +304,7 @@ def check(path: str, skips: tuple[tuple[str, str], ...]) -> tuple[Finding, ...]:
         *hash_ordered_sets(tree),
         *unordered_annotations(tree),
     )
-    return tuple(
+    return FrozenList(
         finding
         for finding in sorted(findings, key=lambda f: (f.line, f.column))
         if not skipped(finding, path, skips)
@@ -291,30 +317,20 @@ def describe(path: str, finding: Finding) -> str:
     return f"{location}: {rule.code} {finding.message}"
 
 
-def report(arguments: tuple[str, ...]) -> tuple[str, ...]:
-    skips = tuple(
+def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
+    return Request(operands(arguments))
+
+
+def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    skips = FrozenList(
         (code, glob)
-        for argument in arguments
-        if argument.startswith("--skip=")
-        for code, _, glob in (argument.removeprefix("--skip=").partition(":"),)
+        for skip in options(arguments, "--skip=")
+        for code, _, glob in (skip.partition(":"),)
     )
-    paths = tuple(
-        argument for argument in arguments if not argument.startswith("--")
+    return summarized(
+        FrozenList(
+            describe(path, finding)
+            for path in operands(arguments)
+            for finding in check(path, inputs.texts[path], skips)
+        )
     )
-    return tuple(
-        describe(path, finding)
-        for path in paths
-        for finding in check(path, skips)
-    )
-
-
-def main() -> int:
-    lines = report(tuple(sys.argv[1:]))
-    summary = f"Found {len(lines)} issues" if lines else "All checks passed"
-    output = "".join(f"{line}\n" for line in (*lines, summary))
-    _ = sys.stdout.write(output)
-    return 1 if lines else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

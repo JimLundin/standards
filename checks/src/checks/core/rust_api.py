@@ -1,15 +1,27 @@
-import json
-import sys
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
-from types import MappingProxyType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+from ordered import FrozenList, FrozenOrderedSet
+
+from checks.core.values import (
+    Inputs,
+    Outcome,
+    Request,
+    entries,
+    matches,
+    operands,
+    options,
+    parse_json,
+    posix,
+    summarized,
+    table,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sequence
 
-FORMATS = frozenset({61})
-ALLOWED = frozenset({
+FORMATS = FrozenOrderedSet((61,))
+ALLOWED = FrozenOrderedSet((
     "core::borrow::Borrow",
     "core::clone::Clone",
     "core::cmp::Eq",
@@ -29,9 +41,9 @@ ALLOWED = frozenset({
     "core::marker::Send",
     "core::marker::Sized",
     "core::marker::Sync",
-})
+))
 ONLY_DATA = "; the core's public API takes only data"
-OWNERS = ("struct", "enum", "union", "trait", "type_alias", "impl")
+OWNERS = FrozenList(("struct", "enum", "union", "trait", "type_alias", "impl"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +60,7 @@ class Crate:
 
     def trait_name(self, reference: Mapping[str, object]) -> str:
         entry = table(self.paths.get(str(reference.get("id"))))
-        segments = tuple(
+        segments = FrozenList(
             segment
             for segment in entries(entry.get("path"))
             if isinstance(segment, str)
@@ -58,18 +70,6 @@ class Crate:
     def is_local(self, reference: Mapping[str, object]) -> bool:
         item = table(self.index.get(str(reference.get("id"))))
         return item.get("crate_id") == 0
-
-
-def table(value: object) -> Mapping[str, object]:
-    if isinstance(value, dict):
-        return cast("Mapping[str, object]", value)
-    return MappingProxyType({})
-
-
-def entries(value: object) -> tuple[object, ...]:
-    if isinstance(value, list):
-        return tuple(cast("Iterable[object]", value))
-    return ()
 
 
 def problems(node: object, crate: Crate) -> Iterator[str]:
@@ -97,12 +97,13 @@ def problems(node: object, crate: Crate) -> Iterator[str]:
 def location(item: Mapping[str, object]) -> tuple[str, int]:
     span = table(item.get("span"))
     begin = entries(span.get("begin"))
-    line = begin[0] if begin and isinstance(begin[0], int) else 0
+    first = begin[0] if begin else None
+    line = first if isinstance(first, int) else 0
     return str(span.get("filename", "?")), line
 
 
-def foreign_methods(crate: Crate) -> frozenset[str]:
-    return frozenset(
+def foreign_methods(crate: Crate) -> FrozenOrderedSet[str]:
+    return FrozenOrderedSet(
         str(member)
         for item in crate.index.values()
         if table(item).get("crate_id") == 0
@@ -169,17 +170,17 @@ def item_findings(
         yield Finding(path, line, f"`{name}` {message}")
 
 
-def crate_findings(document: Mapping[str, object]) -> tuple[Finding, ...]:
+def crate_findings(document: Mapping[str, object]) -> FrozenList[Finding]:
     version = document.get("format_version")
     if version not in FORMATS:
         message = (
             f"rustdoc JSON format {version} is untested; check api.py "
             "against it and add it to FORMATS"
         )
-        return (Finding("api.py", 0, message),)
+        return FrozenList((Finding("api.py", 0, message),))
     crate = Crate(table(document.get("index")), table(document.get("paths")))
     excluded = foreign_methods(crate)
-    return tuple(
+    return FrozenList(
         finding
         for key, value in crate.index.items()
         if key not in excluded
@@ -190,57 +191,44 @@ def crate_findings(document: Mapping[str, object]) -> tuple[Finding, ...]:
 
 
 def documents(
-    metadata: Mapping[str, object], packages: Iterable[str]
-) -> tuple[Path, ...]:
-    folder = Path(str(metadata.get("target_directory"))) / "doc"
-    wanted = frozenset(packages)
-    return tuple(
-        folder / f"{str(table(target).get('name')).replace('-', '_')}.json"
+    metadata: Mapping[str, object], packages: Sequence[str]
+) -> FrozenList[str]:
+    folder = f"{posix(str(metadata.get('target_directory')))}/doc"
+    return FrozenList(
+        f"{folder}/{str(table(target).get('name')).replace('-', '_')}.json"
         for package in entries(metadata.get("packages"))
-        if table(package).get("name") in wanted
+        if table(package).get("name") in packages
         for target in entries(table(package).get("targets"))
-        if {"lib", "rlib"}
-        & {str(kind) for kind in entries(table(target).get("kind"))}
+        if any(
+            kind in {"lib", "rlib"}
+            for kind in entries(table(target).get("kind"))
+        )
     )
 
 
-def read_json(path: Path) -> Mapping[str, object]:
-    return table(cast("object", json.loads(path.read_text(encoding="utf-8"))))
+def request(arguments: Sequence[str], inputs: Inputs) -> Request:
+    metadata_path, *packages = operands(arguments)
+    if metadata_path not in inputs.texts:
+        return Request(FrozenList((metadata_path,)))
+    metadata = parse_json(inputs.texts[metadata_path])
+    return Request(FrozenList((metadata_path, *documents(metadata, packages))))
 
 
-def report(arguments: tuple[str, ...]) -> tuple[str, ...]:
-    skips = tuple(
-        argument.removeprefix("--skip=")
-        for argument in arguments
-        if argument.startswith("--skip=")
-    )
-    metadata_path, *packages = (
-        argument for argument in arguments if not argument.startswith("--")
-    )
-    metadata = read_json(Path(metadata_path))
-    findings = (
+def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    skips = options(arguments, "--skip=")
+    metadata_path, *packages = operands(arguments)
+    metadata = parse_json(inputs.texts.get(metadata_path))
+    findings = FrozenOrderedSet(
         finding
         for document in documents(metadata, packages)
-        for finding in crate_findings(read_json(document))
+        for finding in crate_findings(parse_json(inputs.texts.get(document)))
     )
-    return tuple(
-        f"{finding.path}:{finding.line}: {finding.message}{ONLY_DATA}"
-        for finding in sorted(
-            set(findings), key=lambda f: (f.path, f.line, f.message)
-        )
-        if not any(
-            PurePosixPath(finding.path).full_match(glob) for glob in skips
+    return summarized(
+        FrozenList(
+            f"{finding.path}:{finding.line}: {finding.message}{ONLY_DATA}"
+            for finding in sorted(
+                findings, key=lambda f: (f.path, f.line, f.message)
+            )
+            if not any(matches(finding.path, glob) for glob in skips)
         )
     )
-
-
-def main() -> int:
-    lines = report(tuple(sys.argv[1:]))
-    summary = f"Found {len(lines)} issues" if lines else "All checks passed"
-    output = "".join(f"{line}\n" for line in (*lines, summary))
-    _ = sys.stdout.write(output)
-    return 1 if lines else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
