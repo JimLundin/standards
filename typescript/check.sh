@@ -7,17 +7,49 @@ case ${1:-} in fast | full) profile=$1 && shift ;; esac
 cd "${1:-.}" || exit 2
 project=$(pwd)
 biome=()
-if [ ! -e biome.json ] && [ ! -e biome.jsonc ]; then
-	biome=(--config-path="$(native "$standards/biome.json")")
+biome_config=$standards/biome.json
+for name in biome.json biome.jsonc; do
+	[ -e "$name" ] && biome_config=$name
+done
+if [ "$biome_config" = "$standards/biome.json" ]; then
+	biome=(--config-path="$(native "$biome_config")")
 fi
 
 mapfile -t sources < <(git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' |
 	grep -vE '(^|/)(package-lock|tsconfig)\.json$')
+mapfile -t tracked < <(git ls-files)
 
+# Biome can only skip all plugins at once, so built-in rules run first with
+# plugins skipped, then each plugin runs alone on the files it still covers.
+biome_lint() {
+	local status=0 skips name path rule
+	local -a fields files skip covered
+	while IFS='|' read -r -a fields; do
+		skips=${fields[0]}
+		files=("${fields[@]:1}")
+		skip=(--skip=plugin)
+		for rule in $skips; do
+			skip+=(--skip="$rule")
+		done
+		npx -y @biomejs/biome@latest lint "${biome[@]}" "${skip[@]}" "${files[@]}" || status=1
+	done < <(exceptions biome-groups "${sources[@]}")
+	while IFS='|' read -r name path; do
+		mapfile -t covered < <(exceptions without "lint/plugin/$name" "${sources[@]}")
+		((${#covered[@]} > 0)) || continue
+		mkdir -p "$logs/plugins/$name"
+		printf '{"plugins": ["%s"]}\n' "$path" >"$logs/plugins/$name/biome.json"
+		npx -y @biomejs/biome@latest lint --only=plugin \
+			--config-path="$(native "$logs/plugins/$name/biome.json")" "${covered[@]}" || status=1
+	done < <(exceptions biome-plugins "$(native "$biome_config")")
+	return "$status"
+}
+
+step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
+	exceptions check typescript "$(native "$standards/..")" "${tracked[@]}"
 step format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y @biomejs/biome@latest format "${biome[@]}" "${sources[@]}"
 step lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
-	npx -y @biomejs/biome@latest lint "${biome[@]}" "${sources[@]}"
+	biome_lint
 if [ -f tsconfig.json ]; then
 	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"]}}\n' \
 		"$(native "$project/tsconfig.json")" \
@@ -39,8 +71,13 @@ if grep -qs '"test' package.json; then
 fi
 if full; then
 	mutation=()
+	stryker_config=stryker.config.json
 	if ! compgen -G 'stryker.conf*' >/dev/null && ! compgen -G 'stryker.config.*' >/dev/null; then
-		mutation=("$(native "$standards/stryker.config.json")")
+		stryker_config=$standards/stryker.config.json
+		mutation=("$(native "$stryker_config")")
+	fi
+	if [ -n "$(exceptions globs mutation)" ]; then
+		mutation+=(--mutate "$(exceptions stryker-mutate "$(native "$stryker_config")")")
 	fi
 	if [ -e node_modules/@stryker-mutator/core ]; then
 		step mutation "last 'mutation score (of )?[0-9.]+'" \

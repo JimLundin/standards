@@ -50,6 +50,18 @@ step() {
 	line "$name" "$status" "$(eval "$summary \"\$log\"")"
 }
 
+pyrun() {
+	if command -v uv >/dev/null; then
+		uv run --no-project -q --python 3.15 python -I "$@"
+	else
+		python3 -I "$@"
+	fi
+}
+
+exceptions() {
+	pyrun "$(native "$standards/../exceptions.py")" "$@"
+}
+
 full() {
 	[ "$profile" = full ]
 }

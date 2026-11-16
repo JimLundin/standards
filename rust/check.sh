@@ -51,6 +51,10 @@ if [ ! -e .cargo/mutants.toml ]; then
 		mutation+=(--profile test)
 	fi
 fi
+while IFS= read -r glob; do
+	mutation+=(--exclude "$glob")
+done < <(exceptions globs mutation)
+mapfile -t tracked < <(git ls-files)
 tests=()
 if command -v cargo-nextest >/dev/null; then
 	tests=(nextest run --no-tests=warn --hide-progress-bar)
@@ -65,6 +69,8 @@ else
 	fi
 fi
 
+step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
+	exceptions check rust "$(native "$standards/..")" "${tracked[@]}"
 step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 step lint "last '[0-9]+ previous errors?|Finished'" \
 	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
@@ -75,7 +81,7 @@ if full; then
 		step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
 	fi
 	if command -v cargo-mutants >/dev/null; then
-		step mutation "last '[0-9]+ mutants tested.*'" \
+		step mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \
 			env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
 	else
 		line mutation skip "cargo-mutants not installed"

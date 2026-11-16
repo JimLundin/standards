@@ -1,8 +1,7 @@
 import ast
-import re
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 lazy from collections.abc import Iterator
 
 
@@ -46,9 +45,6 @@ MUTABLE_VALUES = (
     ast.SetComp,
 )
 MUTABLE_CONSTRUCTORS = frozenset({"list", "dict", "set", "bytearray"})
-SUPPRESSION = re.compile(
-    r"#\s*(?:noqa:\s*|ruff:\s*ignore\[)(?P<codes>[A-Z0-9, ]+)"
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,18 +154,17 @@ def mutable_globals(tree: ast.Module) -> Iterator[Finding]:
     )
 
 
-def suppressed(finding: Finding, lines: tuple[str, ...]) -> bool:
-    match = SUPPRESSION.search(lines[finding.line - 1])
-    if match is None:
-        return False
-    listed = {code.strip() for code in match["codes"].split(",")}
-    return finding.rule.code in listed
+def skipped(
+    finding: Finding, path: str, skips: tuple[tuple[str, str], ...]
+) -> bool:
+    return any(
+        code == finding.rule.code and PurePosixPath(path).full_match(glob)
+        for code, glob in skips
+    )
 
 
-def check(path: Path) -> tuple[Finding, ...]:
-    source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
-    lines = tuple(source.splitlines())
+def check(path: str, skips: tuple[tuple[str, str], ...]) -> tuple[Finding, ...]:
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
     findings = (
         *unfrozen_dataclasses(tree),
         *mutable_annotations(tree),
@@ -178,7 +173,7 @@ def check(path: Path) -> tuple[Finding, ...]:
     return tuple(
         finding
         for finding in sorted(findings, key=lambda f: (f.line, f.column))
-        if not suppressed(finding, lines)
+        if not skipped(finding, path, skips)
     )
 
 
@@ -188,19 +183,28 @@ def describe(path: str, finding: Finding) -> str:
     return f"{location}: {rule.code} {finding.message}"
 
 
-def report(paths: tuple[str, ...]) -> tuple[str, ...]:
+def report(arguments: tuple[str, ...]) -> tuple[str, ...]:
+    skips = tuple(
+        (code, glob)
+        for argument in arguments
+        if argument.startswith("--skip=")
+        for code, _, glob in (argument.removeprefix("--skip=").partition(":"),)
+    )
+    paths = tuple(
+        argument for argument in arguments if not argument.startswith("--")
+    )
     return tuple(
         describe(path, finding)
         for path in paths
-        for finding in check(Path(path))
+        for finding in check(path, skips)
     )
 
 
 def main() -> int:
-    lines = report(tuple(sys.argv[1:]))  # ruff: ignore[banned-api]
+    lines = report(tuple(sys.argv[1:]))
     summary = f"Found {len(lines)} issues" if lines else "All checks passed"
     output = "".join(f"{line}\n" for line in (*lines, summary))
-    _ = sys.stdout.write(output)  # ruff: ignore[banned-api]
+    _ = sys.stdout.write(output)
     return 1 if lines else 0
 
 

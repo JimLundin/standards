@@ -12,6 +12,13 @@ if grep -qs '^\[tool\.ruff' pyproject.toml; then
 	ruff_config=()
 fi
 mapfile -t sources < <(git ls-files '*.py' '*.pyw')
+mapfile -t tracked < <(git ls-files)
+ruff_exceptions=$(exceptions ruff-config)
+if [ -n "$ruff_exceptions" ]; then
+	ruff_config+=(--config "$ruff_exceptions")
+fi
+mapfile -t immutability_skips < <(exceptions immutability-args)
+mapfile -t unused_sources < <(exceptions without unused "${sources[@]}")
 
 mutants() {
 	plain "$1" | tr '\r' '\n' | grep -oE '(🎉|🙁) [0-9]+' | tail -2 |
@@ -22,11 +29,13 @@ mutants() {
 mutate() {
 	uv run --frozen -q mutmut run || return
 	local remaining
-	remaining=$(uv run --frozen -q mutmut results)
+	remaining=$(uv run --frozen -q mutmut results | exceptions filter-mutmut)
 	echo "$remaining"
 	[ -z "$remaining" ]
 }
 
+step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
+	exceptions check python "$(native "$standards/..")" "${tracked[@]}"
 step format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q ruff@latest format "${ruff_config[@]}" --check .
 step lint "last 'Found [0-9]+ errors?|All checks passed'" \
@@ -66,8 +75,11 @@ else
 fi
 step immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	uv run --no-project -q --python 3.15 python -I "$(native "$standards/immutability.py")" \
-	"${sources[@]}"
-step unused "count ': unused ' findings" uvx -q --python 3.15 vulture "${sources[@]}"
+	"${immutability_skips[@]}" "${sources[@]}"
+if ((${#unused_sources[@]} > 0)); then
+	step unused "count ': unused ' findings" \
+		uvx -q --python 3.15 vulture "${unused_sources[@]}"
+fi
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
 	imports=(uvx -q --from import-linter lint-imports)
 	if [ -f uv.lock ]; then
