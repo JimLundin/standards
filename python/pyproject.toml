@@ -76,6 +76,16 @@ split-on-trailing-comma = false
 "random.shuffle".msg = "nondeterministic: inject a random.Random"
 "random.getrandbits".msg = "nondeterministic: inject a random.Random"
 "random.seed".msg = "nondeterministic: inject a random.Random"
+"typing.TypeVar".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing.ParamSpec".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing.TypeVarTuple".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing.Generic".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing.TypeAlias".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing_extensions.TypeVar".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing_extensions.ParamSpec".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing_extensions.TypeVarTuple".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing_extensions.Generic".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
+"typing_extensions.TypeAlias".msg = "use type parameters: def f[T](...), class C[T], type X = ..."
 
 [tool.uv]
 required-version = ">=0.13"
