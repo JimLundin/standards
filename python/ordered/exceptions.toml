@@ -7,3 +7,18 @@ reason = "a single pure module with no shell, so there are no layers"
 path = "src/ordered/_ordered.py"
 rule = "meta-class-abc-meta"
 reason = "ABC types its __slots__ as tuple[()], so basedpyright rejects a slotted subclass such as FrozenOrderedSet; ABCMeta has no slots"
+
+[[exception]]
+path = "src/ordered/_ordered.py"
+rule = "IMM005"
+reason = "the set operators take AbstractSet to keep Set's signature"
+
+[[exception]]
+path = "src/ordered/_ordered.py"
+rule = "IMM006"
+reason = "the implementation of the names: FrozenList.__add__ keeps tuple's signature and the frozen types store a MappingProxyType"
+
+[[exception]]
+path = "tests/test_ordered.py"
+rule = "IMM004"
+reason = "the tests compare the ordered types against Python's own sets"

@@ -18,8 +18,8 @@ words = st.lists(st.text(max_size=2), max_size=8)
 pairs = st.lists(st.tuples(st.text(max_size=2), st.integers()), max_size=8)
 
 
-def unique(values: Sequence[str]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(values))
+def unique(values: Sequence[str]) -> FrozenList[str]:
+    return FrozenList(dict.fromkeys(values))
 
 
 @given(words)
