@@ -44,12 +44,7 @@ def test_request_for_other_commands() -> None:
     assert request(("globs", "mutation"), Inputs()) == Request(
         FrozenList(("exceptions.toml",))
     )
-    for command in (
-        "core-libraries",
-        "shell-packages",
-        "stryker-mutate",
-        "biome-plugins",
-    ):
+    for command in ("core-libraries", "stryker-mutate", "biome-plugins"):
         assert request((command, "x.json"), Inputs()) == Request(
             FrozenList(("exceptions.toml", "x.json"))
         )
@@ -301,19 +296,3 @@ def test_core_libraries_need_a_library_when_there_are_binaries() -> None:
     assert core_libraries(
         package("app", ("bin",)), package("core", ("lib",))
     ) == Outcome(FrozenList(("core",)))
-
-
-def test_shell_packages_list_declared_shell_ids() -> None:
-    texts = {
-        "m.json": metadata(
-            package("core", ("lib",)),
-            package("io", ("lib",), layer="shell"),
-            package("bad", ("lib",), layer="Shell"),
-            package("app", ("bin",), layer="shell"),
-        )
-    }
-    assert lines(run(("shell-packages", "m.json"), inputs(texts))) == (
-        "path+file:///C:/work/io#0.1.0",
-        "path+file:///C:/work/app#0.1.0",
-    )
-    assert lines(run(("shell-packages", "m.json"), inputs({}))) == ()

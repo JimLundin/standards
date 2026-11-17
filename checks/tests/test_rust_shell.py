@@ -1,134 +1,145 @@
 import json
-lazy from collections.abc import Sequence
+lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.rust_shell import Function, function, functions, request, run
+from checks.core.rust_shell import (
+    Failure,
+    Function,
+    measured,
+    records,
+    request,
+    roots,
+    roots_request,
+    run,
+    targets,
+)
 from checks.core.values import Inputs, Request, parse_json
 
 MOVE = "; move the decisions into the core"
-CORE = "path+file:///C:/work/core#0.1.0"
-SHELL = "path+file:///C:/work/io#0.1.0"
+ROOT = "C:\\work"
 
 
-def message(
-    path: str,
-    line: int,
-    score: int,
-    kind: str = "bin",
-    code: str = "clippy::cognitive_complexity",
-) -> str:
+def target(path: str, *kinds: str) -> Mapping[str, object]:
+    return {"kind": list(kinds), "src_path": f"{ROOT}\\{path}"}
+
+
+def package(
+    name: str, *items: Mapping[str, object], layer: str | None = None
+) -> Mapping[str, object]:
+    return {
+        "name": name,
+        "targets": list(items),
+        "metadata": None if layer is None else {"standards": {"layer": layer}},
+    }
+
+
+APP = package(
+    "app",
+    target("src/main.rs", "bin"),
+    target("src/lib.rs", "lib"),
+    target("tests/it.rs", "test"),
+    target("build.rs", "custom-build"),
+)
+IO = package("io", target("io/src/lib.rs", "rlib"), layer="shell")
+METADATA = json.dumps({"workspace_root": ROOT, "packages": [APP, IO]})
+
+
+def record(root: str, path: str, line: int, decisions: int) -> str:
     return json.dumps({
-        "reason": "compiler-message",
-        "package_id": CORE,
-        "target": {"kind": [kind]},
-        "message": {
-            "code": {"code": code},
-            "message": f"the function has a cognitive complexity of ({score}/0)",
-            "spans": [
-                {
-                    "file_name": "other.rs",
-                    "line_start": 99,
-                    "is_primary": False,
-                },
-                {"file_name": path, "line_start": line, "is_primary": True},
-            ],
-        },
+        "root": f"{ROOT}\\{root}",
+        "path": f"{ROOT}\\{path}",
+        "function": f"f{line}",
+        "line": line,
+        "decisions": decisions,
     })
 
 
-def in_package(record: str, package: str) -> str:
-    return json.dumps({**parse_json(record), "package_id": package})
+def shell(path: str, line: int, decisions: int) -> str:
+    return record("src/main.rs", path, line, decisions)
+
+
+def core(path: str, line: int, decisions: int) -> str:
+    return record("src/lib.rs", path, line, decisions)
+
+
+def failure(path: str, error: str) -> str:
+    return json.dumps({
+        "root": f"{ROOT}\\src\\main.rs",
+        "path": path,
+        "error": error,
+    })
 
 
 def outcome(
-    *records: str, skips: Sequence[str] = (), shells: Sequence[str] = ()
+    *lines: str, skips: Sequence[str] = ()
 ) -> tuple[FrozenList[str], int, str]:
-    texts = FrozenOrderedDict({"c.jsonl": "\n".join(records)})
-    packages = (f"--package={shell}" for shell in shells)
-    result = run((*skips, *packages, "c.jsonl", "files.txt"), Inputs(texts))
+    texts = FrozenOrderedDict({"m.json": METADATA, "d.jsonl": "\n".join(lines)})
+    result = run((*skips, "m.json", "d.jsonl", "files.txt"), Inputs(texts))
     return result.lines, result.status, result.writes["files.txt"]
 
 
-def test_request_reads_the_messages() -> None:
-    assert request(("--skip=x", "c.jsonl", "files.txt"), Inputs()) == Request(
-        FrozenList(("c.jsonl",))
+def test_requests_read_the_metadata_and_the_measures() -> None:
+    assert roots_request(("m.json",), Inputs()) == Request(
+        FrozenList(("m.json",))
+    )
+    assert request(
+        ("--skip=x", "m.json", "d.jsonl", "files.txt"), Inputs()
+    ) == Request(FrozenList(("m.json", "d.jsonl")))
+
+
+def test_binaries_libraries_and_shell_packages_are_measured() -> None:
+    assert targets(parse_json(METADATA)) == {
+        f"{ROOT}\\src/main.rs": True,
+        f"{ROOT}\\src/lib.rs": False,
+        f"{ROOT}\\io/src/lib.rs": True,
+    }
+    assert roots(
+        ("m.json",), Inputs(FrozenOrderedDict({"m.json": METADATA}))
+    ).lines == (
+        f"{ROOT}\\src/main.rs",
+        f"{ROOT}\\src/lib.rs",
+        f"{ROOT}\\io/src/lib.rs",
+    )
+    assert roots(("m.json",), Inputs()).lines == ()
+
+
+def test_measures_are_read_relative_to_the_workspace() -> None:
+    roots_of = {f"{ROOT}\\src/main.rs": True}
+    assert measured(shell("src/a.rs", 3, 2), roots_of, ROOT) == Function(
+        "src/a.rs", 3, "f3", 2, in_shell=True
+    )
+    assert measured(core("src/a.rs", 3, 2), roots_of, ROOT) == Function(
+        "src/a.rs", 3, "f3", 2, in_shell=False
+    )
+    assert measured(
+        failure("C:/work/src/../x.rs", "line 1: expected `)`"), roots_of, ROOT
+    ) == Failure("x.rs", "line 1: expected `)`")
+    assert measured(failure("/elsewhere/x.rs", "gone"), roots_of, ROOT) == (
+        Failure("/elsewhere/x.rs", "gone")
     )
 
 
-def test_function_reads_cognitive_complexity_messages() -> None:
-    assert function(message("src/main.rs", 3, 4), ()) == Function(
-        "src/main.rs", 3, 4, in_shell=True
-    )
-    assert function(message("src/lib.rs", 5, 2, kind="lib"), ()) == Function(
-        "src/lib.rs", 5, 2, in_shell=False
-    )
-    assert function(message("a.rs", 1, 1, code="clippy::other"), ()) is None
-    assert (
-        function(
-            json.dumps({
-                "reason": "compiler-message",
-                "message": {"code": None},
-            }),
-            (),
-        )
-        is None
-    )
-    no_score = json.dumps({
-        "message": {
-            "code": {"code": "clippy::cognitive_complexity"},
-            "message": "x",
-            "spans": [],
-        }
-    })
-    assert function(no_score, ()) is None
-    no_span = json.dumps({
-        "target": {"kind": ["bin"]},
-        "message": {
-            "code": {"code": "clippy::cognitive_complexity"},
-            "message": "the function has a cognitive complexity of (2/0)",
-            "spans": [
-                {"file_name": "a.rs", "line_start": 1, "is_primary": False}
-            ],
-        },
-    })
-    assert function(no_span, ()) is None
-
-
-def test_functions_skip_other_lines_and_duplicates() -> None:
+def test_records_skip_other_lines_and_duplicates() -> None:
     lines = (
-        "Checking demo",
-        message("src/main.rs", 1, 2),
-        message("src/main.rs", 1, 2),
-        message("src/lib.rs", 1, 3, kind="lib"),
+        "warning: something",
+        shell("src/main.rs", 1, 1),
+        shell("src/main.rs", 1, 1),
+        core("src/lib.rs", 1, 2),
     )
-    assert functions(lines, ()) == (
-        Function("src/main.rs", 1, 2, in_shell=True),
-        Function("src/lib.rs", 1, 3, in_shell=False),
-    )
-
-
-def test_declared_shell_libraries_are_shell() -> None:
-    shell_lib = in_package(message("io/src/lib.rs", 2, 3, kind="lib"), SHELL)
-    core_lib = message("src/lib.rs", 2, 3, kind="lib")
-    assert function(shell_lib, (SHELL,)) == Function(
-        "io/src/lib.rs", 2, 3, in_shell=True
-    )
-    assert function(core_lib, (SHELL,)) == Function(
-        "src/lib.rs", 2, 3, in_shell=False
-    )
-    assert function(shell_lib, ()) == Function(
-        "io/src/lib.rs", 2, 3, in_shell=False
+    assert records(lines, parse_json(METADATA)) == (
+        Function("src/main.rs", 1, "f1", 1, in_shell=True),
+        Function("src/lib.rs", 1, "f1", 2, in_shell=False),
     )
 
 
 def test_a_thin_shell_passes() -> None:
     lines, status, files = outcome(
-        message("src/main.rs", 1, 3),
-        message("src/io.rs", 1, 1),
-        message("src/lib.rs", 1, 9, kind="lib"),
-        message("src/shared.rs", 1, 1, kind="lib"),
-        message("src/shared.rs", 5, 1),
+        shell("src/main.rs", 1, 2),
+        shell("src/io.rs", 1, 0),
+        core("src/lib.rs", 1, 8),
+        core("src/shared.rs", 1, 0),
+        shell("src/shared.rs", 5, 0),
     )
     assert lines == ("shell makes 2 of 10 decisions",)
     assert status == 0
@@ -137,65 +148,61 @@ def test_a_thin_shell_passes() -> None:
 
 def test_shell_files_include_shell_libraries() -> None:
     lines, status, files = outcome(
-        in_package(message("io/src/lib.rs", 1, 2, kind="lib"), SHELL),
-        in_package(message("io/src/main.rs", 1, 2), SHELL),
-        in_package(message("io/src/both.rs", 1, 1, kind="lib"), SHELL),
-        in_package(message("io/src/both.rs", 1, 1), SHELL),
-        message("src/shared.rs", 1, 1, kind="lib"),
-        in_package(message("src/shared.rs", 1, 1, kind="lib"), SHELL),
-        message("src/lib.rs", 1, 9, kind="lib"),
-        shells=(SHELL,),
+        record("io/src/lib.rs", "io/src/lib.rs", 1, 1),
+        record("io/src/lib.rs", "src/shared.rs", 1, 0),
+        core("src/shared.rs", 1, 0),
+        core("src/lib.rs", 1, 9),
     )
-    assert lines == ("shell makes 2 of 10 decisions",)
+    assert lines == ("shell makes 1 of 10 decisions",)
     assert status == 0
-    assert files == "io/src/lib.rs\nio/src/main.rs\nio/src/both.rs\n"
-
-
-def test_complex_shell_library_functions_fail() -> None:
-    lines, status, _ = outcome(
-        in_package(message("io/src/lib.rs", 4, 4, kind="lib"), SHELL),
-        message("src/lib.rs", 4, 4, kind="lib"),
-        shells=(SHELL,),
-    )
-    assert lines == (
-        f"io/src/lib.rs:4: a shell function has cognitive complexity 4 (limit 3){MOVE}",
-        "Found 1 issues",
-    )
-    assert status == 1
+    assert files == "io/src/lib.rs\n"
 
 
 def test_no_shell() -> None:
-    assert outcome(message("src/lib.rs", 1, 3, kind="lib")) == (
-        ("no shell",),
-        0,
-        "",
-    )
+    assert outcome(core("src/lib.rs", 1, 2)) == (("no shell",), 0, "")
     assert outcome() == (("no shell",), 0, "")
 
 
 def test_complex_shell_functions_fail() -> None:
     lines, status, _ = outcome(
-        message("src/main.rs", 7, 4), message("src/main.rs", 9, 3)
+        shell("src/main.rs", 7, 3),
+        shell("src/main.rs", 9, 2),
+        record("io/src/lib.rs", "io/src/lib.rs", 4, 3),
+        core("src/lib.rs", 4, 9),
     )
     assert lines == (
-        f"src/main.rs:7: a shell function has cognitive complexity 4 (limit 3){MOVE}",
-        "Found 1 issues",
+        f"src/main.rs:7: the shell function `f7` makes 3 decisions (limit 2){MOVE}",
+        f"io/src/lib.rs:4: the shell function `f4` makes 3 decisions (limit 2){MOVE}",
+        "Found 2 issues",
     )
     assert status == 1
 
 
 def test_complex_shell_functions_can_be_waived() -> None:
     lines, status, _ = outcome(
-        message("src/main.rs", 7, 4), skips=("--skip=src/*.rs",)
+        shell("src/main.rs", 7, 3), skips=("--skip=src/*.rs",)
     )
     assert lines == ("shell makes 3 of 3 decisions",)
     assert status == 0
 
 
+def test_unmeasured_files_fail_unless_waived() -> None:
+    broken = failure(f"{ROOT}\\src\\gen.rs", "No such file")
+    lines, status, _ = outcome(broken, shell("src/main.rs", 1, 1))
+    assert lines == (
+        "src/gen.rs: cannot be measured: No such file",
+        "Found 1 issues",
+    )
+    assert status == 1
+    assert outcome(broken, skips=("--skip=src/gen.rs",))[:2] == (
+        ("no shell",),
+        0,
+    )
+
+
 def test_the_shell_share_applies_from_twenty_decisions() -> None:
-    shell = (message("src/main.rs", line, 3) for line in range(3))
-    core = message("src/lib.rs", 1, 16, kind="lib")
-    lines, status, _ = outcome(*shell, core)
+    shell_lines = (shell("src/main.rs", line, 2) for line in range(3))
+    lines, status, _ = outcome(*shell_lines, core("src/lib.rs", 1, 15))
     assert lines == (
         f"Cargo.toml: the shell makes 6 of 21 decisions (limit 25%){MOVE}",
         "Found 1 issues",
@@ -204,24 +211,22 @@ def test_the_shell_share_applies_from_twenty_decisions() -> None:
 
 
 def test_the_shell_share_boundaries() -> None:
-    def share(functions: int, core_score: int) -> FrozenList[str]:
-        shell = tuple(
-            message("src/main.rs", line, 2) for line in range(functions)
+    def share(functions: int, core_decisions: int) -> FrozenList[str]:
+        shell_lines = tuple(
+            shell("src/main.rs", line, 1) for line in range(functions)
         )
-        return outcome(
-            *shell, message("src/lib.rs", 1, core_score, kind="lib")
-        )[0]
+        return outcome(*shell_lines, core("src/lib.rs", 1, core_decisions))[0]
 
-    assert share(5, 16) == ("shell makes 5 of 20 decisions",)
-    assert share(6, 15) == (
+    assert share(5, 15) == ("shell makes 5 of 20 decisions",)
+    assert share(6, 14) == (
         f"Cargo.toml: the shell makes 6 of 20 decisions (limit 25%){MOVE}",
         "Found 1 issues",
     )
-    assert share(6, 14) == ("shell makes 6 of 19 decisions",)
+    assert share(6, 13) == ("shell makes 6 of 19 decisions",)
 
 
 def test_the_shell_share_can_be_waived() -> None:
-    shell = (message("src/main.rs", line, 3) for line in range(10))
-    lines, status, _ = outcome(*shell, skips=("--skip=Cargo.toml",))
+    shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
+    lines, status, _ = outcome(*shell_lines, skips=("--skip=Cargo.toml",))
     assert lines == ("shell makes 20 of 20 decisions",)
     assert status == 0

@@ -13,6 +13,7 @@ TOOLS = FrozenOrderedDict({
     "immutability": (immutability.request, immutability.run),
     "purity": (purity.request, purity.run),
     "rust-api": (rust_api.request, rust_api.run),
+    "rust-roots": (rust_shell.roots_request, rust_shell.roots),
     "rust-shell": (rust_shell.request, rust_shell.run),
 })
 

@@ -37,12 +37,7 @@ SHELL = '`[package.metadata.standards] layer = "shell"`'
 LAYER = "package.metadata.standards.layer"
 USE = 'use "core" or "shell"'
 CORELESS = "has binaries but no no_std library to hold the pure core"
-NAMED = FrozenOrderedSet((
-    "core-libraries",
-    "shell-packages",
-    "stryker-mutate",
-    "biome-plugins",
-))
+NAMED = FrozenOrderedSet(("core-libraries", "stryker-mutate", "biome-plugins"))
 
 
 def report(issues: Sequence[Issue]) -> Outcome:
@@ -319,21 +314,9 @@ def core_libraries(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return listing(libraries)
 
 
-def shell_packages(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    metadata = parse_json(inputs.texts.get(arguments[0]))
-    return listing(
-        FrozenList(
-            str(package.get("id"))
-            for package in packages_of(metadata)
-            if is_shell(package)
-        )
-    )
-
-
 COMMANDS = FrozenOrderedDict({
     "check": check,
     "core-libraries": core_libraries,
-    "shell-packages": shell_packages,
     "ruff-config": ruff_config,
     "immutability-args": immutability_args,
     "purity-args": purity_args,

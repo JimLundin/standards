@@ -36,6 +36,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "immutability",
         "purity",
         "rust-api",
+        "rust-roots",
         "rust-shell",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(
@@ -117,23 +118,35 @@ def test_main_writes_what_the_core_returns(
     monkeypatch: pytest.MonkeyPatch,
     capsysbinary: pytest.CaptureFixture[bytes],
 ) -> None:
-    record = {
-        "target": {"kind": ["bin"]},
-        "message": {
-            "code": {"code": "clippy::cognitive_complexity"},
-            "message": "the function has a cognitive complexity of (2/0)",
-            "spans": [
+    root = project.as_posix()
+    _ = (project / "m.json").write_text(
+        json.dumps({
+            "workspace_root": root,
+            "packages": [
                 {
-                    "file_name": "src/main.rs",
-                    "line_start": 1,
-                    "is_primary": True,
+                    "targets": [
+                        {"kind": ["bin"], "src_path": f"{root}/src/main.rs"}
+                    ]
                 }
             ],
-        },
+        }),
+        encoding="utf-8",
+    )
+    record = {
+        "root": f"{root}/src/main.rs",
+        "path": f"{root}/src/main.rs",
+        "function": "main",
+        "line": 1,
+        "decisions": 1,
     }
-    _ = (project / "c.jsonl").write_text(json.dumps(record), encoding="utf-8")
+    _ = (project / "d.jsonl").write_text(json.dumps(record), encoding="utf-8")
     status, out = invoke(
-        monkeypatch, capsysbinary, "rust-shell", "c.jsonl", "files.txt"
+        monkeypatch,
+        capsysbinary,
+        "rust-shell",
+        "m.json",
+        "d.jsonl",
+        "files.txt",
     )
     assert (status, out) == (0, "shell makes 1 of 1 decisions\n")
     assert (project / "files.txt").read_text(
