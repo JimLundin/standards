@@ -7,6 +7,11 @@ from checks.core.exceptions import request, run
 from checks.core.values import Inputs, Outcome, Request
 
 STD = "C:/standards"
+RETIRED = (
+    "`std` is no longer an exception; "
+    'declare `[package.metadata.standards] layer = "shell"`'
+)
+CORELESS = "has binaries but no no_std library to hold the pure core"
 
 
 def entry(path: str, rule: str, reason: str = "r") -> str:
@@ -39,7 +44,12 @@ def test_request_for_other_commands() -> None:
     assert request(("globs", "mutation"), Inputs()) == Request(
         FrozenList(("exceptions.toml",))
     )
-    for command in ("core-libraries", "stryker-mutate", "biome-plugins"):
+    for command in (
+        "core-libraries",
+        "shell-packages",
+        "stryker-mutate",
+        "biome-plugins",
+    ):
         assert request((command, "x.json"), Inputs()) == Request(
             FrozenList(("exceptions.toml", "x.json"))
         )
@@ -99,9 +109,10 @@ def test_check_validates_rust_waivers() -> None:
         "exceptions.toml (src/lib.rs, Bad-Rule): unknown rule for rust",
         "exceptions.toml (src/lib.rs, Worse-Rule): unknown rule for rust",
         "exceptions.toml (gone/**, dead_code): path matches no tracked file",
-        "exceptions.toml (src/lib.rs, std): path matches no Cargo.toml",
+        f"exceptions.toml (src/lib.rs, std): {RETIRED} in src/lib.rs instead",
+        f"exceptions.toml (Cargo.toml, std): {RETIRED} in Cargo.toml instead",
         "exceptions.toml (src/lib.rs, clippy::b): no matching #[expect] attribute; remove the entry",
-        "Found 5 issues",
+        "Found 6 issues",
     )
 
 
@@ -213,46 +224,96 @@ def test_stryker_mutate_adds_waived_globs() -> None:
     )
 
 
-def metadata(*packages: tuple[str, str, Sequence[str]]) -> str:
-    return json.dumps({
-        "workspace_root": "C:\\work",
-        "packages": [
-            {
-                "name": name,
-                "manifest_path": f"C:\\work\\{manifest}",
-                "targets": [{"kind": list(kinds)}],
-            }
-            for name, manifest, kinds in packages
-        ],
-    })
+def package(
+    name: str, kinds: Sequence[str], layer: object = None
+) -> Mapping[str, object]:
+    return {
+        "name": name,
+        "id": f"path+file:///C:/work/{name}#0.1.0",
+        "manifest_path": f"C:\\work\\{name}\\Cargo.toml",
+        "targets": [{"kind": list(kinds)}],
+        "metadata": None if layer is None else {"standards": {"layer": layer}},
+    }
 
 
-def test_core_libraries_list_checked_libraries() -> None:
+def metadata(*packages: Mapping[str, object]) -> str:
+    return json.dumps({"workspace_root": "C:\\work", "packages": packages})
+
+
+def core_libraries(*packages: Mapping[str, object]) -> Outcome:
+    texts = {"m.json": metadata(*packages)}
+    return run(("core-libraries", "m.json"), inputs(texts))
+
+
+def test_undeclared_libraries_are_core() -> None:
+    assert core_libraries(
+        package("core", ("lib",)),
+        package("io", ("rlib",), layer="shell"),
+        package("pure", ("rlib",), layer="core"),
+        package("macros", ("proc-macro",)),
+        package("app", ("bin",)),
+        package("cli", ("lib", "bin"), layer="shell"),
+    ) == Outcome(FrozenList(("core", "pure")))
+
+
+def test_core_libraries_ignore_std_exceptions() -> None:
     texts = {
         "exceptions.toml": entry("io/Cargo.toml", "std"),
-        "m.json": metadata(
-            ("core", "core\\Cargo.toml", ("lib",)),
-            ("io", "io\\Cargo.toml", ("rlib",)),
-            ("macros", "macros\\Cargo.toml", ("proc-macro",)),
-            ("app", "app\\Cargo.toml", ("bin",)),
-        ),
+        "m.json": metadata(package("io", ("lib",))),
     }
-    assert run(("core-libraries", "m.json"), inputs(texts)) == Outcome(
-        FrozenList(("core",))
+    assert lines(run(("core-libraries", "m.json"), inputs(texts))) == ("io",)
+
+
+def test_core_libraries_report_invalid_layers() -> None:
+    assert core_libraries(
+        package("a", ("lib",), layer="Shell"),
+        package("b", ("lib",), layer=1),
+        package("c", ("lib",), layer=["shell"]),
+        package("d", ("lib",)),
+    ) == Outcome(
+        FrozenList((
+            'a/Cargo.toml: package.metadata.standards.layer is "Shell"; use "core" or "shell"',
+            'b/Cargo.toml: package.metadata.standards.layer is 1; use "core" or "shell"',
+            'c/Cargo.toml: package.metadata.standards.layer is ["shell"]; use "core" or "shell"',
+        )),
+        1,
     )
 
 
 def test_core_libraries_need_a_library_when_there_are_binaries() -> None:
-    texts = {"m.json": metadata(("app", "Cargo.toml", ("bin",)))}
-    assert run(("core-libraries", "m.json"), inputs(texts)) == Outcome(
+    assert core_libraries(
+        package("app", ("bin",)), package("cli", ("bin",), layer="core")
+    ) == Outcome(
         FrozenList((
-            "Cargo.toml: has binaries but no no_std library to hold the pure core",
+            f"app/Cargo.toml: {CORELESS}",
+            f"cli/Cargo.toml: {CORELESS}",
         )),
         1,
     )
-    waived = texts | {"exceptions.toml": entry("Cargo.toml", "std")}
-    assert run(("core-libraries", "m.json"), inputs(waived)) == Outcome()
-    library_only = {"m.json": metadata(("lib", "Cargo.toml", ("lib",)))}
-    assert lines(run(("core-libraries", "m.json"), inputs(library_only))) == (
-        "lib",
+    assert core_libraries(
+        package("app", ("bin",)), package("io", ("lib",), layer="shell")
+    ) == Outcome(FrozenList((f"app/Cargo.toml: {CORELESS}",)), 1)
+    assert core_libraries(package("app", ("bin",), layer="shell")) == Outcome()
+    assert (
+        core_libraries(package("app", ("lib", "bin"), layer="shell"))
+        == Outcome()
     )
+    assert core_libraries(
+        package("app", ("bin",)), package("core", ("lib",))
+    ) == Outcome(FrozenList(("core",)))
+
+
+def test_shell_packages_list_declared_shell_ids() -> None:
+    texts = {
+        "m.json": metadata(
+            package("core", ("lib",)),
+            package("io", ("lib",), layer="shell"),
+            package("bad", ("lib",), layer="Shell"),
+            package("app", ("bin",), layer="shell"),
+        )
+    }
+    assert lines(run(("shell-packages", "m.json"), inputs(texts))) == (
+        "path+file:///C:/work/io#0.1.0",
+        "path+file:///C:/work/app#0.1.0",
+    )
+    assert lines(run(("shell-packages", "m.json"), inputs({}))) == ()

@@ -31,10 +31,10 @@ class Function:
     path: str
     line: int
     score: int
-    binary: bool
+    in_shell: bool
 
 
-def function(line: str) -> Function | None:
+def function(line: str, packages: Sequence[str]) -> Function | None:
     record = parse_json(line)
     message = table(record.get("message"))
     if table(message.get("code")).get("code") != LINT:
@@ -52,17 +52,19 @@ def function(line: str) -> Function | None:
         str(spans[0].get("file_name")),
         int(str(spans[0].get("line_start"))),
         int(score[1]),
-        "bin" in kinds,
+        "bin" in kinds or record.get("package_id") in packages,
     )
 
 
-def functions(lines: Sequence[str]) -> FrozenList[Function]:
-    found = (function(line) for line in lines if line.startswith("{"))
+def functions(
+    lines: Sequence[str], packages: Sequence[str]
+) -> FrozenList[Function]:
+    found = (function(line, packages) for line in lines if line.startswith("{"))
     return FrozenList(dict.fromkeys(item for item in found if item is not None))
 
 
 def shell_functions(items: Sequence[Function]) -> FrozenList[Function]:
-    return FrozenList(item for item in items if item.binary)
+    return FrozenList(item for item in items if item.in_shell)
 
 
 def decisions(items: Sequence[Function]) -> int:
@@ -75,7 +77,7 @@ def findings(
     complex_functions = FrozenList(
         f"{item.path}:{item.line}: {COMPLEX} {item.score} (limit {LIMIT}){MOVE}"
         for item in items
-        if item.binary
+        if item.in_shell
         and item.score > LIMIT
         and not any(matches(item.path, glob) for glob in skips)
     )
@@ -94,10 +96,12 @@ def findings(
 
 
 def shell_files(items: Sequence[Function]) -> FrozenList[str]:
-    core = FrozenOrderedSet(item.path for item in items if not item.binary)
+    core = FrozenOrderedSet(item.path for item in items if not item.in_shell)
     return FrozenList(
         dict.fromkeys(
-            item.path for item in items if item.binary and item.path not in core
+            item.path
+            for item in items
+            if item.in_shell and item.path not in core
         )
     )
 
@@ -105,8 +109,8 @@ def shell_files(items: Sequence[Function]) -> FrozenList[str]:
 def summary(items: Sequence[Function], issues: Sequence[str]) -> str:
     if issues:
         return f"Found {len(issues)} issues"
-    if not any(item.binary for item in items):
-        return "no binaries"
+    if not any(item.in_shell for item in items):
+        return "no shell"
     shell = decisions(shell_functions(items))
     return f"shell makes {shell} of {decisions(items)} decisions"
 
@@ -117,7 +121,10 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     messages, files = operands(arguments)
-    items = functions(FrozenList(inputs.texts[messages].splitlines()))
+    items = functions(
+        FrozenList(inputs.texts[messages].splitlines()),
+        options(arguments, "--package="),
+    )
     issues = findings(items, options(arguments, "--skip="))
     return Outcome(
         FrozenList((*issues, summary(items, issues))),

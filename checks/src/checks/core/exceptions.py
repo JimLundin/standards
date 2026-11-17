@@ -18,6 +18,7 @@ from checks.core.values import (
     Request,
     absolute,
     entries,
+    lookup,
     matches,
     normalized,
     parse_json,
@@ -31,6 +32,17 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 LIBRARY_KINDS = FrozenOrderedSet(("lib", "rlib"))
+LAYERS = FrozenOrderedSet(("core", "shell"))
+SHELL = '`[package.metadata.standards] layer = "shell"`'
+LAYER = "package.metadata.standards.layer"
+USE = 'use "core" or "shell"'
+CORELESS = "has binaries but no no_std library to hold the pure core"
+NAMED = FrozenOrderedSet((
+    "core-libraries",
+    "shell-packages",
+    "stryker-mutate",
+    "biome-plugins",
+))
 
 
 def report(issues: Sequence[Issue]) -> Outcome:
@@ -53,14 +65,16 @@ def waiver_issues(
         matched = FrozenList(
             file for file in snapshot.files if matches(file, waiver.path)
         )
-        if not rule_kind:
+        if language == "rust" and waiver.rule == "std":
+            message = (
+                "`std` is no longer an exception; "
+                f"declare {SHELL} in {waiver.path} instead"
+            )
+            issues += (Issue(where, message),)
+        elif not rule_kind:
             issues += (Issue(where, f"unknown rule for {language}"),)
         elif rule_kind != "drift" and not matched:
             issues += (Issue(where, "path matches no tracked file"),)
-        elif rule_kind == "std" and not any(
-            PurePosixPath(file).name == "Cargo.toml" for file in matched
-        ):
-            issues += (Issue(where, "path matches no Cargo.toml"),)
         elif rule_kind == "attribute" and not any(
             (file, waiver.rule) in used_attributes(snapshot.project)
             for file in matched
@@ -254,29 +268,72 @@ def manifest(root: str, package: Mapping[str, object]) -> str:
     return path.relative_to(posix(root)).as_posix()
 
 
+def layer(package: Mapping[str, object]) -> object:
+    declared = lookup(package, "metadata.standards.layer")
+    return "core" if declared is None else declared
+
+
+def valid(declared: object) -> bool:
+    return isinstance(declared, str) and declared in LAYERS
+
+
+def is_shell(package: Mapping[str, object]) -> bool:
+    return layer(package) == "shell"
+
+
+def packages_of(
+    metadata: Mapping[str, object],
+) -> FrozenList[Mapping[str, object]]:
+    return FrozenList(table(item) for item in entries(metadata.get("packages")))
+
+
+def layer_issues(
+    root: str, packages: Sequence[Mapping[str, object]]
+) -> FrozenList[str]:
+    return FrozenList(
+        f"{manifest(root, package)}: {LAYER} is {json.dumps(layer(package))}; {USE}"
+        for package in packages
+        if not valid(layer(package))
+    )
+
+
 def core_libraries(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    waivers = waivers_of(inputs)
     metadata = parse_json(inputs.texts.get(arguments[0]))
     root = str(metadata.get("workspace_root"))
-    packages = FrozenList(
-        table(item) for item in entries(metadata.get("packages"))
-    )
+    packages = packages_of(metadata)
     libraries = FrozenList(
         str(package.get("name"))
         for package in packages
-        if target_kinds(package) & LIBRARY_KINDS
-        and not waived(waivers, manifest(root, package), "std")
+        if target_kinds(package) & LIBRARY_KINDS and not is_shell(package)
     )
-    binaries = any("bin" in target_kinds(package) for package in packages)
-    if binaries and not libraries and not waived(waivers, "Cargo.toml", "std"):
-        message = "has binaries but no no_std library to hold the pure core"
-        return Outcome(FrozenList((f"Cargo.toml: {message}",)), 1)
+    coreless = FrozenList(
+        f"{manifest(root, package)}: {CORELESS}"
+        for package in packages
+        if not libraries
+        and "bin" in target_kinds(package)
+        and not is_shell(package)
+    )
+    issues = (*layer_issues(root, packages), *coreless)
+    if issues:
+        return Outcome(FrozenList(issues), 1)
     return listing(libraries)
+
+
+def shell_packages(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    metadata = parse_json(inputs.texts.get(arguments[0]))
+    return listing(
+        FrozenList(
+            str(package.get("id"))
+            for package in packages_of(metadata)
+            if is_shell(package)
+        )
+    )
 
 
 COMMANDS = FrozenOrderedDict({
     "check": check,
     "core-libraries": core_libraries,
+    "shell-packages": shell_packages,
     "ruff-config": ruff_config,
     "immutability-args": immutability_args,
     "purity-args": purity_args,
@@ -295,11 +352,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
         language, standards, *files = rest
         shared = (f"{standards}/{path}" for path in STANDARD_FILES[language])
         return Request(FrozenList((*project_paths(language, files), *shared)))
-    named = (
-        FrozenList((rest[0],))
-        if command in {"core-libraries", "stryker-mutate", "biome-plugins"}
-        else FrozenList()
-    )
+    named = FrozenList((rest[0],)) if command in NAMED else FrozenList()
     return Request(
         FrozenList((EXCEPTIONS, *named)), stdin=command == "filter-mutmut"
     )

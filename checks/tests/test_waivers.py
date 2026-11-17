@@ -86,7 +86,7 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
         ("python", "mutation", "mutation"),
         ("rust", "mutation", "mutation"),
         ("typescript", "mutation", "mutation"),
-        ("rust", "std", "std"),
+        ("rust", "std", "attribute"),
         ("rust", "api", "api"),
         ("rust", "shell", "shell"),
         ("python", "std", "ruff"),

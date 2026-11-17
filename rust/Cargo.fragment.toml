@@ -1,3 +1,7 @@
+# A package is the pure core unless it declares itself the shell:
+# [package.metadata.standards]
+# layer = "shell"
+
 [lints.rust]
 warnings = "deny"
 unsafe_code = "deny"

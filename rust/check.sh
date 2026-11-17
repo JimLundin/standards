@@ -64,10 +64,12 @@ ending() {
 metadata=$(native "$logs/metadata.json")
 listed=1
 libraries=()
+shells=()
 if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; then
 	listing=$(exceptions core-libraries "$metadata")
 	listed=$?
 	mapfile -t libraries < <(grep . <<<"$listing")
+	mapfile -t shells < <(exceptions shell-packages "$metadata")
 fi
 
 core() {
@@ -115,8 +117,9 @@ api() {
 
 shell() {
 	local target skips=() targets=(--bins)
-	if ! grep -qE '"kind":\[[^]]*"bin"' "$logs/metadata.json"; then
-		echo "no binaries"
+	if ! grep -qE '"kind":\[[^]]*"bin"' "$logs/metadata.json" &&
+		((${#shells[@]} == 0)); then
+		echo "no shell"
 		return
 	fi
 	if grep -qE '"kind":\[[^]]*"r?lib"' "$logs/metadata.json"; then
@@ -131,7 +134,7 @@ shell() {
 	while IFS= read -r glob; do
 		skips+=("--skip=$glob")
 	done < <(exceptions globs shell)
-	checks rust-shell "${skips[@]}" \
+	checks rust-shell "${skips[@]}" "${shells[@]/#/--package=}" \
 		"$(native "$logs/complexity.jsonl")" "$(native "$logs/shell-files.txt")"
 }
 
@@ -156,7 +159,7 @@ step lint "last '[0-9]+ previous errors?|Finished'" \
 	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
 step core ending core
 step api "last 'Found [0-9]+ issues|All checks passed|no libraries'" api
-step shell "last 'Found [0-9]+ issues|shell makes .*|no binaries'" shell
+step shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
 step test "summed 'passed|failed'" "${cargo[@]}" "${tests[@]}"
 if full; then
 	if [ "${tests[0]}" = nextest ] &&
