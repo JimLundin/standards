@@ -32,12 +32,14 @@ def invoke(
 
 def test_tools_dispatch_to_each_tool() -> None:
     assert tuple(TOOLS) == (
+        "cache-keys",
         "exceptions",
         "immutability",
         "purity",
         "rust-api",
         "rust-roots",
         "rust-shell",
+        "scope",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(
         FrozenList(("a.py",))

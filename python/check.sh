@@ -4,8 +4,10 @@ set -uo pipefail
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
 config="$standards/pyproject.toml"
-case ${1:-} in fast | full) profile=$1 && shift ;; esac
-cd "${1:-.}" || exit 2
+arguments "$@"
+cd "$project" || exit 2
+begin python
+scope
 
 ruff_config=(--config "$config")
 if grep -qs '^\[tool\.ruff' pyproject.toml; then
@@ -41,7 +43,12 @@ step format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q ruff@latest format "${ruff_config[@]}" --check .
 step lint "last 'Found [0-9]+ errors?|All checks passed'" \
 	uvx -q ruff@latest check "${ruff_config[@]}" .
-if [ -f uv.lock ]; then
+if [ -f uv.lock ] && ! builds; then
+	unbuilt types
+	if at_least step; then
+		unbuilt test
+	fi
+elif [ -f uv.lock ]; then
 	environment=$(uv run --frozen -q python -c 'import sys; print(sys.executable)')
 	types_config=pyproject.toml
 	if ! grep -qs '^\[tool\.basedpyright\]' pyproject.toml; then
@@ -66,13 +73,15 @@ print(json.dumps({**config, "extraPaths": sys.argv[2:]}))' \
 			python -m coverage run -m pytest -q "${thorough[@]}"
 		step coverage "last '[0-9]+%'" \
 			uv run --frozen -q python -m coverage report
-	else
+	elif at_least step; then
 		step test "summed 'passed|failed|errors?'" \
 			uv run --frozen -q python -m pytest -q
 	fi
 else
 	line types skip "no uv.lock"
-	line test skip "no uv.lock"
+	if at_least step; then
+		line test skip "no uv.lock"
+	fi
 fi
 step immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	checks immutability "${immutability_skips[@]}" "${sources[@]}"
@@ -93,7 +102,9 @@ lint_imports_command()')
 	step imports "last 'Contracts: .*|Could not find .*'" "${imports[@]}"
 fi
 if full; then
-	if [ ! -f uv.lock ]; then
+	if ! builds; then
+		unbuilt mutation
+	elif [ ! -f uv.lock ]; then
 		line mutation skip "no uv.lock"
 	elif ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
 		line mutation skip "mutmut needs os.fork (Linux, macOS or WSL)"

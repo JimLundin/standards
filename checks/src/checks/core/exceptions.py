@@ -38,6 +38,7 @@ LAYER = "package.metadata.standards.layer"
 USE = 'use "core" or "shell"'
 CORELESS = "has binaries but no no_std library to hold the pure core"
 NAMED = FrozenOrderedSet(("core-libraries", "stryker-mutate", "biome-plugins"))
+UNPATHED = FrozenOrderedSet(("drift", "flaky"))
 
 
 def report(issues: Sequence[Issue]) -> Outcome:
@@ -68,7 +69,7 @@ def waiver_issues(
             issues += (Issue(where, message),)
         elif not rule_kind:
             issues += (Issue(where, f"unknown rule for {language}"),)
-        elif rule_kind != "drift" and not matched:
+        elif rule_kind not in UNPATHED and not matched:
             issues += (Issue(where, "path matches no tracked file"),)
         elif rule_kind == "attribute" and not any(
             (file, waiver.rule) in used_attributes(snapshot.project)
@@ -250,6 +251,20 @@ def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     ))
 
 
+def nextest_config(_: Sequence[str], inputs: Inputs) -> Outcome:
+    return listing(
+        FrozenList(
+            line
+            for glob in globs_of("flaky", waivers_of(inputs))
+            for line in (
+                "[[profile.default.overrides]]",
+                f"filter = {json.dumps(f'test(#{glob})')}",
+                "retries = 1",
+            )
+        )
+    )
+
+
 def target_kinds(package: Mapping[str, object]) -> FrozenOrderedSet[str]:
     return FrozenOrderedSet(
         kind
@@ -326,6 +341,7 @@ COMMANDS = FrozenOrderedDict({
     "biome-plugins": biome_plugins,
     "filter-mutmut": filter_mutmut,
     "stryker-mutate": stryker_mutate,
+    "nextest-config": nextest_config,
 })
 
 

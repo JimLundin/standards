@@ -111,6 +111,43 @@ def test_check_validates_rust_waivers() -> None:
     )
 
 
+def test_flaky_tests_are_named_not_tracked_paths() -> None:
+    texts = {
+        "exceptions.toml": entry("refresh_*", "flaky")
+        + entry("x", "flaky", " "),
+        "Cargo.toml": "",
+    }
+    outcome = run(("check", "rust", STD, "Cargo.toml"), inputs(texts))
+    assert lines(outcome) == (
+        "exceptions.toml: exception 2 needs a path, a rule and a reason",
+        "Found 1 issues",
+    )
+    python = run(
+        ("check", "python", STD),
+        inputs({"exceptions.toml": entry("test_x", "flaky")}),
+    )
+    assert lines(python)[0] == (
+        "exceptions.toml (test_x, flaky): path matches no tracked file"
+    )
+
+
+def test_nextest_config_retries_each_flaky_test_once() -> None:
+    texts = {
+        "exceptions.toml": entry("provider_refresh_*", "flaky")
+        + entry("src/a.rs", "api")
+        + entry("tests::slow", "flaky")
+    }
+    assert lines(run(("nextest-config",), inputs(texts))) == (
+        "[[profile.default.overrides]]",
+        'filter = "test(#provider_refresh_*)"',
+        "retries = 1",
+        "[[profile.default.overrides]]",
+        'filter = "test(#tests::slow)"',
+        "retries = 1",
+    )
+    assert lines(run(("nextest-config",), inputs({}))) == ()
+
+
 def test_check_ignores_attributes_outside_rust() -> None:
     texts = {
         "exceptions.toml": entry("a.ts", "lint/style/noVar"),

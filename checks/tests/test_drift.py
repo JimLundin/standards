@@ -383,6 +383,33 @@ pedantic = { level = "warn" }
     )
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        "[profile.default]\nretries = 2\n",
+        '[[profile.ci.overrides]]\nfilter = "test(a)"\nretries = 1\n',
+    ],
+)
+def test_rust_nextest_retries_are_drift(config: str) -> None:
+    found = tuple(
+        rust_drift(snapshot({".config/nextest.toml": config}, RUST_STANDARDS))
+    )
+    assert found == issues((
+        ".config/nextest.toml",
+        "nextest.retries",
+        "retries hide failing tests; list each flaky test in exceptions.toml",
+    ))
+
+
+def test_rust_nextest_config_without_retries_has_no_drift() -> None:
+    config = (
+        '[profile.default]\nslow-timeout = "60s"\n'
+        '[[profile.default.overrides]]\nfilter = "test(a)"\nthreads-required = 2\n'
+    )
+    project = {".config/nextest.toml": config}
+    assert tuple(rust_drift(snapshot(project, RUST_STANDARDS))) == ()
+
+
 def test_rust_prefers_package_lints_and_clippy_toml() -> None:
     project = {
         "Cargo.toml": '[lints.rust]\nunsafe_code = "deny"\nwarnings = "forbid"\n[lints.clippy]\nall = "forbid"\n[workspace.lints.rust]\nunsafe_code = "allow"\n',

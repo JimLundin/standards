@@ -3,8 +3,9 @@ set -uo pipefail
 
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
-case ${1:-} in fast | full) profile=$1 && shift ;; esac
-cd "${1:-.}" || exit 2
+arguments "$@"
+cd "$project" || exit 2
+begin rust
 
 has() {
 	local file
@@ -57,17 +58,25 @@ done < <(exceptions globs mutation)
 mapfile -t tracked < <(git ls-files)
 core_target=wasm32v1-none
 
-ending() {
-	plain "$1" | tail -1
-}
-
 metadata=$(native "$logs/metadata.json")
 listed=1
 libraries=()
+described=()
 if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; then
 	listing=$(exceptions core-libraries "$metadata")
 	listed=$?
 	mapfile -t libraries < <(grep . <<<"$listing")
+	described=("--metadata=$metadata")
+fi
+scope "${described[@]}"
+selection=()
+no_libraries="no libraries"
+if [ "$mode" = packages ]; then
+	for package in "${packages[@]}"; do
+		selection+=(-p "$package")
+	done
+	mapfile -t libraries < <(printf '%s\n' "${libraries[@]}" | grep -Fx -f <(printf '%s\n' "${packages[@]}"))
+	no_libraries="no affected libraries"
 fi
 
 core() {
@@ -77,7 +86,7 @@ core() {
 		return 1
 	fi
 	if ((${#libraries[@]} == 0)); then
-		echo "no libraries"
+		echo "$no_libraries"
 		return
 	fi
 	for library in "${libraries[@]}"; do
@@ -100,7 +109,7 @@ core() {
 api() {
 	local library skips=()
 	if ((listed != 0 || ${#libraries[@]} == 0)); then
-		echo "no libraries"
+		echo "$no_libraries"
 		return
 	fi
 	for library in "${libraries[@]}"; do
@@ -124,48 +133,76 @@ shell() {
 		"$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
 }
 
+tested() {
+	local counts flaky
+	counts=$(plain "$1" | grep -E '^ *Summary \[' | tail -1 |
+		grep -oE '[0-9]+ (passed|failed|flaky|timed out)' | paste -sd ',' - | sed 's/,/, /g')
+	flaky=$(plain "$1" | sed -nE 's/^ *FLAKY [0-9]+\/[0-9]+ \[[^]]*\] +//p' | sort -u | paste -sd ',' - | sed 's/,/, /g')
+	echo "${counts:-$(summed 'passed|failed' "$1")}${flaky:+ ($flaky)}"
+}
+
 tests=()
 if command -v cargo-nextest >/dev/null; then
-	tests=(nextest run --no-tests=warn --hide-progress-bar)
+	tests=(nextest run "${selection[@]}" --no-tests=warn --hide-progress-bar)
+	exceptions nextest-config >"$logs/nextest.toml"
+	if [ -s "$logs/nextest.toml" ]; then
+		tests+=(--tool-config-file "standards:$(native "$logs/nextest.toml")")
+	fi
 	mutation+=(--test-tool nextest)
 	if full; then
 		tests+=(--no-fail-fast --run-ignored all)
 	fi
 else
-	tests=(test --quiet)
+	tests=(test "${selection[@]}" --quiet)
 	if full; then
 		tests+=(--no-fail-fast -- --include-ignored)
 	fi
 fi
+mutation+=("${selection[@]}")
 
 step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 	exceptions check rust "$(native "$standards/..")" "${tracked[@]}"
 step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
-step lint "last '[0-9]+ previous errors?|Finished'" \
-	"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
-step core ending core
-step api "last 'Found [0-9]+ issues|All checks passed|no libraries'" api
+if builds; then
+	step lint "last '[0-9]+ previous errors?|Finished'" \
+		"${cargo[@]}" clippy --all-targets "${selection[@]}" -- "${lints[@]}"
+	step core ending core
+	step api "last 'Found [0-9]+ issues|All checks passed|no (affected )?libraries'" api
+else
+	unbuilt lint
+	unbuilt core
+	unbuilt api
+fi
 if command -v rust-decisions >/dev/null; then
 	step shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
 else
 	line shell skip "rust-decisions not installed"
 fi
-step test "summed 'passed|failed'" "${cargo[@]}" "${tests[@]}"
+if at_least step && builds; then
+	step test tested "${cargo[@]}" "${tests[@]}"
+elif at_least step; then
+	unbuilt test
+fi
 if full; then
-	if [ "${tests[0]}" = nextest ] &&
-		find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
-		step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
-	fi
-	if [ -f "$logs/shell-files.txt" ]; then
-		while IFS= read -r file; do
-			mutation+=(--exclude "$file")
-		done <"$logs/shell-files.txt"
-	fi
-	if command -v cargo-mutants >/dev/null; then
-		step mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \
-			env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
+	if ! builds; then
+		unbuilt doctest
+		unbuilt mutation
 	else
-		line mutation skip "cargo-mutants not installed"
+		if [ "${tests[0]}" = nextest ] &&
+			find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
+			step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet "${selection[@]}"
+		fi
+		if [ -f "$logs/shell-files.txt" ]; then
+			while IFS= read -r file; do
+				mutation+=(--exclude "$file")
+			done <"$logs/shell-files.txt"
+		fi
+		if command -v cargo-mutants >/dev/null; then
+			step mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \
+				env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
+		else
+			line mutation skip "cargo-mutants not installed"
+		fi
 	fi
 	step unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
 	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \

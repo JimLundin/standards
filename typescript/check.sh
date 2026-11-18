@@ -3,8 +3,10 @@ set -uo pipefail
 
 standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
-case ${1:-} in fast | full) profile=$1 && shift ;; esac
-cd "${1:-.}" || exit 2
+arguments "$@"
+cd "$project" || exit 2
+begin typescript
+scope
 project=$(pwd)
 biome=()
 biome_config=$standards/biome.json
@@ -50,7 +52,9 @@ step format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y @biomejs/biome@latest format "${biome[@]}" "${sources[@]}"
 step lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
 	biome_lint
-if [ -f tsconfig.json ]; then
+if [ -f tsconfig.json ] && ! builds; then
+	unbuilt types
+elif [ -f tsconfig.json ]; then
 	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"]}}\n' \
 		"$(native "$project/tsconfig.json")" \
 		"$(native "$standards/tsconfig.base.json")" \
@@ -66,8 +70,12 @@ tests=(test)
 if full && grep -qs '"test:full"' package.json; then
 	tests=(run test:full)
 fi
-if grep -qs '"test' package.json; then
-	step test "joined '(pass|fail) [0-9]+'" npm "${tests[@]}" --silent
+if grep -qs '"test' package.json && at_least step; then
+	if builds; then
+		step test "joined '(pass|fail) [0-9]+'" npm "${tests[@]}" --silent
+	else
+		unbuilt test
+	fi
 fi
 if full; then
 	mutation=()
@@ -79,7 +87,9 @@ if full; then
 	if [ -n "$(exceptions globs mutation)" ]; then
 		mutation+=(--mutate "$(exceptions stryker-mutate "$(native "$stryker_config")")")
 	fi
-	if [ -e node_modules/@stryker-mutator/core ]; then
+	if ! builds; then
+		unbuilt mutation
+	elif [ -e node_modules/@stryker-mutator/core ]; then
 		step mutation "last 'mutation score (of )?[0-9.]+'" \
 			npx --no-install stryker run "${mutation[@]}"
 	else

@@ -10,7 +10,7 @@ from checks.core.values import entries, matches, parse_toml, table
 
 EXCEPTIONS = "exceptions.toml"
 FIELDS = FrozenOrderedSet(("path", "rule", "reason"))
-RUST_RULES = FrozenOrderedSet(("api", "shell"))
+RUST_RULES = FrozenOrderedSet(("api", "shell", "flaky"))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")

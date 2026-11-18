@@ -8,6 +8,7 @@ from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.values import (
     entries,
+    is_list,
     lookup,
     parse_json,
     parse_toml,
@@ -47,6 +48,7 @@ PROJECT_FILES = FrozenOrderedDict({
         ".clippy.toml",
         ".cargo/mutants.toml",
         ".cargo/config.toml",
+        ".config/nextest.toml",
     )),
     "typescript": FrozenList((
         "biome.json",
@@ -333,6 +335,13 @@ def proptest_cases(config: Mapping[str, object]) -> int | None:
     )
 
 
+def retries(value: object) -> bool:
+    if is_list(value):
+        return any(map(retries, value))
+    data = table(value)
+    return "retries" in data or any(map(retries, data.values()))
+
+
 def rust_drift(snapshot: Snapshot) -> Iterator[Issue]:
     fragment = snapshot.standard_toml("rust/Cargo.fragment.toml")
     cargo = snapshot.toml("Cargo.toml")
@@ -360,6 +369,12 @@ def rust_drift(snapshot: Snapshot) -> Iterator[Issue]:
         )),
         "mutants",
     )
+    if retries(snapshot.toml(".config/nextest.toml")):
+        yield drift(
+            ".config/nextest.toml",
+            "nextest.retries",
+            "retries hide failing tests; list each flaky test in exceptions.toml",
+        )
     cases = proptest_cases(snapshot.toml(".cargo/config.toml"))
     if cases is not None and cases < PROPTEST_CASES:
         yield drift(
