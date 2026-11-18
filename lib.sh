@@ -130,15 +130,25 @@ cache_root() {
 }
 
 # The git tree of a directory's tracked files and untracked files that are
-# not ignored, as they are on disk. It is staged into a copy of the index, so
-# the real index is untouched.
+# not ignored, as they are on disk. They are staged into an index of the
+# standards' own, so the real index is untouched; it is kept in the cache so
+# that its stat data stays fresh where another git wrote the real index (WSL
+# reading a Windows checkout), and a private copy is used while it is busy.
 tree_of() {
-	local index prefix
-	index=$(mktemp "$logs/index.XXXXXX")
+	local real prefix kept index
 	prefix=$(git -C "$1" rev-parse --show-prefix 2>/dev/null) || return
-	cp "$(git -C "$1" rev-parse --path-format=absolute --git-path index)" "$index" 2>/dev/null || rm -f "$index"
-	GIT_INDEX_FILE=$(native "$index") git -C "$1" add -A -- . >/dev/null 2>&1 &&
-		GIT_INDEX_FILE=$(native "$index") git -C "$1" write-tree ${prefix:+"--prefix=$prefix"}
+	real=$(git -C "$1" rev-parse --path-format=absolute --git-path index)
+	kept="$cache/index/$(printf '%s' "$real" | sha256sum | cut -c1-32)"
+	mkdir -p "$cache/index"
+	[ -f "$kept" ] || cp "$real" "$kept" 2>/dev/null
+	for index in "$kept" "$(mktemp "$logs/index.XXXXXX")"; do
+		[ "$index" = "$kept" ] || cp "$real" "$index" 2>/dev/null || rm -f "$index"
+		if GIT_INDEX_FILE=$(native "$index") git -C "$1" add -A -- . >/dev/null 2>&1; then
+			GIT_INDEX_FILE=$(native "$index") git -C "$1" write-tree ${prefix:+"--prefix=$prefix"}
+			return
+		fi
+	done
+	return 1
 }
 
 resolve_base() {
