@@ -69,14 +69,23 @@ if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; t
 	described=("--metadata=$metadata")
 fi
 scope "${described[@]}"
+# Builds and lints stay workspace-wide: cargo already rebuilds only what a
+# change reaches, and selecting packages with -p resolves their features
+# apart from the workspace's, which rebuilds dependencies and can differ.
+# Only per-package work is scoped: the API docs, the tests and mutants.
 selection=()
-no_libraries="no libraries"
+filter=()
+documented=("${libraries[@]}")
+undocumented="no libraries"
 if [ "$mode" = packages ]; then
+	expression=
 	for package in "${packages[@]}"; do
 		selection+=(-p "$package")
+		expression+="${expression:+ | }package(=$package)"
 	done
-	mapfile -t libraries < <(printf '%s\n' "${libraries[@]}" | grep -Fx -f <(printf '%s\n' "${packages[@]}"))
-	no_libraries="no affected libraries"
+	filter=(-E "$expression")
+	mapfile -t documented < <(printf '%s\n' "${libraries[@]}" | grep -Fx -f <(printf '%s\n' "${packages[@]}"))
+	undocumented="no affected libraries"
 fi
 
 core() {
@@ -86,7 +95,7 @@ core() {
 		return 1
 	fi
 	if ((${#libraries[@]} == 0)); then
-		echo "$no_libraries"
+		echo "no libraries"
 		return
 	fi
 	for library in "${libraries[@]}"; do
@@ -108,18 +117,18 @@ core() {
 
 api() {
 	local library skips=()
-	if ((listed != 0 || ${#libraries[@]} == 0)); then
-		echo "$no_libraries"
+	if ((listed != 0 || ${#documented[@]} == 0)); then
+		echo "$undocumented"
 		return
 	fi
-	for library in "${libraries[@]}"; do
+	for library in "${documented[@]}"; do
 		"${cargo[@]}" rustdoc -q --lib -p "$library" -- -Zunstable-options \
 			--output-format json --document-hidden-items || return
 	done
 	while IFS= read -r glob; do
 		skips+=("--skip=$glob")
 	done < <(exceptions globs api)
-	checks rust-api "${skips[@]}" "$metadata" "${libraries[@]}"
+	checks rust-api "${skips[@]}" "$metadata" "${documented[@]}"
 }
 
 shell() {
@@ -143,7 +152,7 @@ tested() {
 
 tests=()
 if command -v cargo-nextest >/dev/null; then
-	tests=(nextest run "${selection[@]}" --no-tests=warn --hide-progress-bar)
+	tests=(nextest run "${filter[@]}" --no-tests=warn --hide-progress-bar)
 	exceptions nextest-config >"$logs/nextest.toml"
 	if [ -s "$logs/nextest.toml" ]; then
 		tests+=(--tool-config-file "standards:$(native "$logs/nextest.toml")")
@@ -153,7 +162,7 @@ if command -v cargo-nextest >/dev/null; then
 		tests+=(--no-fail-fast --run-ignored all)
 	fi
 else
-	tests=(test "${selection[@]}" --quiet)
+	tests=(test --quiet)
 	if full; then
 		tests+=(--no-fail-fast -- --include-ignored)
 	fi
@@ -165,7 +174,7 @@ step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 if builds; then
 	step lint "last '[0-9]+ previous errors?|Finished'" \
-		"${cargo[@]}" clippy --all-targets "${selection[@]}" -- "${lints[@]}"
+		"${cargo[@]}" clippy --all-targets -- "${lints[@]}"
 	step core ending core
 	step api "last 'Found [0-9]+ issues|All checks passed|no (affected )?libraries'" api
 else
@@ -190,7 +199,7 @@ if full; then
 	else
 		if [ "${tests[0]}" = nextest ] &&
 			find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
-			step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet "${selection[@]}"
+			step doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
 		fi
 		if [ -f "$logs/shell-files.txt" ]; then
 			while IFS= read -r file; do
