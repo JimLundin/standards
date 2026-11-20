@@ -4,15 +4,8 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.values import (
-    Inputs,
-    Outcome,
-    Request,
-    matches,
-    operands,
-    options,
-    summarized,
-)
+from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
+from checks.core.values import Inputs, Outcome, Request, summarized
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -295,18 +288,7 @@ def mutable_globals(tree: ast.Module) -> Iterator[Finding]:
     )
 
 
-def skipped(
-    finding: Finding, path: str, skips: Sequence[tuple[str, str]]
-) -> bool:
-    return any(
-        code == finding.rule.code and matches(path, glob)
-        for code, glob in skips
-    )
-
-
-def check(
-    path: str, text: str, skips: Sequence[tuple[str, str]]
-) -> FrozenList[Finding]:
+def check(path: str, text: str, exceptions: Exceptions) -> FrozenList[Finding]:
     tree = ast.parse(text, filename=path)
     findings = (
         *unfrozen_dataclasses(tree),
@@ -318,7 +300,7 @@ def check(
     return FrozenList(
         finding
         for finding in sorted(findings, key=lambda f: (f.line, f.column))
-        if not skipped(finding, path, skips)
+        if not exceptions.covers(finding.rule.code, path)
     )
 
 
@@ -329,19 +311,15 @@ def describe(path: str, finding: Finding) -> str:
 
 
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(operands(arguments))
+    return Request(FrozenList((EXCEPTIONS, *arguments)))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    skips = FrozenList(
-        (code, glob)
-        for skip in options(arguments, "--skip=")
-        for code, _, glob in (skip.partition(":"),)
-    )
+    exceptions = exceptions_in(inputs)
     return summarized(
         FrozenList(
             describe(path, finding)
-            for path in operands(arguments)
-            for finding in check(path, inputs.texts[path], skips)
+            for path in arguments
+            for finding in check(path, inputs.texts[path], exceptions)
         )
     )

@@ -5,6 +5,12 @@ from typing import TYPE_CHECKING
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.drift import plugin_paths
+from checks.core.exceptions import (
+    EXCEPTIONS,
+    ExceptionEntry,
+    exceptions_in,
+    kind,
+)
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -15,22 +21,17 @@ from checks.core.values import (
     parse_json,
     strings,
 )
-from checks.core.waivers import EXCEPTIONS, Waiver, kind, load, waived
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 
-def waivers_of(inputs: Inputs) -> FrozenList[Waiver]:
-    return load(inputs.texts.get(EXCEPTIONS)).entries
-
-
 def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
     rules: FrozenOrderedDict[str, FrozenList[str]] = FrozenOrderedDict()
-    for waiver in waivers_of(inputs):
-        if kind("python", waiver.rule) == "ruff":
-            known = rules.get(waiver.path, FrozenList())
-            rules |= {waiver.path: FrozenList((*known, waiver.rule))}
+    for entry in exceptions_in(inputs).entries:
+        if kind("python", entry.rule) == "ruff":
+            known = rules.get(entry.path, FrozenList())
+            rules |= {entry.path: FrozenList((*known, entry.rule))}
     if not rules:
         return Outcome()
     pairs = ", ".join(
@@ -40,60 +41,52 @@ def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
     return listing((f"lint.extend-per-file-ignores = {{{pairs}}}",))
 
 
-def immutability_args(_: Sequence[str], inputs: Inputs) -> Outcome:
-    return listing(
-        FrozenList(
-            f"--skip={waiver.rule}:{waiver.path}"
-            for waiver in waivers_of(inputs)
-            if kind("python", waiver.rule) == "immutability"
-        )
-    )
-
-
 def purity_args(_: Sequence[str], inputs: Inputs) -> Outcome:
     pairs = [
-        [waiver.rule, waiver.path]
-        for waiver in waivers_of(inputs)
-        if kind("python", waiver.rule) == "purity"
+        [entry.rule, entry.path]
+        for entry in exceptions_in(inputs).entries
+        if kind("python", entry.rule) == "purity"
     ]
     return listing((f"--skips={json.dumps(pairs)}",) if pairs else ())
 
 
 def without(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     rule, *files = arguments
-    waivers = waivers_of(inputs)
+    exceptions = exceptions_in(inputs)
     return listing(
-        FrozenList(file for file in files if not waived(waivers, file, rule))
+        FrozenList(file for file in files if not exceptions.covers(rule, file))
     )
 
 
-def globs_of(rule: str, waivers: Sequence[Waiver]) -> FrozenList[str]:
-    return FrozenList(waiver.path for waiver in waivers if waiver.rule == rule)
+def globs_of(rule: str, entries: Sequence[ExceptionEntry]) -> FrozenList[str]:
+    return FrozenList(entry.path for entry in entries if entry.rule == rule)
 
 
 def globs(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    return listing(globs_of(arguments[0], waivers_of(inputs)))
+    return listing(globs_of(arguments[0], exceptions_in(inputs).entries))
 
 
-def biome_skips(file: str, waivers: Sequence[Waiver]) -> FrozenList[str]:
+def biome_skips(
+    file: str, entries: Sequence[ExceptionEntry]
+) -> FrozenList[str]:
     return FrozenList(
         sorted(
-            waiver.rule.removeprefix("lint/")
-            for waiver in waivers
-            if waiver.rule.startswith("lint/")
-            and not waiver.rule.startswith("lint/plugin/")
-            and waiver.covers(file, waiver.rule)
+            entry.rule.removeprefix("lint/")
+            for entry in entries
+            if entry.rule.startswith("lint/")
+            and not entry.rule.startswith("lint/plugin/")
+            and entry.covers(entry.rule, file)
         )
     )
 
 
 def biome_groups(files: Sequence[str], inputs: Inputs) -> Outcome:
-    waivers = waivers_of(inputs)
+    entries = exceptions_in(inputs).entries
     groups: FrozenOrderedDict[FrozenList[str], FrozenList[str]] = (
         FrozenOrderedDict()
     )
     for file in files:
-        skips = biome_skips(file, waivers)
+        skips = biome_skips(file, entries)
         known = groups.get(skips, FrozenList())
         groups |= {skips: FrozenList((*known, file))}
     return listing(
@@ -126,13 +119,13 @@ def module_files(module: str) -> FrozenList[str]:
 
 
 def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
-    waivers = waivers_of(inputs)
+    exceptions = exceptions_in(inputs)
     return listing(
         FrozenList(
             line
             for line in inputs.stdin.splitlines()
             if not any(
-                waived(waivers, file, "mutation")
+                exceptions.covers("mutation", file)
                 for file in module_files(line.strip().rsplit(".", 1)[0])
             )
         )
@@ -144,7 +137,10 @@ def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return listing((
         ",".join((
             *strings(config.get("mutate")),
-            *(f"!{glob}" for glob in globs_of("mutation", waivers_of(inputs))),
+            *(
+                f"!{glob}"
+                for glob in globs_of("mutation", exceptions_in(inputs).entries)
+            ),
         )),
     ))
 
@@ -153,7 +149,7 @@ def nextest_config(_: Sequence[str], inputs: Inputs) -> Outcome:
     return listing(
         FrozenList(
             line
-            for glob in globs_of("flaky", waivers_of(inputs))
+            for glob in globs_of("flaky", exceptions_in(inputs).entries)
             for line in (
                 "[[profile.default.overrides]]",
                 f"filter = {json.dumps(f'test(#{glob})')}",
@@ -180,7 +176,6 @@ type Step[T] = Callable[[Sequence[str], Inputs], T]
 COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
     FrozenOrderedDict({
         "ruff-config": (exceptions_only, ruff_config),
-        "immutability-args": (exceptions_only, immutability_args),
         "purity-args": (exceptions_only, purity_args),
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),

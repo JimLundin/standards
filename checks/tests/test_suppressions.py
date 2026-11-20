@@ -1,6 +1,7 @@
 import pytest
 from ordered import FrozenOrderedDict
 
+from checks.core.exceptions import Issue, load
 from checks.core.suppressions import (
     attribute_lints,
     is_source,
@@ -10,7 +11,6 @@ from checks.core.suppressions import (
     typescript_markers,
     used_attributes,
 )
-from checks.core.waivers import Issue, Waiver
 
 INSTEAD = "; add an entry to exceptions.toml instead"
 
@@ -138,8 +138,10 @@ fn f() {}
 
 def test_rust_suppressions() -> None:
     texts = FrozenOrderedDict({"src/lib.rs": RUST, "Cargo.toml": "[x]"})
-    waivers = (Waiver("src/*.rs", "clippy::a", "r"),)
-    assert tuple(suppressions("rust", texts, waivers)) == (
+    exceptions = load(
+        '[[exception]]\npath = "src/*.rs"\nrule = "clippy::a"\nreason = "r"\n'
+    )
+    assert tuple(suppressions("rust", texts, exceptions)) == (
         Issue("src/lib.rs:1", "#[expect(clippy::b)] is not in exceptions.toml"),
         Issue("src/lib.rs:3", f"#[allow(dead_code)]{INSTEAD}"),
         Issue("src/lib.rs:4", f"#[mutants::skip]{INSTEAD}"),
@@ -154,10 +156,10 @@ def test_python_and_typescript_suppressions_skip_other_files() -> None:
         "b.ts": "// biome-ignore x\n",
         "c.txt": "# noqa\n",
     })
-    assert tuple(suppressions("python", texts, ())) == (
+    assert tuple(suppressions("python", texts, load(None))) == (
         Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),
     )
-    assert tuple(suppressions("typescript", texts, ())) == (
+    assert tuple(suppressions("typescript", texts, load(None))) == (
         Issue("b.ts:1", f"suppression `// biome-ignore x`{INSTEAD}"),
     )
 
@@ -180,10 +182,10 @@ def test_scanning_continues_past_other_files() -> None:
         "b.rs": "#[allow(x)]\n",
         "c.rs": "\n#[allow(y)]\n",
     })
-    assert tuple(suppressions("python", texts, ())) == (
+    assert tuple(suppressions("python", texts, load(None))) == (
         Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),
     )
-    assert tuple(suppressions("rust", texts, ())) == (
+    assert tuple(suppressions("rust", texts, load(None))) == (
         Issue("b.rs:1", f"#[allow(x)]{INSTEAD}"),
         Issue("c.rs:2", f"#[allow(y)]{INSTEAD}"),
     )

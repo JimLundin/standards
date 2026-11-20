@@ -1,29 +1,66 @@
 import pytest
 from ordered import FrozenList
 
-from checks.core.waivers import Issue, Waiver, kind, load, parse_waiver, waived
+from checks.core.exceptions import (
+    ExceptionEntry,
+    Exceptions,
+    Issue,
+    kind,
+    load,
+    parse_entry,
+)
 
 ENTRY = '[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "{reason}"\n'
 
 
-def test_waiver_covers_its_rule_and_glob() -> None:
-    waiver = Waiver("src/**", "E501", "long")
-    assert waiver.covers("src/a/b.py", "E501")
-    assert not waiver.covers("src/a/b.py", "E502")
-    assert not waiver.covers("tests/a.py", "E501")
-    assert waived((waiver,), "src/x.py", "E501")
-    assert not waived((waiver,), "src/x.py", "F401")
-    assert not waived((), "src/x.py", "E501")
+def exceptions_for(excepted: str) -> Exceptions:
+    return load(ENTRY.format(path="src/**", rule=excepted, reason="r"))
 
 
-def test_parse_waiver_strips_fields() -> None:
+@pytest.mark.parametrize(
+    ("excepted", "rule", "path"),
+    [
+        ("E501", "E501", "src/a/b.py"),
+        ("PUR001", "PUR001:attrs.x", "src/a.py"),
+        ("PUR003", "PUR003", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrs", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrs.x", "src/a.py"),
+        ("api", "api", "src/lib.rs"),
+    ],
+)
+def test_an_exception_covers_its_rule_in_matching_paths(
+    excepted: str, rule: str, path: str
+) -> None:
+    assert exceptions_for(excepted).covers(rule, path)
+
+
+@pytest.mark.parametrize(
+    ("excepted", "rule", "path"),
+    [
+        ("E501", "E502", "src/a/b.py"),
+        ("E501", "E501", "tests/a.py"),
+        ("drift:tool", "drift:tool.ruff", "src/a.py"),
+        ("PUR001", "PUR002:attrs", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrsx", "src/a.py"),
+        ("PUR001:attrs", "PUR001", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrs", "tests/a.py"),
+        ("shell", "api", "src/lib.rs"),
+    ],
+)
+def test_an_exception_leaves_other_rules_and_paths(
+    excepted: str, rule: str, path: str
+) -> None:
+    assert not exceptions_for(excepted).covers(rule, path)
+
+
+def test_parse_entry_strips_fields() -> None:
     entry = {"path": " src/** ", "rule": " E501", "reason": "long "}
-    assert parse_waiver(0, entry) == Waiver("src/**", "E501", "long")
+    assert parse_entry(0, entry) == ExceptionEntry("src/**", "E501", "long")
 
 
-def test_parse_waiver_rejects_unknown_keys_in_order() -> None:
+def test_parse_entry_rejects_unknown_keys_in_order() -> None:
     entry = {"path": "a", "rule": "b", "reason": "c", "zeta": 1, "alpha": 2}
-    assert parse_waiver(2, entry) == Issue(
+    assert parse_entry(2, entry) == Issue(
         "exceptions.toml", "exception 3 has unknown keys: alpha, zeta"
     )
 
@@ -37,22 +74,22 @@ def test_parse_waiver_rejects_unknown_keys_in_order() -> None:
         "not a table",
     ],
 )
-def test_parse_waiver_needs_all_fields(entry: object) -> None:
-    assert parse_waiver(0, entry) == Issue(
+def test_parse_entry_needs_all_fields(entry: object) -> None:
+    assert parse_entry(0, entry) == Issue(
         "exceptions.toml", "exception 1 needs a path, a rule and a reason"
     )
 
 
 def test_load_without_a_file() -> None:
-    waivers = load(None)
-    assert waivers.entries == ()
-    assert waivers.problems == ()
+    exceptions = load(None)
+    assert exceptions.entries == ()
+    assert exceptions.problems == ()
 
 
 def test_load_reports_invalid_toml() -> None:
-    waivers = load("[[exception]\n")
-    assert waivers.entries == ()
-    (problem,) = waivers.problems
+    exceptions = load("[[exception]\n")
+    assert exceptions.entries == ()
+    (problem,) = exceptions.problems
     assert problem.path == "exceptions.toml"
     assert problem.message.startswith("invalid TOML: ")
     assert len(problem.message) > len("invalid TOML: ")
@@ -65,13 +102,13 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
         + ENTRY.format(path="c", rule="F401", reason="y")
         + "[other]\n[more]\n"
     )
-    waivers = load(text)
-    assert waivers.entries == (
-        Waiver("a/**", "E501", "x"),
-        Waiver("c", "F401", "y"),
+    exceptions = load(text)
+    assert exceptions.entries == (
+        ExceptionEntry("a/**", "E501", "x"),
+        ExceptionEntry("c", "F401", "y"),
     )
-    assert isinstance(waivers.entries, FrozenList)
-    assert waivers.problems == (
+    assert isinstance(exceptions.entries, FrozenList)
+    assert exceptions.problems == (
         Issue(
             "exceptions.toml", "exception 2 needs a path, a rule and a reason"
         ),

@@ -19,7 +19,6 @@ ruff_exceptions=$(tool_config ruff-config)
 if [ -n "$ruff_exceptions" ]; then
 	ruff_config+=(--config "$ruff_exceptions")
 fi
-mapfile -t immutability_skips < <(tool_config immutability-args)
 mapfile -t purity_skips < <(tool_config purity-args)
 mapfile -t unused_sources < <(tool_config without unused "${sources[@]}")
 
@@ -84,7 +83,7 @@ else
 	fi
 fi
 step immutability "last 'Found [0-9]+ issues|All checks passed'" \
-	checks immutability "${immutability_skips[@]}" "${sources[@]}"
+	checks immutability "${sources[@]}"
 step purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${purity_skips[@]}" "${sources[@]}"
 if ((${#unused_sources[@]} > 0)); then

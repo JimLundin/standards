@@ -15,8 +15,8 @@ from checks.core.drift import (
     rust_drift,
     typescript_drift,
 )
+from checks.core.exceptions import Issue
 from checks.core.values import parse_toml
-from checks.core.waivers import Issue
 
 
 def snapshot(

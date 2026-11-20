@@ -129,7 +129,7 @@ def decisions(items: Sequence[Function]) -> int:
     return sum(item.decisions for item in items)
 
 
-def waived(path: str, skips: Sequence[str]) -> bool:
+def excepted(path: str, skips: Sequence[str]) -> bool:
     return any(matches(path, glob) for glob in skips)
 
 
@@ -139,13 +139,13 @@ def findings(
     unmeasured = FrozenList(
         f"{item.path}: {UNMEASURED}: {item.error}"
         for item in failures(items)
-        if not waived(item.path, skips)
+        if not excepted(item.path, skips)
     )
     measured_functions = functions(items)
     complex_functions = FrozenList(
         f"{item.path}:{item.line}: {COMPLEX} `{item.name}` makes {item.decisions} decisions (limit {LIMIT}){MOVE}"
         for item in shell_functions(measured_functions)
-        if item.decisions > LIMIT and not waived(item.path, skips)
+        if item.decisions > LIMIT and not excepted(item.path, skips)
     )
     total = decisions(measured_functions)
     shell = decisions(shell_functions(measured_functions))
@@ -155,7 +155,7 @@ def findings(
         )
         if total >= FLOOR
         and shell > SHARE * total
-        and not waived("Cargo.toml", skips)
+        and not excepted("Cargo.toml", skips)
         else ()
     )
     return unmeasured + complex_functions + share

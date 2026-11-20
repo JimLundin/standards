@@ -17,14 +17,21 @@ HASHED = (
 )
 
 
-def findings(source: str, *skips: str) -> FrozenList[str]:
-    outcome = run((*skips, "m.py"), Inputs(FrozenOrderedDict({"m.py": source})))
+def entry(path: str, rule: str) -> str:
+    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
+
+
+def findings(source: str, exceptions: str | None = None) -> FrozenList[str]:
+    texts = FrozenOrderedDict({"m.py": source})
+    if exceptions is not None:
+        texts |= {"exceptions.toml": exceptions}
+    outcome = run(("m.py",), Inputs(texts))
     return FrozenList(line.removeprefix("m.py:") for line in outcome.lines[:-1])
 
 
-def test_request_reads_the_operands() -> None:
-    assert request(("--skip=IMM001:a.py", "a.py", "b.py"), Inputs()) == Request(
-        FrozenList(("a.py", "b.py"))
+def test_request_reads_the_exceptions_and_the_sources() -> None:
+    assert request(("a.py", "b.py"), Inputs()) == Request(
+        FrozenList(("exceptions.toml", "a.py", "b.py"))
     )
 
 
@@ -246,13 +253,28 @@ def test_findings_sort_by_position() -> None:
     )
 
 
-def test_skips_match_rule_and_path() -> None:
+def test_an_exception_covers_its_rule_in_matching_paths() -> None:
     source = "x = {1}\n@dataclass\nclass A:\n    pass\n"
-    assert findings(source, "--skip=IMM004:m.py") == (
+    assert findings(source, entry("*.py", "IMM004")) == (
         "2:2: IMM001 dataclass is not frozen=True",
     )
-    assert len(findings(source, "--skip=IMM004:other.py")) == 2
-    assert len(findings(source, "--skip=IMM005:m.py")) == 2
+
+
+@pytest.mark.parametrize(
+    "exceptions",
+    [
+        entry("other.py", "IMM004"),
+        entry("m.py", "IMM005"),
+        "",
+        "[[exception]\n",
+        None,
+    ],
+)
+def test_findings_outside_any_exception_are_reported(
+    exceptions: str | None,
+) -> None:
+    source = "x = {1}\n@dataclass\nclass A:\n    pass\n"
+    assert len(findings(source, exceptions)) == 2
 
 
 def test_summary_counts_every_file() -> None:
@@ -286,7 +308,10 @@ def test_syntax_errors_name_the_file() -> None:
     assert error.value.filename == "bad.py"
 
 
-def test_skip_globs_may_contain_colons() -> None:
-    texts = FrozenOrderedDict({"c:x/m.py": "x = {1}\n"})
-    outcome = run(("--skip=IMM004:c:x/*.py", "c:x/m.py"), Inputs(texts))
+def test_exception_globs_may_contain_colons() -> None:
+    texts = FrozenOrderedDict({
+        "c:x/m.py": "x = {1}\n",
+        "exceptions.toml": entry("c:x/*.py", "IMM004"),
+    })
+    outcome = run(("c:x/m.py",), Inputs(texts))
     assert tuple(outcome.lines) == ("All checks passed",)

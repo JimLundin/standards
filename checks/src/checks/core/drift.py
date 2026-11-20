@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
+from checks.core.exceptions import Issue
 from checks.core.values import (
     entries,
     is_list,
@@ -15,7 +16,6 @@ from checks.core.values import (
     strings,
     table,
 )
-from checks.core.waivers import Issue
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence

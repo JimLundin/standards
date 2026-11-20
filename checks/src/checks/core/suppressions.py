@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.waivers import Issue, Waiver, waived
+from checks.core.exceptions import Exceptions, Issue
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Iterator, Mapping
 
 PYTHON_MARKERS = FrozenList((
     r"noqa\b",
@@ -95,7 +95,7 @@ def rust_attributes(text: str) -> Iterator[tuple[int, str, str]]:
 
 
 def rust_issues(
-    file: str, text: str, waivers: Sequence[Waiver]
+    file: str, text: str, exceptions: Exceptions
 ) -> Iterator[Issue]:
     for line, name, arguments in rust_attributes(text):
         where = f"{file}:{line}"
@@ -103,7 +103,7 @@ def rust_issues(
             yield from (
                 Issue(where, f"#[expect({lint})] is not in exceptions.toml")
                 for lint in attribute_lints(arguments)
-                if not waived(waivers, file, lint)
+                if not exceptions.covers(lint, file)
             )
         elif name in FORBIDDEN_ATTRIBUTES or (
             name == "cfg_attr" and SUPPRESSING.search(arguments)
@@ -112,13 +112,13 @@ def rust_issues(
 
 
 def suppressions(
-    language: str, texts: Mapping[str, str], waivers: Sequence[Waiver]
+    language: str, texts: Mapping[str, str], exceptions: Exceptions
 ) -> Iterator[Issue]:
     for file, text in texts.items():
         if not is_source(language, file):
             continue
         if language == "rust":
-            yield from rust_issues(file, text, waivers)
+            yield from rust_issues(file, text, exceptions)
             continue
         scan = python_markers if language == "python" else typescript_markers
         yield from (

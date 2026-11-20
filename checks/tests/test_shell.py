@@ -44,7 +44,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "tool-config",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(
-        FrozenList(("a.py",))
+        FrozenList(("exceptions.toml", "a.py"))
     )
     texts = FrozenOrderedDict({"a.py": "x = 1\n"})
     assert tuple(run(("immutability", "a.py"), Inputs(texts)).lines) == (

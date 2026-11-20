@@ -178,7 +178,7 @@ def test_complex_shell_functions_fail() -> None:
     assert status == 1
 
 
-def test_complex_shell_functions_can_be_waived() -> None:
+def test_complex_shell_functions_can_be_excepted() -> None:
     lines, status, _ = outcome(
         shell("src/main.rs", 7, 3), skips=("--skip=src/*.rs",)
     )
@@ -186,7 +186,7 @@ def test_complex_shell_functions_can_be_waived() -> None:
     assert status == 0
 
 
-def test_unmeasured_files_fail_unless_waived() -> None:
+def test_unmeasured_files_fail_unless_excepted() -> None:
     broken = failure(f"{ROOT}\\src\\gen.rs", "No such file")
     lines, status, _ = outcome(broken, shell("src/main.rs", 1, 1))
     assert lines == (
@@ -225,7 +225,7 @@ def test_the_shell_share_boundaries() -> None:
     assert share(6, 13) == ("shell makes 6 of 19 decisions",)
 
 
-def test_the_shell_share_can_be_waived() -> None:
+def test_the_shell_share_can_be_excepted() -> None:
     shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
     lines, status, _ = outcome(*shell_lines, skips=("--skip=Cargo.toml",))
     assert lines == ("shell makes 20 of 20 decisions",)
