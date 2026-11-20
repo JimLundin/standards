@@ -116,7 +116,7 @@ core() {
 }
 
 api() {
-	local library skips=()
+	local library
 	if ((listed != 0 || ${#documented[@]} == 0)); then
 		echo "$undocumented"
 		return
@@ -125,20 +125,14 @@ api() {
 		"${cargo[@]}" rustdoc -q --lib -p "$library" -- -Zunstable-options \
 			--output-format json --document-hidden-items || return
 	done
-	while IFS= read -r glob; do
-		skips+=("--skip=$glob")
-	done < <(tool_config globs api)
-	checks rust-api "${skips[@]}" "$metadata" "${documented[@]}"
+	checks rust-api "$metadata" "${documented[@]}"
 }
 
 shell() {
-	local roots skips=()
+	local roots
 	mapfile -t roots < <(checks rust-roots "$metadata")
 	rust-decisions "${roots[@]}" >"$logs/decisions.jsonl" || return
-	while IFS= read -r glob; do
-		skips+=("--skip=$glob")
-	done < <(tool_config globs shell)
-	checks rust-shell "${skips[@]}" "$metadata" \
+	checks rust-shell "$metadata" \
 		"$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
 }
 

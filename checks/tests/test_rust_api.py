@@ -1,6 +1,7 @@
 import json
 from typing import TYPE_CHECKING
 
+import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_api import documents, request, run
@@ -103,14 +104,19 @@ METADATA = json.dumps({
 DOC = "C:/work/target/doc/demo_core.json"
 
 
+def entry(path: str, rule: str) -> str:
+    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
+
+
 def check(
-    index: Mapping[str, object], *skips: str, version: int = 61
+    index: Mapping[str, object], exceptions: str = "", version: int = 61
 ) -> FrozenList[str]:
     texts = FrozenOrderedDict({
         "m.json": METADATA,
         DOC: document(index, version),
+        "exceptions.toml": exceptions,
     })
-    return run((*skips, "m.json", "demo-core"), Inputs(texts)).lines
+    return run(("m.json", "demo-core"), Inputs(texts)).lines
 
 
 def test_documents_for_the_named_library_packages() -> None:
@@ -120,13 +126,13 @@ def test_documents_for_the_named_library_packages() -> None:
     )
 
 
-def test_request_reads_metadata_first() -> None:
-    assert request(("--skip=x", "m.json", "demo-core"), Inputs()) == Request(
-        FrozenList(("m.json",))
+def test_request_reads_the_exceptions_and_metadata_first() -> None:
+    assert request(("m.json", "demo-core"), Inputs()) == Request(
+        FrozenList(("exceptions.toml", "m.json"))
     )
     texts = FrozenOrderedDict({"m.json": METADATA})
     assert request(("m.json", "demo-core"), Inputs(texts)) == Request(
-        FrozenList(("m.json", DOC))
+        FrozenList(("exceptions.toml", "m.json", DOC))
     )
 
 
@@ -286,15 +292,33 @@ def test_missing_spans_and_names() -> None:
     )
 
 
-def test_skips_by_path() -> None:
-    index = {
-        "80": function("a", span(1), [POINTER]),
-        "81": function("b", span(2, "core/src/other.rs"), [POINTER]),
-    }
-    assert check(index, "--skip=core/src/lib.rs") == (
+EXCEPTED_INDEX = FrozenOrderedDict({
+    "80": function("a", span(1), [POINTER]),
+    "81": function("b", span(2, "core/src/other.rs"), [POINTER]),
+})
+
+
+def test_an_api_exception_covers_matching_files_only() -> None:
+    assert check(EXCEPTED_INDEX, entry("core/src/lib.rs", "api")) == (
         f"core/src/other.rs:2: `b` takes a function pointer{ONLY_DATA}",
         "Found 1 issues",
     )
+
+
+@pytest.mark.parametrize(
+    "exceptions",
+    [entry("core/src/lib.rs", "shell"), entry("core/**", "flaky"), ""],
+)
+def test_other_exceptions_leave_api_findings(exceptions: str) -> None:
+    assert len(check(EXCEPTED_INDEX, exceptions)) == 3
+
+
+def test_no_exceptions_file_covers_nothing() -> None:
+    texts = FrozenOrderedDict({
+        "m.json": METADATA,
+        DOC: document(EXCEPTED_INDEX),
+    })
+    assert len(run(("m.json", "demo-core"), Inputs(texts)).lines) == 3
 
 
 def test_untested_format() -> None:

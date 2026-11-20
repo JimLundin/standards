@@ -4,6 +4,7 @@ lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
+from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
 from checks.core.rust_layers import is_shell, packages_of
 from checks.core.values import (
     Inputs,
@@ -11,10 +12,8 @@ from checks.core.values import (
     Request,
     entries,
     listing,
-    matches,
     normalized,
     operands,
-    options,
     parse_json,
     posix,
     strings,
@@ -129,23 +128,19 @@ def decisions(items: Sequence[Function]) -> int:
     return sum(item.decisions for item in items)
 
 
-def excepted(path: str, skips: Sequence[str]) -> bool:
-    return any(matches(path, glob) for glob in skips)
-
-
 def findings(
-    items: Sequence[Function | Failure], skips: Sequence[str]
+    items: Sequence[Function | Failure], exceptions: Exceptions
 ) -> FrozenList[str]:
     unmeasured = FrozenList(
         f"{item.path}: {UNMEASURED}: {item.error}"
         for item in failures(items)
-        if not excepted(item.path, skips)
+        if not exceptions.covers("shell", item.path)
     )
     measured_functions = functions(items)
     complex_functions = FrozenList(
         f"{item.path}:{item.line}: {COMPLEX} `{item.name}` makes {item.decisions} decisions (limit {LIMIT}){MOVE}"
         for item in shell_functions(measured_functions)
-        if item.decisions > LIMIT and not excepted(item.path, skips)
+        if item.decisions > LIMIT and not exceptions.covers("shell", item.path)
     )
     total = decisions(measured_functions)
     shell = decisions(shell_functions(measured_functions))
@@ -155,7 +150,7 @@ def findings(
         )
         if total >= FLOOR
         and shell > SHARE * total
-        and not excepted("Cargo.toml", skips)
+        and not exceptions.covers("shell", "Cargo.toml")
         else ()
     )
     return unmeasured + complex_functions + share
@@ -191,16 +186,16 @@ def roots(arguments: Sequence[str], inputs: Inputs) -> Outcome:
 
 
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(operands(arguments)[:2])
+    return Request(FrozenList((EXCEPTIONS, *arguments[:2])))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    metadata, measures, files = operands(arguments)
+    metadata, measures, files = arguments
     items = records(
         FrozenList(inputs.texts.get(measures, "").splitlines()),
         parse_json(inputs.texts.get(metadata)),
     )
-    issues = findings(items, options(arguments, "--skip="))
+    issues = findings(items, exceptions_in(inputs))
     measured_functions = functions(items)
     return Outcome(
         FrozenList((*issues, summary(measured_functions, issues))),

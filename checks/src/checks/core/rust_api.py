@@ -3,14 +3,12 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
+from checks.core.exceptions import EXCEPTIONS, exceptions_in
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
     entries,
-    matches,
-    operands,
-    options,
     parse_json,
     posix,
     summarized,
@@ -204,16 +202,18 @@ def documents(
 
 
 def request(arguments: Sequence[str], inputs: Inputs) -> Request:
-    metadata_path, *packages = operands(arguments)
+    metadata_path, *packages = arguments
     if metadata_path not in inputs.texts:
-        return Request(FrozenList((metadata_path,)))
+        return Request(FrozenList((EXCEPTIONS, metadata_path)))
     metadata = parse_json(inputs.texts[metadata_path])
-    return Request(FrozenList((metadata_path, *documents(metadata, packages))))
+    return Request(
+        FrozenList((EXCEPTIONS, metadata_path, *documents(metadata, packages)))
+    )
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    skips = options(arguments, "--skip=")
-    metadata_path, *packages = operands(arguments)
+    exceptions = exceptions_in(inputs)
+    metadata_path, *packages = arguments
     metadata = parse_json(inputs.texts.get(metadata_path))
     findings = FrozenOrderedSet(
         finding
@@ -226,6 +226,6 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             for finding in sorted(
                 findings, key=lambda f: (f.path, f.line, f.message)
             )
-            if not any(matches(finding.path, glob) for glob in skips)
+            if not exceptions.covers("api", finding.path)
         )
     )

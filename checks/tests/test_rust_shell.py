@@ -1,6 +1,7 @@
 import json
-lazy from collections.abc import Mapping, Sequence
+lazy from collections.abc import Mapping
 
+import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_shell import (
@@ -71,11 +72,17 @@ def failure(path: str, error: str) -> str:
     })
 
 
+def entry(path: str, rule: str = "shell") -> str:
+    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
+
+
 def outcome(
-    *lines: str, skips: Sequence[str] = ()
+    *lines: str, exceptions: str | None = None
 ) -> tuple[FrozenList[str], int, str]:
     texts = FrozenOrderedDict({"m.json": METADATA, "d.jsonl": "\n".join(lines)})
-    result = run((*skips, "m.json", "d.jsonl", "files.txt"), Inputs(texts))
+    if exceptions is not None:
+        texts |= {"exceptions.toml": exceptions}
+    result = run(("m.json", "d.jsonl", "files.txt"), Inputs(texts))
     return result.lines, result.status, result.writes["files.txt"]
 
 
@@ -83,9 +90,9 @@ def test_requests_read_the_metadata_and_the_measures() -> None:
     assert roots_request(("m.json",), Inputs()) == Request(
         FrozenList(("m.json",))
     )
-    assert request(
-        ("--skip=x", "m.json", "d.jsonl", "files.txt"), Inputs()
-    ) == Request(FrozenList(("m.json", "d.jsonl")))
+    assert request(("m.json", "d.jsonl", "files.txt"), Inputs()) == Request(
+        FrozenList(("exceptions.toml", "m.json", "d.jsonl"))
+    )
 
 
 def test_binaries_libraries_and_shell_packages_are_measured() -> None:
@@ -178,12 +185,30 @@ def test_complex_shell_functions_fail() -> None:
     assert status == 1
 
 
-def test_complex_shell_functions_can_be_excepted() -> None:
+def test_a_shell_exception_lifts_the_function_limit_for_its_file_only() -> None:
     lines, status, _ = outcome(
-        shell("src/main.rs", 7, 3), skips=("--skip=src/*.rs",)
+        shell("src/main.rs", 7, 3),
+        shell("src/cli.rs", 9, 3),
+        exceptions=entry("src/main.rs"),
     )
-    assert lines == ("shell makes 3 of 3 decisions",)
-    assert status == 0
+    assert lines == (
+        f"src/cli.rs:9: the shell function `f9` makes 3 decisions (limit 2){MOVE}",
+        "Found 1 issues",
+    )
+    assert status == 1
+
+
+@pytest.mark.parametrize(
+    "exceptions", [entry("src/*.rs", "api"), entry("other.rs"), "", None]
+)
+def test_other_exceptions_leave_the_function_limit(
+    exceptions: str | None,
+) -> None:
+    lines, status, _ = outcome(
+        shell("src/main.rs", 7, 3), exceptions=exceptions
+    )
+    assert lines[-1] == "Found 1 issues"
+    assert status == 1
 
 
 def test_unmeasured_files_fail_unless_excepted() -> None:
@@ -194,7 +219,7 @@ def test_unmeasured_files_fail_unless_excepted() -> None:
         "Found 1 issues",
     )
     assert status == 1
-    assert outcome(broken, skips=("--skip=src/gen.rs",))[:2] == (
+    assert outcome(broken, exceptions=entry("src/gen.rs"))[:2] == (
         ("no shell",),
         0,
     )
@@ -225,8 +250,17 @@ def test_the_shell_share_boundaries() -> None:
     assert share(6, 13) == ("shell makes 6 of 19 decisions",)
 
 
-def test_the_shell_share_can_be_excepted() -> None:
+def test_a_shell_exception_on_cargo_toml_lifts_the_share_limit() -> None:
     shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
-    lines, status, _ = outcome(*shell_lines, skips=("--skip=Cargo.toml",))
+    lines, status, _ = outcome(*shell_lines, exceptions=entry("Cargo.toml"))
     assert lines == ("shell makes 20 of 20 decisions",)
     assert status == 0
+
+
+def test_an_api_exception_on_cargo_toml_leaves_the_share_limit() -> None:
+    shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
+    lines, status, _ = outcome(
+        *shell_lines, exceptions=entry("Cargo.toml", "api")
+    )
+    assert lines[0].startswith("Cargo.toml: the shell makes 20 of 20")
+    assert status == 1

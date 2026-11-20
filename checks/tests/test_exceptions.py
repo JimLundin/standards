@@ -25,7 +25,6 @@ def exceptions_for(excepted: str) -> Exceptions:
         ("PUR003", "PUR003", "src/a.py"),
         ("PUR001:attrs", "PUR001:attrs", "src/a.py"),
         ("PUR001:attrs", "PUR001:attrs.x", "src/a.py"),
-        ("api", "api", "src/lib.rs"),
     ],
 )
 def test_an_exception_covers_its_rule_in_matching_paths(
@@ -44,7 +43,6 @@ def test_an_exception_covers_its_rule_in_matching_paths(
         ("PUR001:attrs", "PUR001:attrsx", "src/a.py"),
         ("PUR001:attrs", "PUR001", "src/a.py"),
         ("PUR001:attrs", "PUR001:attrs", "tests/a.py"),
-        ("shell", "api", "src/lib.rs"),
     ],
 )
 def test_an_exception_leaves_other_rules_and_paths(
