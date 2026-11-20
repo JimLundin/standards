@@ -20,7 +20,7 @@ def lines(outcome: Outcome) -> FrozenList[str]:
 
 
 def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
-    for command in ("ruff-config", "nextest-config", "purity-args"):
+    for command in ("ruff-config", "nextest-config"):
         assert request((command,), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
@@ -66,18 +66,6 @@ def test_ruff_config_groups_rules_by_path() -> None:
         'lint.extend-per-file-ignores = {"a.py" = ["E501", "T201"], "b.py" = ["F401"]}',
     )
     assert lines(run(("ruff-config",), inputs({}))) == ()
-
-
-def test_purity_args() -> None:
-    texts = {
-        "exceptions.toml": entry("a.py", "IMM001")
-        + entry("b/**", "PUR001:attrs")
-        + entry("c.py", "E501")
-    }
-    assert lines(run(("purity-args",), inputs(texts))) == (
-        '--skips=[["PUR001:attrs", "b/**"]]',
-    )
-    assert lines(run(("purity-args",), inputs({}))) == ()
 
 
 def test_without_and_globs() -> None:

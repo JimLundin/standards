@@ -18,14 +18,7 @@ def exceptions_for(excepted: str) -> Exceptions:
 
 
 @pytest.mark.parametrize(
-    ("excepted", "rule", "path"),
-    [
-        ("E501", "E501", "src/a/b.py"),
-        ("PUR001", "PUR001:attrs.x", "src/a.py"),
-        ("PUR003", "PUR003", "src/a.py"),
-        ("PUR001:attrs", "PUR001:attrs", "src/a.py"),
-        ("PUR001:attrs", "PUR001:attrs.x", "src/a.py"),
-    ],
+    ("excepted", "rule", "path"), [("E501", "E501", "src/a/b.py")]
 )
 def test_an_exception_covers_its_rule_in_matching_paths(
     excepted: str, rule: str, path: str
@@ -39,10 +32,6 @@ def test_an_exception_covers_its_rule_in_matching_paths(
         ("E501", "E502", "src/a/b.py"),
         ("E501", "E501", "tests/a.py"),
         ("drift:tool", "drift:tool.ruff", "src/a.py"),
-        ("PUR001", "PUR002:attrs", "src/a.py"),
-        ("PUR001:attrs", "PUR001:attrsx", "src/a.py"),
-        ("PUR001:attrs", "PUR001", "src/a.py"),
-        ("PUR001:attrs", "PUR001:attrs", "tests/a.py"),
     ],
 )
 def test_an_exception_leaves_other_rules_and_paths(
