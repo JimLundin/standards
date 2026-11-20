@@ -16,6 +16,7 @@ from checks.core.rust_shell import (
     targets,
 )
 from checks.core.values import Inputs, Request, parse_json
+from tests.helpers import entry
 
 MOVE = "; move the decisions into the core"
 ROOT = "C:\\work"
@@ -70,10 +71,6 @@ def failure(path: str, error: str) -> str:
         "path": path,
         "error": error,
     })
-
-
-def entry(path: str, rule: str = "shell") -> str:
-    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
 
 
 def outcome(
@@ -189,7 +186,7 @@ def test_a_shell_exception_lifts_the_function_limit_for_its_file_only() -> None:
     lines, status, _ = outcome(
         shell("src/main.rs", 7, 3),
         shell("src/cli.rs", 9, 3),
-        exceptions=entry("src/main.rs"),
+        exceptions=entry("src/main.rs", "shell"),
     )
     assert lines == (
         f"src/cli.rs:9: the shell function `f9` makes 3 decisions (limit 2){MOVE}",
@@ -199,7 +196,8 @@ def test_a_shell_exception_lifts_the_function_limit_for_its_file_only() -> None:
 
 
 @pytest.mark.parametrize(
-    "exceptions", [entry("src/*.rs", "api"), entry("other.rs"), "", None]
+    "exceptions",
+    [entry("src/*.rs", "api"), entry("other.rs", "shell"), "", None],
 )
 def test_other_exceptions_leave_the_function_limit(
     exceptions: str | None,
@@ -219,7 +217,7 @@ def test_unmeasured_files_fail_unless_excepted() -> None:
         "Found 1 issues",
     )
     assert status == 1
-    assert outcome(broken, exceptions=entry("src/gen.rs"))[:2] == (
+    assert outcome(broken, exceptions=entry("src/gen.rs", "shell"))[:2] == (
         ("no shell",),
         0,
     )
@@ -252,7 +250,9 @@ def test_the_shell_share_boundaries() -> None:
 
 def test_a_shell_exception_on_cargo_toml_lifts_the_share_limit() -> None:
     shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
-    lines, status, _ = outcome(*shell_lines, exceptions=entry("Cargo.toml"))
+    lines, status, _ = outcome(
+        *shell_lines, exceptions=entry("Cargo.toml", "shell")
+    )
     assert lines == ("shell makes 20 of 20 decisions",)
     assert status == 0
 

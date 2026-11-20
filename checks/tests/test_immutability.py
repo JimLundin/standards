@@ -3,6 +3,7 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.immutability import request, run
 from checks.core.values import Inputs, Request
+from tests.helpers import entry
 
 MUTABLE = (
     "in a parameter or field; use Sequence, Mapping, an Ordered type from "
@@ -15,10 +16,6 @@ UNORDERED = (
 HASHED = (
     "iterates in hash order, which changes per process; use FrozenOrderedSet"
 )
-
-
-def entry(path: str, rule: str) -> str:
-    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
 
 
 def findings(source: str, exceptions: str | None = None) -> FrozenList[str]:

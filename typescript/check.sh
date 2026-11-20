@@ -84,8 +84,9 @@ if full; then
 		stryker_config=$standards/stryker.config.json
 		mutation=("$(native "$stryker_config")")
 	fi
-	if [ -n "$(tool_config globs mutation)" ]; then
-		mutation+=(--mutate "$(tool_config stryker-mutate "$(native "$stryker_config")")")
+	mutate=$(tool_config stryker-mutate "$(native "$stryker_config")")
+	if [ -n "$mutate" ]; then
+		mutation+=(--mutate "$mutate")
 	fi
 	if ! builds; then
 		unbuilt mutation

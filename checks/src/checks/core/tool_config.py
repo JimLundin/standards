@@ -7,6 +7,8 @@ from ordered import FrozenList, FrozenOrderedDict
 from checks.core.drift import plugin_paths
 from checks.core.exceptions import (
     EXCEPTIONS,
+    FLAKY,
+    MUTATION,
     ExceptionEntry,
     exceptions_in,
     kind,
@@ -17,6 +19,7 @@ from checks.core.values import (
     Request,
     absolute,
     listing,
+    matches,
     normalized,
     parse_json,
     strings,
@@ -49,12 +52,8 @@ def without(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
-def globs_of(rule: str, entries: Sequence[ExceptionEntry]) -> FrozenList[str]:
-    return FrozenList(entry.path for entry in entries if entry.rule == rule)
-
-
 def globs(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    return listing(globs_of(arguments[0], exceptions_in(inputs).entries))
+    return listing(exceptions_in(inputs).paths(arguments[0]))
 
 
 def biome_skips(
@@ -66,7 +65,7 @@ def biome_skips(
             for entry in entries
             if entry.rule.startswith("lint/")
             and not entry.rule.startswith("lint/plugin/")
-            and entry.covers(entry.rule, file)
+            and matches(file, entry.path)
         )
     )
 
@@ -116,7 +115,7 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
             line
             for line in inputs.stdin.splitlines()
             if not any(
-                exceptions.covers("mutation", file)
+                exceptions.covers(MUTATION, file)
                 for file in module_files(line.strip().rsplit(".", 1)[0])
             )
         )
@@ -124,14 +123,14 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
 
 
 def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    excepted = exceptions_in(inputs).paths(MUTATION)
+    if not excepted:
+        return Outcome()
     config = parse_json(inputs.texts.get(arguments[0]))
     return listing((
         ",".join((
             *strings(config.get("mutate")),
-            *(
-                f"!{glob}"
-                for glob in globs_of("mutation", exceptions_in(inputs).entries)
-            ),
+            *(f"!{glob}" for glob in excepted),
         )),
     ))
 
@@ -140,7 +139,7 @@ def nextest_config(_: Sequence[str], inputs: Inputs) -> Outcome:
     return listing(
         FrozenList(
             line
-            for glob in globs_of("flaky", exceptions_in(inputs).entries)
+            for glob in exceptions_in(inputs).paths(FLAKY)
             for line in (
                 "[[profile.default.overrides]]",
                 f"filter = {json.dumps(f'test(#{glob})')}",

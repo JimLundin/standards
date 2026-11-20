@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.exceptions import EXCEPTIONS, exceptions_in
+from checks.core.exceptions import API, EXCEPTIONS, exceptions_in
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -226,6 +226,6 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             for finding in sorted(
                 findings, key=lambda f: (f.path, f.line, f.message)
             )
-            if not exceptions.covers("api", finding.path)
+            if not exceptions.covers(API, finding.path)
         )
     )

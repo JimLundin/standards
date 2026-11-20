@@ -1,22 +1,10 @@
 import json
-lazy from collections.abc import Mapping
 
-from ordered import FrozenList, FrozenOrderedDict
+from ordered import FrozenList
 
 from checks.core.tool_config import request, run
-from checks.core.values import Inputs, Outcome, Request
-
-
-def entry(path: str, rule: str, reason: str = "r") -> str:
-    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "{reason}"\n'
-
-
-def inputs(texts: Mapping[str, str], stdin: str = "", cwd: str = "") -> Inputs:
-    return Inputs(FrozenOrderedDict(texts), stdin, cwd)
-
-
-def lines(outcome: Outcome) -> FrozenList[str]:
-    return outcome.lines
+from checks.core.values import Inputs, Request
+from tests.helpers import entry, inputs, lines
 
 
 def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
@@ -135,4 +123,22 @@ def test_stryker_mutate_adds_excepted_globs() -> None:
     }
     assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == (
         "src/**,!src/skip.ts",
+    )
+
+
+def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.ts", "lint/style/noVar"),
+        "stryker.json": json.dumps({"mutate": ["src/**"]}),
+    }
+    assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == ()
+
+
+def test_globs_lists_the_paths_an_exception_of_the_rule_covers() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.py", "PUR001:attrs")
+        + entry("src/b.py", "PUR001:other")
+    }
+    assert lines(run(("globs", "PUR001:attrs.x"), inputs(texts))) == (
+        "src/a.py",
     )

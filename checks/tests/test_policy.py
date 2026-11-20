@@ -1,27 +1,14 @@
-lazy from collections.abc import Mapping
-
-from ordered import FrozenList, FrozenOrderedDict
+from ordered import FrozenList
 
 from checks.core.policy import request, run
 from checks.core.values import Inputs, Outcome, Request
+from tests.helpers import entry, inputs, lines
 
 STD = "C:/standards"
 RETIRED = (
     "`std` is no longer an exception; "
     'declare `[package.metadata.standards] layer = "shell"`'
 )
-
-
-def entry(path: str, rule: str, reason: str = "r") -> str:
-    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "{reason}"\n'
-
-
-def inputs(texts: Mapping[str, str]) -> Inputs:
-    return Inputs(FrozenOrderedDict(texts))
-
-
-def lines(outcome: Outcome) -> FrozenList[str]:
-    return outcome.lines
 
 
 def test_request_lists_project_then_standard_files() -> None:

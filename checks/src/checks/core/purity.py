@@ -15,6 +15,7 @@ from checks.core.values import (
     parse_toml,
     summarized,
     table,
+    within,
 )
 
 if TYPE_CHECKING:
@@ -149,12 +150,6 @@ def source(path: str) -> Source:
         parts = parts[1:]
     package = bool(parts) and parts[-1] == "__init__"
     return Source(".".join(parts[:-1] if package else parts), package=package)
-
-
-def within(module: str, roots: Sequence[str]) -> bool:
-    return any(
-        module == root or module.startswith(f"{root}.") for root in roots
-    )
 
 
 def resolve(node: ast.ImportFrom, origin: Source) -> str:

@@ -6,6 +6,7 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_api import documents, request, run
 from checks.core.values import Inputs, Request, parse_json
+from tests.helpers import entry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -102,10 +103,6 @@ METADATA = json.dumps({
     ],
 })
 DOC = "C:/work/target/doc/demo_core.json"
-
-
-def entry(path: str, rule: str) -> str:
-    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
 
 
 def check(

@@ -5,6 +5,7 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.purity import core_modules, request, run, source
 from checks.core.values import Inputs, Request
+from tests.helpers import entry
 
 IMPORTS = "it may import itself, pure standard modules and a PUR001:<module> exception"
 ONLY_DATA = "the core's public API takes only data"
@@ -14,10 +15,6 @@ type = "layers"
 containers = ["app"]
 layers = ["(__main__)", "shell", "core"]
 """
-
-
-def entry(path: str, rule: str) -> str:
-    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
 
 
 def findings(

@@ -1,10 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
+from checks.core.exceptions import EXCEPTIONS, SHELL, Exceptions, exceptions_in
 from checks.core.rust_layers import is_shell, packages_of
 from checks.core.values import (
     Inputs,
@@ -17,6 +17,7 @@ from checks.core.values import (
     parse_json,
     posix,
     strings,
+    summarized,
     table,
 )
 
@@ -134,13 +135,13 @@ def findings(
     unmeasured = FrozenList(
         f"{item.path}: {UNMEASURED}: {item.error}"
         for item in failures(items)
-        if not exceptions.covers("shell", item.path)
+        if not exceptions.covers(SHELL, item.path)
     )
     measured_functions = functions(items)
     complex_functions = FrozenList(
         f"{item.path}:{item.line}: {COMPLEX} `{item.name}` makes {item.decisions} decisions (limit {LIMIT}){MOVE}"
         for item in shell_functions(measured_functions)
-        if item.decisions > LIMIT and not exceptions.covers("shell", item.path)
+        if item.decisions > LIMIT and not exceptions.covers(SHELL, item.path)
     )
     total = decisions(measured_functions)
     shell = decisions(shell_functions(measured_functions))
@@ -150,7 +151,7 @@ def findings(
         )
         if total >= FLOOR
         and shell > SHARE * total
-        and not exceptions.covers("shell", "Cargo.toml")
+        and not exceptions.covers(SHELL, "Cargo.toml")
         else ()
     )
     return unmeasured + complex_functions + share
@@ -167,9 +168,7 @@ def shell_files(items: Sequence[Function]) -> FrozenList[str]:
     )
 
 
-def summary(items: Sequence[Function], issues: Sequence[str]) -> str:
-    if issues:
-        return f"Found {len(issues)} issues"
+def passing(items: Sequence[Function]) -> str:
     if not shell_functions(items):
         return "no shell"
     shell = decisions(shell_functions(items))
@@ -197,10 +196,9 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
     issues = findings(items, exceptions_in(inputs))
     measured_functions = functions(items)
-    return Outcome(
-        FrozenList((*issues, summary(measured_functions, issues))),
-        1 if issues else 0,
-        FrozenOrderedDict({
+    return replace(
+        summarized(issues, passing(measured_functions)),
+        writes=FrozenOrderedDict({
             files: "".join(
                 f"{path}\n" for path in shell_files(measured_functions)
             )

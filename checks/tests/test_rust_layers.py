@@ -1,16 +1,13 @@
 import json
 lazy from collections.abc import Mapping, Sequence
 
-from ordered import FrozenList, FrozenOrderedDict
+from ordered import FrozenList
 
 from checks.core.rust_layers import request, run
 from checks.core.values import Inputs, Outcome, Request
+from tests.helpers import inputs
 
 CORELESS = "has binaries but no no_std library to hold the pure core"
-
-
-def inputs(texts: Mapping[str, str]) -> Inputs:
-    return Inputs(FrozenOrderedDict(texts))
 
 
 def test_request_reads_the_metadata() -> None:

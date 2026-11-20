@@ -6,16 +6,27 @@ lazy from collections.abc import Container, Sequence
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.values import Inputs, entries, matches, parse_toml, table
+from checks.core.values import (
+    Inputs,
+    entries,
+    matches,
+    parse_toml,
+    table,
+    within,
+)
 
 EXCEPTIONS = "exceptions.toml"
 FIELDS = FrozenOrderedSet(("path", "rule", "reason"))
-RUST_RULES = FrozenOrderedSet(("api", "shell", "flaky"))
-UNPATHED = FrozenOrderedSet(("drift", "flaky"))
+API = "api"
+SHELL = "shell"
+FLAKY = "flaky"
+MUTATION = "mutation"
+RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY))
+UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
-SHELL = '`[package.metadata.standards] layer = "shell"`'
+SHELL_DECLARATION = '`[package.metadata.standards] layer = "shell"`'
 
 
 def rule_covers(excepted: str, found: str) -> bool:
@@ -23,9 +34,7 @@ def rule_covers(excepted: str, found: str) -> bool:
         return excepted == found
     code, _, prefix = excepted.partition(":")
     found_code, _, module = found.partition(":")
-    return code == found_code and (
-        not prefix or module == prefix or module.startswith(f"{prefix}.")
-    )
+    return code == found_code and (not prefix or within(module, (prefix,)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +61,13 @@ class Exceptions:
 
     def covers(self, rule: str, path: str) -> bool:
         return any(entry.covers(rule, path) for entry in self.entries)
+
+    def paths(self, rule: str) -> FrozenList[str]:
+        return FrozenList(
+            entry.path
+            for entry in self.entries
+            if rule_covers(entry.rule, rule)
+        )
 
 
 def parse_entry(index: int, entry: object) -> ExceptionEntry | Issue:
@@ -97,7 +113,7 @@ def exceptions_in(inputs: Inputs) -> Exceptions:
 
 
 def kind(language: str, rule: str) -> str:
-    if rule == "mutation" or (language == "rust" and rule in RUST_RULES):
+    if rule == MUTATION or (language == "rust" and rule in RUST_RULES):
         return rule
     if rule.startswith("drift:"):
         return "drift"
@@ -129,7 +145,7 @@ def invalidity(
     if language == "rust" and entry.rule == "std":
         return (
             "`std` is no longer an exception; "
-            f"declare {SHELL} in {entry.path} instead"
+            f"declare {SHELL_DECLARATION} in {entry.path} instead"
         )
     if not rule_kind:
         return f"unknown rule for {language}"

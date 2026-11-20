@@ -9,16 +9,24 @@ from checks.core.exceptions import (
     load,
     parse_entry,
 )
-
-ENTRY = '[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "{reason}"\n'
+from tests.helpers import entry
 
 
 def exceptions_for(excepted: str) -> Exceptions:
-    return load(ENTRY.format(path="src/**", rule=excepted, reason="r"))
+    return load(entry("src/**", excepted))
 
 
 @pytest.mark.parametrize(
-    ("excepted", "rule", "path"), [("E501", "E501", "src/a/b.py")]
+    ("excepted", "rule", "path"),
+    [
+        ("E501", "E501", "src/a/b.py"),
+        ("PUR001", "PUR001:attrs.x", "src/a.py"),
+        ("PUR003", "PUR003", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrs", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrs.x", "src/a.py"),
+        ("api", "api", "src/lib.rs"),
+        ("shell", "shell", "src/main.rs"),
+    ],
 )
 def test_an_exception_covers_its_rule_in_matching_paths(
     excepted: str, rule: str, path: str
@@ -32,6 +40,12 @@ def test_an_exception_covers_its_rule_in_matching_paths(
         ("E501", "E502", "src/a/b.py"),
         ("E501", "E501", "tests/a.py"),
         ("drift:tool", "drift:tool.ruff", "src/a.py"),
+        ("PUR001", "PUR002:attrs", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrsx", "src/a.py"),
+        ("PUR001:attrs", "PUR001", "src/a.py"),
+        ("PUR001:attrs", "PUR001:attrs", "tests/a.py"),
+        ("shell", "api", "src/lib.rs"),
+        ("api", "shell", "src/lib.rs"),
     ],
 )
 def test_an_exception_leaves_other_rules_and_paths(
@@ -41,19 +55,19 @@ def test_an_exception_leaves_other_rules_and_paths(
 
 
 def test_parse_entry_strips_fields() -> None:
-    entry = {"path": " src/** ", "rule": " E501", "reason": "long "}
-    assert parse_entry(0, entry) == ExceptionEntry("src/**", "E501", "long")
+    fields = {"path": " src/** ", "rule": " E501", "reason": "long "}
+    assert parse_entry(0, fields) == ExceptionEntry("src/**", "E501", "long")
 
 
 def test_parse_entry_rejects_unknown_keys_in_order() -> None:
-    entry = {"path": "a", "rule": "b", "reason": "c", "zeta": 1, "alpha": 2}
-    assert parse_entry(2, entry) == Issue(
+    fields = {"path": "a", "rule": "b", "reason": "c", "zeta": 1, "alpha": 2}
+    assert parse_entry(2, fields) == Issue(
         "exceptions.toml", "exception 3 has unknown keys: alpha, zeta"
     )
 
 
 @pytest.mark.parametrize(
-    "entry",
+    "fields",
     [
         {"path": "a", "rule": "b"},
         {"path": "a", "rule": "b", "reason": " "},
@@ -61,8 +75,8 @@ def test_parse_entry_rejects_unknown_keys_in_order() -> None:
         "not a table",
     ],
 )
-def test_parse_entry_needs_all_fields(entry: object) -> None:
-    assert parse_entry(0, entry) == Issue(
+def test_parse_entry_needs_all_fields(fields: object) -> None:
+    assert parse_entry(0, fields) == Issue(
         "exceptions.toml", "exception 1 needs a path, a rule and a reason"
     )
 
@@ -84,9 +98,9 @@ def test_load_reports_invalid_toml() -> None:
 
 def test_load_keeps_entries_and_reports_problems_in_order() -> None:
     text = (
-        ENTRY.format(path="a/**", rule="E501", reason="x")
+        entry("a/**", "E501", "x")
         + "[[exception]]\npath = 'b'\n"
-        + ENTRY.format(path="c", rule="F401", reason="y")
+        + entry("c", "F401", "y")
         + "[other]\n[more]\n"
     )
     exceptions = load(text)

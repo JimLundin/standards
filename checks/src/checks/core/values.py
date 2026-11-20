@@ -108,8 +108,16 @@ def absolute(path: str, cwd: str) -> str:
     return f"{posix(cwd)}/{path}"
 
 
-def summarized(lines: Sequence[str]) -> Outcome:
-    summary = f"Found {len(lines)} issues" if lines else "All checks passed"
+def within(module: str, roots: Sequence[str]) -> bool:
+    return any(
+        module == root or module.startswith(f"{root}.") for root in roots
+    )
+
+
+def summarized(
+    lines: Sequence[str], passing: str = "All checks passed"
+) -> Outcome:
+    summary = f"Found {len(lines)} issues" if lines else passing
     return Outcome(FrozenList((*lines, summary)), 1 if lines else 0)
 
 
