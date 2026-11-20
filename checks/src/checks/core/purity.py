@@ -6,15 +6,12 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.decoding import decode
+from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
     entries,
-    matches,
-    operands,
-    options,
     parse_toml,
     summarized,
     table,
@@ -320,27 +317,10 @@ def api_findings(
     )
 
 
-def covers(rule: str, found: str) -> bool:
-    code, _, module = found.partition(":")
-    wanted, _, prefix = rule.partition(":")
-    return wanted == code and (
-        not prefix or (bool(module) and within(module, (prefix,)))
-    )
-
-
-def skipped(
-    finding: Finding, path: str, skips: Sequence[tuple[str, str]]
-) -> bool:
-    return any(
-        covers(rule, finding.rule) and matches(path, glob)
-        for rule, glob in skips
-    )
-
-
 def check(
     trees: Mapping[str, ast.Module],
     cores: Sequence[str],
-    skips: Sequence[tuple[str, str]],
+    exceptions: Exceptions,
 ) -> Iterator[str]:
     local_ports = FrozenOrderedSet(
         name for tree in trees.values() for name in ports(tree)
@@ -354,25 +334,19 @@ def check(
         yield from (
             f"{path}:{finding.line}:{finding.column + 1}: {finding.rule.partition(':')[0]} {finding.message}"
             for finding in sorted(findings, key=lambda f: (f.line, f.column))
-            if not skipped(finding, path, skips)
+            if not exceptions.covers(finding.rule, path)
         )
 
 
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(FrozenList(("pyproject.toml", *operands(arguments))))
+    return Request(FrozenList(("pyproject.toml", EXCEPTIONS, *arguments)))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    skips = FrozenList(
-        (str(rule), str(glob))
-        for option in options(arguments, "--skips=")
-        for pair in entries(decode(option))
-        for rule, glob in (entries(pair),)
-    )
     cores = core_modules(inputs.texts.get("pyproject.toml"))
     trees = FrozenOrderedDict(
         (path, ast.parse(inputs.texts[path], filename=path))
-        for path in operands(arguments)
+        for path in arguments
         if within(source(path).module, cores)
     )
-    return summarized(FrozenList(check(trees, cores, skips)))
+    return summarized(FrozenList(check(trees, cores, exceptions_in(inputs))))

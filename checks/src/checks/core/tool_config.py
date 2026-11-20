@@ -41,15 +41,6 @@ def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
     return listing((f"lint.extend-per-file-ignores = {{{pairs}}}",))
 
 
-def purity_args(_: Sequence[str], inputs: Inputs) -> Outcome:
-    pairs = [
-        [entry.rule, entry.path]
-        for entry in exceptions_in(inputs).entries
-        if kind("python", entry.rule) == "purity"
-    ]
-    return listing((f"--skips={json.dumps(pairs)}",) if pairs else ())
-
-
 def without(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     rule, *files = arguments
     exceptions = exceptions_in(inputs)
@@ -176,7 +167,6 @@ type Step[T] = Callable[[Sequence[str], Inputs], T]
 COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
     FrozenOrderedDict({
         "ruff-config": (exceptions_only, ruff_config),
-        "purity-args": (exceptions_only, purity_args),
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
         "biome-groups": (exceptions_only, biome_groups),

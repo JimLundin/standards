@@ -1,4 +1,3 @@
-import json
 lazy from collections.abc import Sequence
 
 import pytest
@@ -17,19 +16,25 @@ layers = ["(__main__)", "shell", "core"]
 """
 
 
+def entry(path: str, rule: str) -> str:
+    return f'[[exception]]\npath = "{path}"\nrule = "{rule}"\nreason = "r"\n'
+
+
 def findings(
-    code: str, path: str = "src/app/core/m.py", *skips: str
+    code: str, path: str = "src/app/core/m.py", exceptions: str | None = None
 ) -> FrozenList[str]:
     texts = FrozenOrderedDict({"pyproject.toml": PYPROJECT, path: code})
-    outcome = run((*skips, path), Inputs(texts))
+    if exceptions is not None:
+        texts |= {"exceptions.toml": exceptions}
+    outcome = run((path,), Inputs(texts))
     return FrozenList(
         line.removeprefix(f"{path}:") for line in outcome.lines[:-1]
     )
 
 
-def test_request_reads_pyproject_and_operands() -> None:
-    assert request(("--skips=[]", "a.py"), Inputs()) == Request(
-        FrozenList(("pyproject.toml", "a.py"))
+def test_request_reads_pyproject_exceptions_and_operands() -> None:
+    assert request(("a.py",), Inputs()) == Request(
+        FrozenList(("pyproject.toml", "exceptions.toml", "a.py"))
     )
 
 
@@ -238,26 +243,64 @@ def test_findings_sort_by_position() -> None:
     )
 
 
-def skips(*pairs: tuple[str, str]) -> str:
-    return f"--skips={json.dumps([list(pair) for pair in pairs])}"
+IMPURE = "import attrs\nimport attrs.x\nimport attrsx\nimport os\nx = open\n"
+API = "def f(a: Callable) -> None: ...\nasync def g() -> None: ...\n"
+
+
+def codes(code: str, exceptions: str | None) -> FrozenList[str]:
+    found = findings(code, "src/app/core/m.py", exceptions)
+    return FrozenList(finding.split(" ")[1] for finding in found)
+
+
+def imported_modules(exceptions: str | None) -> FrozenList[str]:
+    found = findings(IMPURE, "src/app/core/m.py", exceptions)
+    return FrozenList(
+        finding.split("`")[1] for finding in found if " PUR001 " in finding
+    )
+
+
+def test_no_exceptions_file_covers_nothing() -> None:
+    assert imported_modules(None) == ("attrs", "attrs.x", "attrsx", "os")
+    assert codes(API, None) == ("PUR003", "PUR003")
 
 
 @pytest.mark.parametrize(
-    ("rule", "glob", "kept"),
+    ("path", "rule", "kept"),
     [
-        ("PUR001", "src/app/core/m.py", ("PUR002",)),
-        ("PUR001:httpx", "src/app/core/*.py", ("PUR001", "PUR002")),
-        ("PUR001:os", "src/app/core/*.py", ("PUR001", "PUR002")),
-        ("PUR001:attrs", "src/app/core/*.py", ("PUR001", "PUR001", "PUR002")),
-        ("PUR001:httpx", "other.py", ("PUR001", "PUR001", "PUR002")),
-        ("PUR002", "src/**", ("PUR001", "PUR001")),
-        ("PUR002:open", "src/**", ("PUR001", "PUR001", "PUR002")),
+        ("src/app/core/m.py", "PUR001:attrs", ("attrsx", "os")),
+        ("src/app/core/*.py", "PUR001:attrs.x", ("attrs", "attrsx", "os")),
+        ("src/app/core/*.py", "PUR001", ()),
+        ("other.py", "PUR001:attrs", ("attrs", "attrs.x", "attrsx", "os")),
+        ("src/**", "PUR002:attrs", ("attrs", "attrs.x", "attrsx", "os")),
     ],
 )
-def test_skips(rule: str, glob: str, kept: Sequence[str]) -> None:
-    code = "import httpx.client\nimport os\nx = open\n"
-    found = findings(code, "src/app/core/m.py", skips((rule, glob)))
-    assert tuple(finding.split(" ")[1] for finding in found) == kept
+def test_a_module_exception_covers_the_module_and_its_submodules(
+    path: str, rule: str, kept: Sequence[str]
+) -> None:
+    assert imported_modules(entry(path, rule)) == kept
+
+
+@pytest.mark.parametrize(
+    ("path", "rule", "kept"),
+    [
+        ("src/**", "PUR003", ()),
+        ("tests/**", "PUR003", ("PUR003", "PUR003")),
+        ("src/**", "PUR003:f", ("PUR003", "PUR003")),
+        ("src/**", "PUR001", ("PUR003", "PUR003")),
+    ],
+)
+def test_a_bare_rule_covers_its_findings_in_matching_paths(
+    path: str, rule: str, kept: Sequence[str]
+) -> None:
+    assert codes(API, entry(path, rule)) == kept
+
+
+def test_a_bare_rule_leaves_other_rules() -> None:
+    assert codes(IMPURE, entry("src/**", "PUR002")) == ("PUR001",) * 4
+    assert codes(IMPURE, entry("src/**", "PUR002:open")) == (
+        *("PUR001",) * 4,
+        "PUR002",
+    )
 
 
 def test_summary() -> None:
