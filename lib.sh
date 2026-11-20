@@ -74,8 +74,8 @@ checks() {
 		uv run --frozen -q --project "$(native "$home/checks")" python -I -m checks "$@"
 }
 
-exceptions() {
-	checks exceptions "$@"
+tool_config() {
+	checks tool-config "$@"
 }
 
 arguments() {

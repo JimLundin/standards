@@ -4,12 +4,13 @@ lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.exceptions import is_shell, listing, packages_of
+from checks.core.rust_layers import is_shell, packages_of
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
     entries,
+    listing,
     matches,
     normalized,
     operands,

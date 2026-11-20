@@ -5,7 +5,7 @@ lazy from collections.abc import Mapping, Sequence
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core import suites
-from checks.core.exceptions import packages_of
+from checks.core.rust_layers import packages_of
 from checks.core.suites import Changes
 from checks.core.values import (
     Inputs,

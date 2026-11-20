@@ -34,20 +34,20 @@ biome_lint() {
 			skip+=(--skip="$rule")
 		done
 		npx -y @biomejs/biome@latest lint "${biome[@]}" "${skip[@]}" "${files[@]}" || status=1
-	done < <(exceptions biome-groups "${sources[@]}")
+	done < <(tool_config biome-groups "${sources[@]}")
 	while IFS='|' read -r name path; do
-		mapfile -t covered < <(exceptions without "lint/plugin/$name" "${sources[@]}")
+		mapfile -t covered < <(tool_config without "lint/plugin/$name" "${sources[@]}")
 		((${#covered[@]} > 0)) || continue
 		mkdir -p "$logs/plugins/$name"
 		printf '{"plugins": ["%s"]}\n' "$path" >"$logs/plugins/$name/biome.json"
 		npx -y @biomejs/biome@latest lint --only=plugin \
 			--config-path="$(native "$logs/plugins/$name/biome.json")" "${covered[@]}" || status=1
-	done < <(exceptions biome-plugins "$(native "$biome_config")")
+	done < <(tool_config biome-plugins "$(native "$biome_config")")
 	return "$status"
 }
 
 step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-	exceptions check typescript "$(native "$standards/..")" "${tracked[@]}"
+	checks policy typescript "$(native "$standards/..")" "${tracked[@]}"
 step format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y @biomejs/biome@latest format "${biome[@]}" "${sources[@]}"
 step lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
@@ -84,8 +84,8 @@ if full; then
 		stryker_config=$standards/stryker.config.json
 		mutation=("$(native "$stryker_config")")
 	fi
-	if [ -n "$(exceptions globs mutation)" ]; then
-		mutation+=(--mutate "$(exceptions stryker-mutate "$(native "$stryker_config")")")
+	if [ -n "$(tool_config globs mutation)" ]; then
+		mutation+=(--mutate "$(tool_config stryker-mutate "$(native "$stryker_config")")")
 	fi
 	if ! builds; then
 		unbuilt mutation

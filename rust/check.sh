@@ -54,7 +54,7 @@ if [ ! -e .cargo/mutants.toml ]; then
 fi
 while IFS= read -r glob; do
 	mutation+=(--exclude "$glob")
-done < <(exceptions globs mutation)
+done < <(tool_config globs mutation)
 mapfile -t tracked < <(git ls-files)
 core_target=wasm32v1-none
 
@@ -63,7 +63,7 @@ listed=1
 libraries=()
 described=()
 if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; then
-	listing=$(exceptions core-libraries "$metadata")
+	listing=$(checks core-libraries "$metadata")
 	listed=$?
 	mapfile -t libraries < <(grep . <<<"$listing")
 	described=("--metadata=$metadata")
@@ -127,7 +127,7 @@ api() {
 	done
 	while IFS= read -r glob; do
 		skips+=("--skip=$glob")
-	done < <(exceptions globs api)
+	done < <(tool_config globs api)
 	checks rust-api "${skips[@]}" "$metadata" "${documented[@]}"
 }
 
@@ -137,7 +137,7 @@ shell() {
 	rust-decisions "${roots[@]}" >"$logs/decisions.jsonl" || return
 	while IFS= read -r glob; do
 		skips+=("--skip=$glob")
-	done < <(exceptions globs shell)
+	done < <(tool_config globs shell)
 	checks rust-shell "${skips[@]}" "$metadata" \
 		"$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
 }
@@ -153,7 +153,7 @@ tested() {
 tests=()
 if command -v cargo-nextest >/dev/null; then
 	tests=(nextest run "${filter[@]}" --no-tests=warn --hide-progress-bar)
-	exceptions nextest-config >"$logs/nextest.toml"
+	tool_config nextest-config >"$logs/nextest.toml"
 	if [ -s "$logs/nextest.toml" ]; then
 		tests+=(--tool-config-file "standards:$(native "$logs/nextest.toml")")
 	fi
@@ -170,7 +170,7 @@ fi
 mutation+=("${selection[@]}")
 
 step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-	exceptions check rust "$(native "$standards/..")" "${tracked[@]}"
+	checks policy rust "$(native "$standards/..")" "${tracked[@]}"
 step format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 if builds; then
 	step lint "last '[0-9]+ previous errors?|Finished'" \

@@ -33,13 +33,15 @@ def invoke(
 def test_tools_dispatch_to_each_tool() -> None:
     assert tuple(TOOLS) == (
         "cache-keys",
-        "exceptions",
+        "core-libraries",
         "immutability",
+        "policy",
         "purity",
         "rust-api",
         "rust-roots",
         "rust-shell",
         "scope",
+        "tool-config",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(
         FrozenList(("a.py",))
@@ -101,13 +103,13 @@ def test_main_reads_stdin_only_when_asked(
     )
     lines = "app.x.f__mutmut_1: survived\napp.y.g__mutmut_2: survived\n"
     status, out = invoke(
-        monkeypatch, capsysbinary, "exceptions", "filter-mutmut", stdin=lines
+        monkeypatch, capsysbinary, "tool-config", "filter-mutmut", stdin=lines
     )
     assert (status, out) == (0, "app.y.g__mutmut_2: survived\n")
     status, out = invoke(
         monkeypatch,
         capsysbinary,
-        "exceptions",
+        "tool-config",
         "globs",
         "mutation",
         stdin=lines,
@@ -196,7 +198,7 @@ def test_main_resolves_paths_against_the_working_directory(
     status, out = invoke(
         monkeypatch,
         capsysbinary,
-        "exceptions",
+        "tool-config",
         "biome-plugins",
         "conf/biome.json",
     )

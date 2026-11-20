@@ -5,12 +5,14 @@ from ordered import FrozenOrderedDict
 
 from checks.core import (
     cache,
-    exceptions,
     immutability,
+    policy,
     purity,
     rust_api,
+    rust_layers,
     rust_shell,
     scope,
+    tool_config,
 )
 
 if TYPE_CHECKING:
@@ -18,13 +20,15 @@ if TYPE_CHECKING:
 
 TOOLS = FrozenOrderedDict({
     "cache-keys": (cache.request, cache.run),
-    "exceptions": (exceptions.request, exceptions.run),
+    "core-libraries": (rust_layers.request, rust_layers.run),
     "immutability": (immutability.request, immutability.run),
+    "policy": (policy.request, policy.run),
     "purity": (purity.request, purity.run),
     "rust-api": (rust_api.request, rust_api.run),
     "rust-roots": (rust_shell.roots_request, rust_shell.roots),
     "rust-shell": (rust_shell.request, rust_shell.run),
     "scope": (scope.request, scope.run),
+    "tool-config": (tool_config.request, tool_config.run),
 })
 
 

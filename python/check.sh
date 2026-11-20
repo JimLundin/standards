@@ -15,13 +15,13 @@ if grep -qs '^\[tool\.ruff' pyproject.toml; then
 fi
 mapfile -t sources < <(git ls-files '*.py' '*.pyw')
 mapfile -t tracked < <(git ls-files)
-ruff_exceptions=$(exceptions ruff-config)
+ruff_exceptions=$(tool_config ruff-config)
 if [ -n "$ruff_exceptions" ]; then
 	ruff_config+=(--config "$ruff_exceptions")
 fi
-mapfile -t immutability_skips < <(exceptions immutability-args)
-mapfile -t purity_skips < <(exceptions purity-args)
-mapfile -t unused_sources < <(exceptions without unused "${sources[@]}")
+mapfile -t immutability_skips < <(tool_config immutability-args)
+mapfile -t purity_skips < <(tool_config purity-args)
+mapfile -t unused_sources < <(tool_config without unused "${sources[@]}")
 
 mutants() {
 	plain "$1" | tr '\r' '\n' | grep -oE '(🎉|🙁) [0-9]+' | tail -2 |
@@ -32,13 +32,13 @@ mutants() {
 mutate() {
 	uv run --frozen -q mutmut run || return
 	local remaining
-	remaining=$(uv run --frozen -q mutmut results | exceptions filter-mutmut)
+	remaining=$(uv run --frozen -q mutmut results | tool_config filter-mutmut)
 	echo "$remaining"
 	[ -z "$remaining" ]
 }
 
 step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-	exceptions check python "$(native "$standards/..")" "${tracked[@]}"
+	checks policy python "$(native "$standards/..")" "${tracked[@]}"
 step format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q ruff@latest format "${ruff_config[@]}" --check .
 step lint "last 'Found [0-9]+ errors?|All checks passed'" \

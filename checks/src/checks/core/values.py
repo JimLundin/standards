@@ -113,6 +113,10 @@ def summarized(lines: Sequence[str]) -> Outcome:
     return Outcome(FrozenList((*lines, summary)), 1 if lines else 0)
 
 
+def listing(lines: Sequence[str]) -> Outcome:
+    return Outcome(FrozenList(line for line in lines if line))
+
+
 def options(arguments: Sequence[str], prefix: str) -> FrozenList[str]:
     return FrozenList(
         argument.removeprefix(prefix)
