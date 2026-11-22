@@ -14,7 +14,6 @@ DOCS = FrozenList((
     "**/COPYING*",
     ".github/**",
 ))
-PACKAGE_SOURCES = FrozenList(("**/*.rs", "**/*.md"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,9 +72,7 @@ def any_match(file: str, globs: Sequence[str]) -> bool:
 
 def owned(file: str, packages: Sequence[Package]) -> str:
     package = owner(file, packages)
-    if package is None or not any_match(file, PACKAGE_SOURCES):
-        return ""
-    return package.name
+    return package.name if package else ""
 
 
 def dependents(

@@ -1,7 +1,6 @@
 import json
-lazy from collections.abc import Mapping
+lazy from collections.abc import Mapping, Sequence
 
-import pytest
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.units import request, run
@@ -14,12 +13,81 @@ FILES = FrozenOrderedDict({
     "README.md": "a3",
     "docs/design.md": "a4",
     "tools/scrub.py": "a5",
+    "rust-toolchain.toml": "a6",
     "crates/proto/Cargo.toml": "b1",
     "crates/proto/src/lib.rs": "b2",
+    "crates/client/Cargo.toml": "c0",
     "crates/client/src/lib.rs": "c1",
     "crates/client/README.md": "c2",
+    "crates/client/tests/data.json": "c3",
+    "crates/home/Cargo.toml": "d0",
     "crates/home/src/lib.rs": "d1",
+    "crates/home/src/flow/test-flow.toml": "d2",
+    "crates/app/Cargo.toml": "e0",
     "crates/app/src/main.rs": "e1",
+})
+ROOT_MANIFEST = """
+[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies]
+serde = "1"
+toml = "0.8"
+
+[workspace.lints.clippy]
+pedantic = "warn"
+
+[profile.dev]
+debug = "line-tables-only"
+"""
+MANIFESTS = FrozenOrderedDict({
+    "Cargo.toml": ROOT_MANIFEST,
+    "crates/proto/Cargo.toml": """
+[package]
+name = "proto"
+
+[dependencies]
+serde = { workspace = true }
+
+[lints]
+workspace = true
+""",
+    "crates/client/Cargo.toml": """
+[package]
+name = "client"
+
+[dependencies]
+proto = { path = "../proto" }
+serde.workspace = true
+""",
+    "crates/home/Cargo.toml": """
+[package]
+name = "home"
+
+[dependencies]
+toml.workspace = true
+""",
+    "crates/app/Cargo.toml": """
+[package]
+name = "app"
+
+[dependencies]
+client = { path = "../client" }
+""",
+})
+REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
+VERSIONS = FrozenOrderedDict({
+    "serde": "1.0.0",
+    "toml": "0.8.0",
+    "rand": "0.9.0",
+    "itoa": "1.0.0",
+})
+EDGES = FrozenOrderedDict({
+    "proto": (("serde", "normal"),),
+    "client": (("proto", "normal"), ("serde", "normal")),
+    "home": (("toml", "normal"),),
+    "app": (("client", "normal"),),
+    "toml": (("serde", "normal"),),
 })
 SUITES = """
 [[suite]]
@@ -77,6 +145,73 @@ METADATA = json.dumps({
 })
 
 
+def identity(name: str) -> str:
+    if name in VERSIONS:
+        return f"{REGISTRY}#{name}@{VERSIONS[name]}"
+    return f"path+file://{ROOT}/crates/{name}#0.1.0"
+
+
+def resolve(
+    versions: Mapping[str, str] = VERSIONS,
+    edges: Mapping[str, Sequence[tuple[str, str]]] = EDGES,
+) -> str:
+    members = ("proto", "client", "home", "app")
+    external = FrozenList(
+        {
+            "id": f"{REGISTRY}#{name}@{version}",
+            "name": name,
+            "version": version,
+            "source": REGISTRY,
+        }
+        for name, version in versions.items()
+    )
+    return json.dumps({
+        "workspace_root": ROOT,
+        "workspace_members": [identity(name) for name in members],
+        "packages": [
+            *(
+                {
+                    "id": identity(name),
+                    "name": name,
+                    "version": "0.1.0",
+                    "source": None,
+                }
+                for name in members
+            ),
+            *external,
+        ],
+        "resolve": {
+            "nodes": [
+                {
+                    "id": f"{REGISTRY}#{name}@{version}"
+                    if name in versions
+                    else identity(name),
+                    "deps": [
+                        {
+                            "name": dependency,
+                            "pkg": f"{REGISTRY}#{dependency}@{versions[dependency]}"
+                            if dependency in versions
+                            else identity(dependency),
+                            "dep_kinds": [
+                                {
+                                    "kind": None if kind == "normal" else kind,
+                                    "target": None,
+                                }
+                            ],
+                        }
+                        for dependency, kind in edges.get(name, ())
+                    ],
+                    "features": [],
+                }
+                for name, version in (
+                    *((member, "") for member in members),
+                    *versions.items(),
+                )
+            ]
+        },
+    })
+
+
 def listing(files: Mapping[str, str]) -> str:
     return "".join(
         f"100644 {blob:0<40} 0\t{path}\0" for path, blob in files.items()
@@ -88,6 +223,8 @@ def outcome(
     *,
     tier: str = "commit",
     suites: str = SUITES,
+    manifests: Mapping[str, str] = MANIFESTS,
+    resolved: str | None = None,
     **versions: str,
 ) -> Outcome:
     toolchain = versions.get("toolchain", "cargo 1.95.0-nightly")
@@ -97,12 +234,15 @@ def outcome(
         "listing": listing(files),
         "checks.toml": suites,
         "m.json": METADATA,
+        "r.json": resolve() if resolved is None else resolved,
+        **manifests,
     })
     arguments = (
         "rust",
         tier,
         "listing",
         "--metadata=m.json",
+        "--resolve=r.json",
         f"--standards={standards}",
         f"--toolchain={toolchain}",
         "--project=exceptions,format",
@@ -117,10 +257,19 @@ def keyed(
     files: Mapping[str, str] = FILES,
     tier: str = "commit",
     toolchain: str = "cargo 1.95.0-nightly",
+    manifests: Mapping[str, str] = MANIFESTS,
+    resolved: str | None = None,
 ) -> FrozenOrderedDict[str, str]:
+    result = outcome(
+        files,
+        tier=tier,
+        toolchain=toolchain,
+        manifests=manifests,
+        resolved=resolved,
+    )
     return FrozenOrderedDict(
         (f"{fields[1]} {fields[2]}", fields[3])
-        for line in outcome(files, tier=tier, toolchain=toolchain).lines
+        for line in result.lines
         if (fields := line.split("\t"))[0] == "unit"
     )
 
@@ -131,15 +280,44 @@ def edited(*paths: str) -> FrozenOrderedDict[str, str]:
     )
 
 
-def rerun(*paths: str, tier: str = "commit") -> FrozenList[str]:
-    before = keyed(tier=tier)
-    after = keyed(edited(*paths), tier=tier)
+def changed(
+    before: Mapping[str, str], after: Mapping[str, str]
+) -> FrozenList[str]:
     return FrozenList(unit for unit in before if before[unit] != after[unit])
 
 
+def rerun(*paths: str, tier: str = "commit") -> FrozenList[str]:
+    return changed(keyed(tier=tier), keyed(edited(*paths), tier=tier))
+
+
+def rewritten(
+    path: str, text: str, *, resolved: str | None = None, lockfile: bool = False
+) -> FrozenList[str]:
+    paths = (path, "Cargo.lock") if lockfile else (path,)
+    manifests = MANIFESTS | FrozenOrderedDict({path: text})
+    after = keyed(edited(*paths), manifests=manifests, resolved=resolved)
+    return changed(keyed(), after)
+
+
+def relocked(resolved: str) -> FrozenList[str]:
+    return changed(keyed(), keyed(edited("Cargo.lock"), resolved=resolved))
+
+
+PROJECT_UNITS = ("exceptions .", "format .")
+
+
 def test_request_reads_the_listing_the_suites_and_the_metadata() -> None:
-    assert request(("rust", "step", "l", "--metadata=m.json"), Inputs()) == (
-        Request(FrozenList(("l", "checks.toml", "m.json")))
+    arguments = ("rust", "step", "l", "--metadata=m.json", "--resolve=r.json")
+    assert request(arguments, Inputs()) == (
+        Request(FrozenList(("l", "checks.toml", "m.json", "r.json")))
+    )
+    described = Inputs(FrozenOrderedDict({"m.json": METADATA}))
+    assert request(arguments, described).paths[4:] == (
+        "Cargo.toml",
+        "crates/proto/Cargo.toml",
+        "crates/client/Cargo.toml",
+        "crates/home/Cargo.toml",
+        "crates/app/Cargo.toml",
     )
     assert request(("python", "step", "l"), Inputs()) == Request(
         FrozenList(("l", "checks.toml"))
@@ -208,15 +386,105 @@ def test_docs_outside_packages_rerun_only_project_units() -> None:
     assert rerun("README.md", "docs/design.md") == ("exceptions .", "format .")
 
 
-@pytest.mark.parametrize(
-    "path", ["Cargo.lock", "Cargo.toml", "crates/proto/Cargo.toml"]
-)
-def test_files_outside_package_sources_rerun_every_package(path: str) -> None:
-    assert rerun(path) == (
-        "exceptions .",
-        "format .",
+def test_files_outside_every_package_rerun_every_package() -> None:
+    assert rerun("rust-toolchain.toml") == (
+        *PROJECT_UNITS,
         *PACKAGE_UNITS,
         "suite wasm",
+    )
+    profile = ROOT_MANIFEST.replace("line-tables-only", "full")
+    assert rewritten("Cargo.toml", profile) == rerun("rust-toolchain.toml")
+
+
+def test_a_fixture_in_a_crate_reruns_only_that_crate() -> None:
+    assert rerun("crates/home/src/flow/test-flow.toml") == (
+        *PROJECT_UNITS,
+        "lint home",
+        "test home",
+    )
+
+
+def test_a_fixture_in_a_dependency_reruns_its_dependents_which_may_read_it() -> (
+    None
+):
+    assert rerun("crates/client/tests/data.json") == rerun(
+        "crates/client/src/lib.rs"
+    )
+
+
+def test_adding_a_dev_dependency_reruns_only_its_crate() -> None:
+    manifest = MANIFESTS["crates/client/Cargo.toml"]
+    resolved = resolve(
+        edges=EDGES
+        | FrozenOrderedDict({"client": (*EDGES["client"], ("rand", "dev"))})
+    )
+    assert rewritten(
+        "crates/client/Cargo.toml",
+        f'{manifest}\n[dev-dependencies]\nrand = "0.9"\n',
+        resolved=resolved,
+        lockfile=True,
+    ) == (*PROJECT_UNITS, "lint client", "test client", "suite wasm")
+
+
+def test_adding_a_dependency_reruns_its_crate_and_its_dependents() -> None:
+    manifest = MANIFESTS["crates/client/Cargo.toml"]
+    resolved = resolve(
+        edges=EDGES
+        | FrozenOrderedDict({"client": (*EDGES["client"], ("rand", "normal"))})
+    )
+    assert rewritten(
+        "crates/client/Cargo.toml",
+        manifest.replace("[dependencies]", '[dependencies]\nrand = "0.9"'),
+        resolved=resolved,
+        lockfile=True,
+    ) == (
+        *PROJECT_UNITS,
+        "lint client",
+        "lint app",
+        "test client",
+        "test app",
+        "suite wasm",
+    )
+
+
+def test_a_lockfile_change_reruns_packages_whose_closure_changed() -> None:
+    bumped = resolve(VERSIONS | FrozenOrderedDict({"toml": "0.8.1"}))
+    assert relocked(bumped) == (*PROJECT_UNITS, "lint home", "test home")
+    shared = resolve(VERSIONS | FrozenOrderedDict({"serde": "1.0.1"}))
+    assert relocked(shared) == (*PROJECT_UNITS, *PACKAGE_UNITS, "suite wasm")
+
+
+def test_a_lockfile_change_outside_every_closure_reruns_no_package() -> None:
+    assert relocked(resolve()) == PROJECT_UNITS
+
+
+def test_without_the_resolve_graph_the_lockfile_reruns_every_package() -> None:
+    unresolved = keyed(resolved="")
+    after = keyed(edited("Cargo.lock"), resolved="")
+    assert changed(unresolved, after) == (
+        *PROJECT_UNITS,
+        *PACKAGE_UNITS,
+        "suite wasm",
+    )
+
+
+def test_a_workspace_dependency_reruns_the_packages_that_inherit_it() -> None:
+    featured = ROOT_MANIFEST.replace(
+        'toml = "0.8"', 'toml = { version = "0.8", features = ["parse"] }'
+    )
+    assert rewritten("Cargo.toml", featured) == (
+        *PROJECT_UNITS,
+        "lint home",
+        "test home",
+    )
+
+
+def test_workspace_lints_rerun_the_packages_that_take_them() -> None:
+    stricter = ROOT_MANIFEST.replace('pedantic = "warn"', 'pedantic = "deny"')
+    assert rewritten("Cargo.toml", stricter) == (
+        *PROJECT_UNITS,
+        "lint proto",
+        "test proto",
     )
 
 

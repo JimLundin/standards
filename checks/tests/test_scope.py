@@ -93,8 +93,9 @@ def test_dependencies_close_over_dependencies_in_order() -> None:
     )
 
 
-def test_owned_files_are_a_package_s_rust_sources_and_docs() -> None:
+def test_owned_files_are_every_file_in_a_package_s_folder() -> None:
     assert owned("crates/home/src/lib.rs", PACKAGES) == "home"
     assert owned("crates/home/README.md", PACKAGES) == "home"
-    assert not owned("crates/home/Cargo.toml", PACKAGES)
+    assert owned("crates/home/Cargo.toml", PACKAGES) == "home"
+    assert owned("crates/home/src/flow/test-flow.toml", PACKAGES) == "home"
     assert not owned("tools/check.sh", PACKAGES)

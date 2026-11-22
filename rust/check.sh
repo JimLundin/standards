@@ -69,6 +69,12 @@ if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; t
 	mapfile -t libraries < <(grep . <<<"$layering")
 	described=("--metadata=$metadata")
 fi
+# The resolve graph gives each package's key the locked dependencies it
+# reaches; without it, or with a lockfile out of date, the whole lockfile is
+# every package's input.
+if "${cargo[@]}" metadata --locked --format-version 1 >"$logs/resolve.json" 2>/dev/null; then
+	described+=("--resolve=$(native "$logs/resolve.json")")
+fi
 
 tests=(test)
 test_options=(--quiet)
