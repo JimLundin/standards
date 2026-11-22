@@ -3,14 +3,18 @@ home=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 failed=()
 tier=step
 project=.
-base_ref=
-everything=
-whole=
 lookup=1
-mode=all
-packages=()
+outcome=
+suffix=
+keyed=
+wrote=
+standards_tree=
+unit_arguments=()
+members=()
+selected=()
 suite_names=()
 suite_commands=()
+declare -A keys=() recorded=()
 
 native() {
 	if command -v cygpath >/dev/null; then cygpath -m "$1"; else echo "$1"; fi
@@ -50,23 +54,27 @@ totals() {
 }
 
 # A step passes as flaky when a test listed as flaky failed and passed on
-# its retry; nextest marks each such test FLAKY.
+# its retry; nextest marks each such test FLAKY. Its result is left in
+# `outcome`, and `suffix`, when set, is added to its summary.
 step() {
-	local name=$1 summary=$2
+	local name=$1 summary=$2 log
 	shift 2
 	if ! command -v "$1" >/dev/null; then
+		outcome=skip
 		line "$name" skip "$1 not installed"
 		return
 	fi
-	local log="$logs/$name.log" status=ok
+	log="$logs/$name.log"
+	outcome=ok
 	"$@" >"$log" 2>&1 || {
-		status=FAIL
+		outcome=FAIL
 		failed+=("$name")
 	}
-	if [ "$status" = ok ] && plain "$log" | grep -qE '^ *FLAKY '; then
-		status=flaky
+	if [ "$outcome" = ok ] && plain "$log" | grep -qE '^ *FLAKY '; then
+		outcome=flaky
 	fi
-	line "$name" "$status" "$(eval "$summary \"\$log\"")"
+	line "$name" "$outcome" "$(eval "$summary \"\$log\"")${suffix:+; $suffix}"
+	suffix=
 }
 
 checks() {
@@ -84,15 +92,9 @@ arguments() {
 		commit | step | release) tier=$1 ;;
 		fast) tier=step ;;
 		full) tier=release ;;
-		--base)
-			base_ref=${2:?--base needs a ref}
-			shift
-			;;
-		--base=*) base_ref=${1#--base=} ;;
-		--all) everything=--all ;;
 		--no-cache) lookup= ;;
 		-*)
-			echo "unknown option $1; use [commit|step|release] [--base <ref>|--all] [--no-cache] [project]" >&2
+			echo "unknown option $1; use [commit|step|release] [--no-cache] [project]" >&2
 			exit 2
 			;;
 		*) project=$1 ;;
@@ -111,14 +113,6 @@ full() {
 	at_least release
 }
 
-builds() {
-	[ "$mode" != docs ] && [ "$mode" != none ]
-}
-
-unbuilt() {
-	line "$1" skip "$([ "$mode" = docs ] && echo "docs only" || echo "no changes")"
-}
-
 cache_root() {
 	if [ -n "${STANDARDS_CACHE:-}" ]; then
 		echo "$STANDARDS_CACHE"
@@ -129,162 +123,212 @@ cache_root() {
 	fi
 }
 
-# The git tree of a directory's tracked files and untracked files that are
-# not ignored, as they are on disk. They are staged into an index of the
-# standards' own, so the real index is untouched; it is kept in the cache so
-# that its stat data stays fresh where another git wrote the real index (WSL
-# reading a Windows checkout), and a private copy is used while it is busy.
-tree_of() {
-	local real prefix kept index
-	prefix=$(git -C "$1" rev-parse --show-prefix 2>/dev/null) || return
-	real=$(git -C "$1" rev-parse --path-format=absolute --git-path index)
-	kept="$cache/index/$(printf '%s' "$real" | sha256sum | cut -c1-32)"
-	mkdir -p "$cache/index"
+# Runs a git command in a directory against an index of the standards' own,
+# holding its tracked files and untracked files that are not ignored, as they
+# are on disk, so the real index is untouched. The index is kept in the cache
+# so that its stat data stays fresh where another git wrote the real index
+# (WSL reading a Windows checkout), and a private copy is used while it is
+# busy.
+staged() {
+	local directory=$1 real kept index
+	shift
+	real=$(git -C "$directory" rev-parse --path-format=absolute --git-path index 2>/dev/null) || return
+	kept="$(cache_root)/index/$(printf '%s' "$real" | sha256sum | cut -c1-32)"
+	mkdir -p "${kept%/*}"
 	[ -f "$kept" ] || cp "$real" "$kept" 2>/dev/null
 	for index in "$kept" "$(mktemp "$logs/index.XXXXXX")"; do
 		[ "$index" = "$kept" ] || cp "$real" "$index" 2>/dev/null || rm -f "$index"
-		if GIT_INDEX_FILE=$(native "$index") git -C "$1" add -A -- . >/dev/null 2>&1; then
-			GIT_INDEX_FILE=$(native "$index") git -C "$1" write-tree ${prefix:+"--prefix=$prefix"}
+		if GIT_INDEX_FILE=$(native "$index") git -C "$directory" add -A -- . >/dev/null 2>&1; then
+			GIT_INDEX_FILE=$(native "$index") git -C "$directory" "$@"
 			return
 		fi
 	done
 	return 1
 }
 
-resolve_base() {
-	local ref
-	if [ -n "$base_ref" ]; then
-		base=$(git rev-parse -q --verify "$base_ref^{commit}") || {
-			echo "--base $base_ref is not a commit" >&2
-			exit 2
-		}
-		against="against $base_ref"
-		return
-	fi
-	for ref in "$(git symbolic-ref -q --short refs/remotes/origin/HEAD)" origin/main origin/master main master; do
-		[ -n "$ref" ] && git rev-parse -q --verify "$ref^{commit}" >/dev/null || continue
-		base=$(git merge-base HEAD "$ref") || continue
-		against="against $(git rev-parse --short "$base") (merge base with $ref)"
-		return
-	done
-	return 1
+tree_of() {
+	local prefix
+	prefix=$(git -C "$1" rev-parse --show-prefix 2>/dev/null) || return
+	staged "$1" write-tree ${prefix:+"--prefix=$prefix"}
 }
 
-# Changed files: what differs between the base and the working tree, plus
-# untracked files that are not ignored, relative to the project.
-changes() {
-	: >"$logs/changed.txt"
-	[ -z "$everything" ] || return 0
-	{
-		git diff --name-only --no-renames --relative -z "$base" -- .
-		git ls-files --others --exclude-standard -z -- .
-	} | tr '\0' '\n' | sort -u >"$logs/changed.txt"
+listing() {
+	staged . ls-files -s -z -- . >"$1"
 }
 
-# A pass is recorded under the tier, the base, the standards' tree and the
-# project's tree; a pass at a higher tier also counts. Scoping trusts the
-# base, so after the standards change each repository first runs whole.
+# Passes are notes on refs/notes/checks, which travel with origin: fetched
+# notes are merged by union, and a project without origin keeps them local.
+notes() {
+	git remote get-url origin >/dev/null 2>&1 || return 0
+	case $1 in
+	fetch)
+		git fetch -q origin "+refs/notes/checks:refs/notes/origin/checks" 2>/dev/null &&
+			git notes --ref=checks merge -q -s cat_sort_uniq refs/notes/origin/checks >/dev/null 2>&1
+		;;
+	push)
+		[ -n "$wrote" ] || return 0
+		git push -q origin refs/notes/checks 2>/dev/null ||
+			{ notes fetch && git push -q origin refs/notes/checks 2>/dev/null; } ||
+			line notes - "passes not pushed to origin"
+		;;
+	esac
+	return 0
+}
+
 begin() {
 	language=$1
-	cache=$(cache_root)
-	tree=$(tree_of .) || tree=
-	standards_tree=$(tree_of "$home") || standards_tree=
-	against=
-	if [ -n "$everything" ]; then
-		base=all
-	elif ! resolve_base; then
-		base=none
-		everything="no base to compare against"
-	fi
-	pass_keys=()
-	seen_keys=()
-	if [ -n "$tree" ] && [ -n "$standards_tree" ]; then
-		local kind key repository
-		repository="$(git rev-parse --path-format=absolute --git-common-dir)/$(git rev-parse --show-prefix)"
-		while read -r kind key; do
-			case $kind in
-			pass) pass_keys+=("$key") ;;
-			seen) seen_keys+=("$key") ;;
-			esac
-		done < <(checks cache-keys "$tier" "$language" "$base" "$standards_tree" "$tree" "$repository")
-	fi
-	if [ -n "$lookup" ]; then
-		for key in "${pass_keys[@]}"; do
-			if [ -f "$cache/passed/$key" ]; then
-				cat "$cache/passed/$key"
-				line cached ok "$tier passed on this tree $(date -r "$cache/passed/$key" '+%F %T'); --no-cache reruns"
-				exit 0
-			fi
-		done
-	fi
-	if ((${#seen_keys[@]} == 0)); then
-		whole="the standards' or project's tree is unknown"
-	elif [ ! -f "$cache/seen/${seen_keys[0]}" ]; then
-		whole="first whole $tier run with these standards"
-	fi
-	changes
+	notes fetch
+	[ -n "$lookup" ] || return 0
+	local object
+	while read -r _ object; do
+		recorded[$object]=1
+	done < <(git notes --ref=checks list 2>/dev/null)
 }
 
-# Scope prints tab-separated records: the mode, a summary, the packages to
-# build, the project's suites to run and problems in checks.toml.
-scope() {
-	local output kind first rest
-	output=$(checks scope "$language" "$tier" "$(native "$logs/changed.txt")" \
-		${everything:+"--all=$everything"} ${whole:+"--whole=$whole"} "$@")
-	while IFS=$'\t' read -r kind first rest; do
+# Keys each unit of the run, a check over a scope: the project (`.`), a
+# package, or a suite. `checks units` derives the keys from the project's
+# files, the standards' tree and the arguments, such as the toolchain. Out of
+# git, every unit runs and none is recorded.
+units() {
+	local output kind first second rest first_time=1
+	((${#unit_arguments[@]} == 0)) || first_time=
+	unit_arguments=("$@")
+	keyed=1
+	standards_tree=$(tree_of "$home") && listing "$logs/listing" || {
+		keyed=
+		: >"$logs/listing"
+	}
+	output=$(checks units "$language" "$tier" "$(native "$logs/listing")" \
+		"--standards=$standards_tree" "$@")
+	if [ -z "$output" ]; then
+		line units FAIL "the units check failed"
+		failed+=(units)
+		keyed=
+		return
+	fi
+	keys=()
+	while IFS=$'\t' read -r kind first second rest; do
 		case $kind in
-		mode) mode=$first ;;
-		summary) line scope - "$tier: $first${against:+, $against}" ;;
-		package) packages+=("$first") ;;
-		suite)
-			suite_names+=("$first")
-			suite_commands+=("$rest")
-			;;
-		problem)
-			line suites FAIL "$first"
-			failed+=(suites)
-			;;
+		unit) keys["$first $second"]=$rest ;;
+		*) [ -z "$first_time" ] || unlisted "$kind" "$first" "$second" ;;
 		esac
 	done <<<"$output"
-	if [ -z "$output" ]; then
-		line scope FAIL "the scope check failed"
-		failed+=(scope)
-		mode=all
+}
+
+unlisted() {
+	case $1 in
+	package) members+=("$2") ;;
+	suite)
+		suite_names+=("$2")
+		suite_commands+=("$3")
+		;;
+	problem)
+		line suites FAIL "$2"
+		failed+=(suites)
+		;;
+	esac
+}
+
+known() {
+	[ -n "$lookup" ] && [ -n "$keyed" ] && [ -n "${recorded[${keys["$1 $2"]:-none}]:-}" ]
+}
+
+# Records passes of a check's scopes as notes under their keys. If the
+# project or the standards changed while it ran, the keys are taken afresh,
+# and only scopes whose key still matches are recorded.
+remember() {
+	local check=$1 scope key
+	shift
+	[ -n "$keyed" ] && (($# > 0)) || return 0
+	local -A before=()
+	for scope; do
+		before[$scope]=${keys["$check $scope"]:-}
+	done
+	if ! listing "$logs/listing-now" || ! cmp -s "$logs/listing" "$logs/listing-now" ||
+		[ "$(tree_of "$home")" != "$standards_tree" ]; then
+		units "${unit_arguments[@]}"
 	fi
+	for scope; do
+		key=${keys["$check $scope"]:-}
+		[ -n "$key" ] && [ "$key" = "${before[$scope]}" ] || continue
+		git notes --ref=checks add -f -m "$language $check $scope" "$key" >/dev/null 2>&1 || continue
+		recorded[$key]=1
+		wrote=1
+	done
+}
+
+# A check of the whole project.
+unit() {
+	if known "$1" .; then
+		line "$1" ok "passed (recorded)"
+		return
+	fi
+	step "$@"
+	case $outcome in
+	ok | flaky) remember "$1" . ;;
+	esac
+}
+
+# A check of packages: the function named third runs it once on the packages
+# in `selected`, those whose passes aren't recorded, and the ones it passed
+# are recorded. A function that knows which passed writes them to
+# `$logs/<check>.passed`; otherwise `checks passed` reads them from its log.
+batch() {
+	local check=$1 summary=$2 run=$3 scope status=0
+	local -a passing
+	shift 3
+	selected=()
+	for scope; do
+		known "$check" "$scope" || selected+=("$scope")
+	done
+	if (($# > 0)) && ((${#selected[@]} == 0)); then
+		line "$check" ok "passed (recorded): $# packages"
+		return
+	fi
+	if ((${#selected[@]} < $#)); then
+		suffix="ran ${selected[*]}; $(($# - ${#selected[@]})) passed (recorded)"
+	fi
+	rm -f "$logs/$check.passed"
+	step "$check" "$summary" "$run"
+	case $outcome in
+	skip) return ;;
+	FAIL) status=1 ;;
+	esac
+	if [ -f "$logs/$check.passed" ]; then
+		mapfile -t passing <"$logs/$check.passed"
+	else
+		mapfile -t passing < <(checks passed "$status" "$(native "$logs/$check.log")" \
+			"$(native "$logs/metadata.json")" "${selected[@]}")
+	fi
+	remember "$check" "${passing[@]}"
 }
 
 suites() {
-	local index program words
+	local index name program words
 	for index in "${!suite_names[@]}"; do
+		name=${suite_names[index]}
+		if known suite "$name"; then
+			line "$name" ok "passed (recorded)"
+			continue
+		fi
 		read -r -a words <<<"${suite_commands[index]}"
 		for program in "${words[@]}"; do
 			[[ $program == *=* ]] || break
 		done
-		if command -v "$program" >/dev/null; then
-			step "${suite_names[index]}" ending bash -c "${suite_commands[index]}"
-		else
-			line "${suite_names[index]}" skip "$program not installed"
+		if ! command -v "$program" >/dev/null; then
+			line "$name" skip "$program not installed"
+			continue
 		fi
+		step "$name" ending bash -c "${suite_commands[index]}"
+		case $outcome in
+		ok | flaky) remember suite "$name" ;;
+		esac
 	done
-}
-
-remember() {
-	local key
-	[ "$(tree_of .)" = "$tree" ] && [ "$(tree_of "$home")" = "$standards_tree" ] || return 0
-	mkdir -p "$cache/passed" "$cache/seen"
-	cp "$logs/summary.txt" "$cache/passed/${pass_keys[0]}"
-	if [ "$mode" = all ] || [ "$mode" = whole ]; then
-		for key in "${seen_keys[@]}"; do
-			: >"$cache/seen/$key"
-		done
-	fi
-	find "$cache/passed" -type f -mtime +30 -delete 2>/dev/null
-	return 0
 }
 
 finish() {
 	suites
+	notes push
 	echo "tier: $tier, logs: $(native "$logs")"
-	((${#failed[@]} == 0)) || return 1
-	((${#pass_keys[@]} == 0)) || remember
+	((${#failed[@]} == 0))
 }

@@ -7,7 +7,8 @@ config="$standards/pyproject.toml"
 arguments "$@"
 cd "$project" || exit 2
 begin python
-scope
+units "--toolchain=$(uv --version 2>&1)" \
+	--project=exceptions,format,lint,types,test,test-release,coverage,immutability,purity,unused,imports,mutation,duplication,volume
 
 ruff_config=(--config "$config")
 if grep -qs '^\[tool\.ruff' pyproject.toml; then
@@ -35,18 +36,13 @@ mutate() {
 	[ -z "$remaining" ]
 }
 
-step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
+unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 	checks policy python "$(native "$standards/..")" "${tracked[@]}"
-step format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
+unit format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q ruff@latest format "${ruff_config[@]}" --check .
-step lint "last 'Found [0-9]+ errors?|All checks passed'" \
+unit lint "last 'Found [0-9]+ errors?|All checks passed'" \
 	uvx -q ruff@latest check "${ruff_config[@]}" .
-if [ -f uv.lock ] && ! builds; then
-	unbuilt types
-	if at_least step; then
-		unbuilt test
-	fi
-elif [ -f uv.lock ]; then
+if [ -f uv.lock ]; then
 	environment=$(uv run --frozen -q python -c 'import sys; print(sys.executable)')
 	types_config=pyproject.toml
 	if ! grep -qs '^\[tool\.basedpyright\]' pyproject.toml; then
@@ -59,7 +55,7 @@ print(json.dumps({**config, "extraPaths": sys.argv[2:]}))' \
 			"$(native "$config")" "$(native "$PWD/src")" "$(native "$PWD")" \
 			>"$logs/pyrightconfig.json"
 	fi
-	step types "last '[0-9]+ errors?, [0-9]+ warnings?'" \
+	unit types "last '[0-9]+ errors?, [0-9]+ warnings?'" \
 		uvx -q basedpyright@latest --project "$types_config" \
 		--pythonpath "$environment" "${sources[@]}"
 	if full; then
@@ -67,12 +63,12 @@ print(json.dumps({**config, "extraPaths": sys.argv[2:]}))' \
 		if grep -rqsE --include=conftest.py 'register_profile\(\s*"full"' .; then
 			thorough+=(--hypothesis-profile=full)
 		fi
-		step test "summed 'passed|failed|errors?'" uv run --frozen -q \
+		unit test-release "summed 'passed|failed|errors?'" uv run --frozen -q \
 			python -m coverage run -m pytest -q "${thorough[@]}"
-		step coverage "last '[0-9]+%'" \
+		unit coverage "last '[0-9]+%'" \
 			uv run --frozen -q python -m coverage report
 	elif at_least step; then
-		step test "summed 'passed|failed|errors?'" \
+		unit test "summed 'passed|failed|errors?'" \
 			uv run --frozen -q python -m pytest -q
 	fi
 else
@@ -81,12 +77,12 @@ else
 		line test skip "no uv.lock"
 	fi
 fi
-step immutability "last 'Found [0-9]+ issues|All checks passed'" \
+unit immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	checks immutability "${sources[@]}"
-step purity "last 'Found [0-9]+ issues|All checks passed'" \
+unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
 if ((${#unused_sources[@]} > 0)); then
-	step unused "count ': unused ' findings" \
+	unit unused "count ': unused ' findings" \
 		uvx -q --python 3.15 vulture "${unused_sources[@]}"
 fi
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
@@ -97,22 +93,20 @@ if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
 			'from importlinter.cli import lint_imports_command
 lint_imports_command()')
 	fi
-	step imports "last 'Contracts: .*|Could not find .*'" "${imports[@]}"
+	unit imports "last 'Contracts: .*|Could not find .*'" "${imports[@]}"
 fi
 if full; then
-	if ! builds; then
-		unbuilt mutation
-	elif [ ! -f uv.lock ]; then
+	if [ ! -f uv.lock ]; then
 		line mutation skip "no uv.lock"
 	elif ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
 		line mutation skip "mutmut needs os.fork (Linux, macOS or WSL)"
 	else
-		step mutation mutants mutate
+		unit mutation mutants mutate
 	fi
-	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
 		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
 		--format python --silent .
-	step volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext py,pyw --no-cocomo .
+	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext py,pyw --no-cocomo .
 fi
 
 finish

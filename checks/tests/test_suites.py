@@ -3,7 +3,7 @@ lazy from collections.abc import Sequence
 import pytest
 from ordered import FrozenList
 
-from checks.core.suites import Changes, Suite, Trigger, load, triggered
+from checks.core.suites import Suite, Trigger, active, load
 
 PACKAGES = ("proto", "client", "app")
 CONDUCTOR = """
@@ -30,10 +30,6 @@ tier = "release"
 tier = "step"
 paths = ["crates/app/**", "crates/proto/**"]
 """
-
-
-def changes(*files: str, packages: Sequence[str] = ()) -> Changes:
-    return Changes(FrozenList(files), FrozenList(packages))
 
 
 def names(suites: Sequence[Suite]) -> FrozenList[str]:
@@ -138,52 +134,12 @@ def test_repeated_names_are_reported_and_the_first_kept() -> None:
     assert loaded.entries[0].command == "first"
 
 
-def test_a_suite_runs_in_its_tier_and_above_when_its_paths_change() -> None:
-    suites = load(CONDUCTOR, "rust", PACKAGES).entries
-    record = changes("docs/p1/run.txt")
-    assert names(triggered(suites, "commit", record)) == ("ip-scrub",)
-    assert names(triggered(suites, "release", record)) == (
-        "ip-scrub",
-        "browser",
+def test_a_suite_is_active_from_the_tier_of_a_trigger() -> None:
+    ip_scrub, wasm, browser = load(CONDUCTOR, "rust", PACKAGES).entries
+    assert active(ip_scrub, "commit") == ip_scrub.triggers
+    assert active(wasm, "release") == wasm.triggers
+    assert active(browser, "commit") == ()
+    assert active(browser, "step") == (
+        Trigger("step", FrozenList(("crates/app/**", "crates/proto/**"))),
     )
-    assert names(triggered(suites, "step", changes("docs/notes.md"))) == ()
-
-
-def test_a_package_trigger_fires_for_affected_packages() -> None:
-    suites = load(CONDUCTOR, "rust", PACKAGES).entries
-    affected = changes("crates/agents/src/lib.rs", packages=("agents", "app"))
-    assert names(triggered(suites, "commit", affected)) == ("wasm-clippy",)
-    unrelated = changes("crates/agents/src/lib.rs", packages=("agents",))
-    assert names(triggered(suites, "commit", unrelated)) == ()
-
-
-def test_the_step_trigger_is_explicit() -> None:
-    suites = load(CONDUCTOR, "rust", PACKAGES).entries
-    proto = changes("crates/proto/src/lib.rs", packages=("proto", "app"))
-    assert names(triggered(suites, "commit", proto)) == ("wasm-clippy",)
-    assert names(triggered(suites, "step", proto)) == ("wasm-clippy", "browser")
-    home = changes("crates/home/src/lib.rs", packages=("home",))
-    assert names(triggered(suites, "step", home)) == ()
-    assert names(triggered(suites, "release", home)) == ("browser",)
-
-
-def test_a_trigger_without_paths_fires_on_any_change() -> None:
-    suites = load(CONDUCTOR, "rust", PACKAGES).entries
-    assert names(triggered(suites, "release", changes())) == ()
-    assert names(triggered(suites, "release", changes("README.md"))) == (
-        "browser",
-    )
-
-
-def test_everything_fires_every_trigger_up_to_the_tier() -> None:
-    suites = load(CONDUCTOR, "rust", PACKAGES).entries
-    everything = Changes(FrozenList(), FrozenList(), everything=True)
-    assert names(triggered(suites, "commit", everything)) == (
-        "ip-scrub",
-        "wasm-clippy",
-    )
-    assert names(triggered(suites, "step", everything)) == (
-        "ip-scrub",
-        "wasm-clippy",
-        "browser",
-    )
+    assert active(browser, "release") == browser.triggers

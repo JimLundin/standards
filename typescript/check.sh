@@ -6,7 +6,8 @@ source "$standards/../lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin typescript
-scope
+units "--toolchain=$(node --version 2>&1)" \
+	--project=exceptions,format,lint,types,unused,test,test-release,mutation,duplication,volume
 project=$(pwd)
 biome=()
 biome_config=$standards/biome.json
@@ -46,36 +47,32 @@ biome_lint() {
 	return "$status"
 }
 
-step exceptions "last 'Found [0-9]+ issues|All checks passed'" \
+unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 	checks policy typescript "$(native "$standards/..")" "${tracked[@]}"
-step format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
+unit format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y @biomejs/biome@latest format "${biome[@]}" "${sources[@]}"
-step lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
+unit lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
 	biome_lint
-if [ -f tsconfig.json ] && ! builds; then
-	unbuilt types
-elif [ -f tsconfig.json ]; then
+if [ -f tsconfig.json ]; then
 	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"]}}\n' \
 		"$(native "$project/tsconfig.json")" \
 		"$(native "$standards/tsconfig.base.json")" \
 		"$(native "$project/node_modules/@types")" >"$logs/tsconfig.json"
-	step types "count 'error TS' errors" \
+	unit types "count 'error TS' errors" \
 		npx -y -p typescript@latest tsc -p "$(native "$logs/tsconfig.json")"
 fi
 if [ -f package.json ]; then
-	step unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
+	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p node@26 -p knip@latest knip --no-progress
 fi
 tests=(test)
+test_check=test
 if full && grep -qs '"test:full"' package.json; then
 	tests=(run test:full)
+	test_check=test-release
 fi
 if grep -qs '"test' package.json && at_least step; then
-	if builds; then
-		step test "joined '(pass|fail) [0-9]+'" npm "${tests[@]}" --silent
-	else
-		unbuilt test
-	fi
+	unit "$test_check" "joined '(pass|fail) [0-9]+'" npm "${tests[@]}" --silent
 fi
 if full; then
 	mutation=()
@@ -88,18 +85,16 @@ if full; then
 	if [ -n "$mutate" ]; then
 		mutation+=(--mutate "$mutate")
 	fi
-	if ! builds; then
-		unbuilt mutation
-	elif [ -e node_modules/@stryker-mutator/core ]; then
-		step mutation "last 'mutation score (of )?[0-9.]+'" \
+	if [ -e node_modules/@stryker-mutator/core ]; then
+		unit mutation "last 'mutation score (of )?[0-9.]+'" \
 			npx --no-install stryker run "${mutation[@]}"
 	else
 		line mutation skip "@stryker-mutator/core not installed"
 	fi
-	step duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
 		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
 		--format typescript,javascript,css --silent .
-	step volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
+	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
 fi
 
 finish

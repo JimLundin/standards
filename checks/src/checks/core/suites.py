@@ -5,10 +5,10 @@ lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.cache import TIERS
-from checks.core.values import entries, is_list, matches, parse_toml, table
+from checks.core.values import entries, is_list, parse_toml, table
 
 SUITES = "checks.toml"
+TIERS = FrozenList(("commit", "step", "release"))
 SUITE_KEYS = FrozenOrderedSet(("name", "command", "when"))
 WHEN_KEYS = FrozenOrderedSet(("tier", "paths", "packages"))
 NAME = re.compile(r"[a-z][a-z0-9-]*")
@@ -33,13 +33,6 @@ class Suite:
 class Suites:
     entries: FrozenList[Suite]
     problems: FrozenList[str]
-
-
-@dataclass(frozen=True, slots=True)
-class Changes:
-    files: FrozenList[str]
-    packages: FrozenList[str]
-    everything: bool = False
 
 
 def unknown_keys(
@@ -156,28 +149,11 @@ def load(text: str | None, language: str, packages: Sequence[str]) -> Suites:
     return Suites(suites, problems)
 
 
-def fires(trigger: Trigger, changes: Changes) -> bool:
-    if changes.everything:
-        return True
-    if not trigger.paths and not trigger.packages:
-        return bool(changes.files)
-    return any(
-        matches(file, glob) for file in changes.files for glob in trigger.paths
-    ) or any(package in changes.packages for package in trigger.packages)
-
-
 def at(tier: str, trigger: Trigger) -> bool:
     return TIERS.index(trigger.tier) <= TIERS.index(tier)
 
 
-def triggered(
-    suites: Sequence[Suite], tier: str, changes: Changes
-) -> FrozenList[Suite]:
+def active(suite: Suite, tier: str) -> FrozenList[Trigger]:
     return FrozenList(
-        suite
-        for suite in suites
-        if any(
-            at(tier, trigger) and fires(trigger, changes)
-            for trigger in suite.triggers
-        )
+        trigger for trigger in suite.triggers if at(tier, trigger)
     )
