@@ -175,8 +175,29 @@ notes() {
 	return 0
 }
 
+declare -A pins=()
+while IFS='=' read -r name value; do
+	[[ $name =~ ^[A-Z_]+$ ]] && pins[$name]=$value
+done <"$home/tools.env"
+
+# Fails fast when an installed tool isn't at its version in tools.env, naming
+# the command that installs it there, with {} for the version. A tool that
+# isn't installed is left to its step.
+pinned() {
+	local name=$1 probe=$2 install=$3 found pin
+	shift 3
+	command -v "$probe" >/dev/null || return 0
+	pin=${pins[$name]}
+	found=$("$@" 2>&1 | head -1)
+	[[ " $found " =~ [^0-9.]${pin//./\.}[^0-9.] ]] && return 0
+	echo "$found is not $name=$pin from $(native "$home/tools.env"); install it with: ${install//\{\}/$pin}" >&2
+	exit 2
+}
+
 begin() {
 	language=$1
+	pinned UV uv "uv self update {}" uv --version
+	pinned PYTHON python3 "uv python install {}, and put it first on PATH as python3" python3 --version
 	notes fetch
 	[ -n "$lookup" ] || return 0
 	local object
@@ -269,10 +290,10 @@ unit() {
 	esac
 }
 
-# A check of packages: the function named third runs it once on the packages
-# in `selected`, those whose passes aren't recorded, and the ones it passed
-# are recorded. A function that knows which passed writes them to
-# `$logs/<check>.passed`; otherwise `checks passed` reads them from its log.
+# A check of packages, run once over the workspace by the function named
+# third when any package's pass isn't recorded; those packages are in
+# `selected`. `checks passed` credits each failure in its log to a package,
+# and the unrecorded packages without one are recorded.
 batch() {
 	local check=$1 summary=$2 run=$3 scope status=0
 	local -a passing
@@ -286,20 +307,15 @@ batch() {
 		return
 	fi
 	if ((${#selected[@]} < $#)); then
-		suffix="ran ${selected[*]}; $(($# - ${#selected[@]})) passed (recorded)"
+		suffix="unproven ${selected[*]}; $(($# - ${#selected[@]})) passed (recorded)"
 	fi
-	rm -f "$logs/$check.passed"
 	step "$check" "$summary" "$run"
 	case $outcome in
 	skip) return ;;
 	FAIL) status=1 ;;
 	esac
-	if [ -f "$logs/$check.passed" ]; then
-		mapfile -t passing <"$logs/$check.passed"
-	else
-		mapfile -t passing < <(checks passed "$status" "$(native "$logs/$check.log")" \
-			"$(native "$logs/metadata.json")" "${selected[@]}")
-	fi
+	mapfile -t passing < <(checks passed "$status" "$(native "$logs/$check.log")" \
+		"$(native "$logs/metadata.json")" "${selected[@]}")
 	remember "$check" "${passing[@]}"
 }
 

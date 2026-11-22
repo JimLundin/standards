@@ -85,11 +85,14 @@ def listing(files: Mapping[str, str]) -> str:
 
 def outcome(
     files: Mapping[str, str] = FILES,
+    *,
     tier: str = "commit",
-    toolchain: str = "cargo 1.95.0-nightly",
     suites: str = SUITES,
-    standards: str = "tree",
+    **versions: str,
 ) -> Outcome:
+    toolchain = versions.get("toolchain", "cargo 1.95.0-nightly")
+    standards = versions.get("standards", "tree")
+    lint = versions.get("lint", "clippy 0.1.95")
     texts = FrozenOrderedDict({
         "listing": listing(files),
         "checks.toml": suites,
@@ -104,6 +107,8 @@ def outcome(
         f"--toolchain={toolchain}",
         "--project=exceptions,format",
         "--package=lint,test",
+        f"--tool=lint={lint}",
+        "--tool=test=cargo-nextest 0.9.100",
     )
     return run(arguments, Inputs(texts))
 
@@ -115,7 +120,7 @@ def keyed(
 ) -> FrozenOrderedDict[str, str]:
     return FrozenOrderedDict(
         (f"{fields[1]} {fields[2]}", fields[3])
-        for line in outcome(files, tier, toolchain).lines
+        for line in outcome(files, tier=tier, toolchain=toolchain).lines
         if (fields := line.split("\t"))[0] == "unit"
     )
 
@@ -262,3 +267,16 @@ def test_a_project_without_packages_has_only_project_units() -> None:
     )
     (line,) = run(arguments, Inputs(texts)).lines
     assert line.startswith("unit\tlint\t.\t")
+
+
+def test_a_tool_s_version_is_in_its_check_s_keys_only() -> None:
+    units = FrozenList(
+        line for line in outcome().lines if line.startswith("unit")
+    )
+    newer = outcome(lint="clippy 0.1.96").lines[: len(units)]
+    changed = FrozenList(
+        " ".join(old.split("\t")[1:3])
+        for old, new in zip(units, newer, strict=True)
+        if old != new
+    )
+    assert changed == tuple(unit for unit in PACKAGE_UNITS if "lint" in unit)

@@ -90,26 +90,40 @@ test_check=test
 if full; then
 	test_check=test-release
 fi
-units "--toolchain=$("${cargo[@]}" -V 2>&1)" "${described[@]}" \
-	--project=exceptions,format,shell,doctest,mutation,unused-dependencies,duplication,volume \
-	"--package=lint,core,api,$test_check"
+pinned NEXTEST cargo-nextest "cargo install --locked cargo-nextest@{}" cargo nextest --version
+pinned SCCACHE sccache "cargo install --locked sccache@{}" sccache --version
+# A check's key holds the pinned version of the tool it runs; the
+# toolchain's covers rustfmt and clippy, and the standards' tree covers
+# rust-decisions.
+versions=("--tool=$test_check=${tests[0]} ${pins[NEXTEST]}")
+if full; then
+	pinned CARGO_MUTANTS cargo-mutants "cargo install --locked cargo-mutants@{}" cargo mutants --version
+	pinned CARGO_MACHETE cargo-machete "cargo install --locked cargo-machete@{}" cargo machete --version
+	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
+	versions+=(
+		"--tool=mutation=${pins[CARGO_MUTANTS]}"
+		"--tool=unused-dependencies=${pins[CARGO_MACHETE]}"
+		"--tool=duplication=${pins[JSCPD]}"
+		"--tool=volume=${pins[SCC]}"
+	)
+fi
+units "--toolchain=$("${cargo[@]}" -V 2>&1; "${cargo[@]/cargo/rustc}" -V 2>&1)" \
+	"${described[@]}" "${versions[@]}" \
+	--project=exceptions,format,doctest,mutation,unused-dependencies,duplication,volume \
+	"--package=lint,core,api,shell,$test_check"
 
-chosen() {
-	local package
-	for package in "${selected[@]}"; do
-		printf '%s\n' -p "$package"
-	done
-}
-
+# The package checks run over the whole workspace, so that cargo resolves
+# features once and rebuilds only what changed; `-p` would resolve each
+# selection's features apart. Their findings are credited to packages by file.
 lint() {
-	local packages
-	mapfile -t packages < <(chosen)
-	"${cargo[@]}" clippy --keep-going --all-targets "${packages[@]}" -- "${lints[@]}"
+	"${cargo[@]}" clippy --workspace --keep-going --all-targets -- "${lints[@]}"
 }
 
 core() {
-	local output status=0 packages
-	mapfile -t packages < <(chosen)
+	local output status=0 packages=() library
+	for library in "${libraries[@]}"; do
+		packages+=(-p "$library")
+	done
 	# Lints only report here, so one library's findings don't stop its
 	# dependents from building; rust-core decides which of them fail.
 	mkdir -p "$logs/core"
@@ -142,17 +156,19 @@ clippy_config() {
 }
 
 api() {
-	local library status=0
-	: >"$logs/api.passed"
-	for library in "${selected[@]}"; do
+	local library status=0 documented=()
+	for library in "${libraries[@]}"; do
 		if "${cargo[@]}" rustdoc -q --lib -p "$library" -- -Zunstable-options \
-			--output-format json --document-hidden-items &&
-			checks rust-api "$metadata" "$library"; then
-			echo "$library" >>"$logs/api.passed"
+			--output-format json --document-hidden-items; then
+			documented+=("$library")
 		else
+			echo "error: could not document \`$library\`"
 			status=1
 		fi
 	done
+	if ((${#documented[@]} > 0)); then
+		checks rust-api "$metadata" "${documented[@]}" || status=1
+	fi
 	return "$status"
 }
 
@@ -170,10 +186,18 @@ shell() {
 		"$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
 }
 
+# nextest builds the workspace's tests and runs the unproven packages';
+# cargo test can't select packages without -p, so it runs them all.
 run_tests() {
-	local packages
-	mapfile -t packages < <(chosen)
-	"${cargo[@]}" "${tests[@]}" "${packages[@]}" "${test_options[@]}"
+	local expression= package
+	if [ "${tests[0]}" != nextest ]; then
+		"${cargo[@]}" "${tests[@]}" --workspace "${test_options[@]}"
+		return
+	fi
+	for package in "${selected[@]}"; do
+		expression+="${expression:+ | }package(=$package)"
+	done
+	"${cargo[@]}" "${tests[@]}" --workspace ${expression:+-E "$expression"} "${test_options[@]}"
 }
 
 tested() {
@@ -200,7 +224,7 @@ else
 	batch api issues api "${libraries[@]}"
 fi
 if command -v rust-decisions >/dev/null; then
-	unit shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
+	batch shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell "${members[@]}"
 else
 	line shell skip "rust-decisions not installed"
 fi
@@ -228,7 +252,7 @@ if full; then
 	fi
 	unit unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
 	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" --format rust --silent .
+		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$standards/../jscpd.json")" --format rust --silent .
 	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext rs --no-cocomo .
 fi
 

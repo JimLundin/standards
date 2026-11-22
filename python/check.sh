@@ -7,7 +7,24 @@ config="$standards/pyproject.toml"
 arguments "$@"
 cd "$project" || exit 2
 begin python
-units "--toolchain=$(uv --version 2>&1)" \
+
+# A check's key holds the pinned version of the tool it runs.
+versions=(
+	"--tool=format=${pins[RUFF]}"
+	"--tool=lint=${pins[RUFF]}"
+	"--tool=types=${pins[BASEDPYRIGHT]}"
+	"--tool=unused=${pins[VULTURE]}"
+	"--tool=imports=${pins[IMPORT_LINTER]}"
+)
+if full; then
+	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
+	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
+fi
+python=
+if [ -f uv.lock ]; then
+	python=$(uv run --frozen -q python -V 2>&1)
+fi
+units "--toolchain=$(uv --version 2>&1) $python" "${versions[@]}" \
 	--project=exceptions,format,lint,types,test,test-release,coverage,immutability,purity,unused,imports,mutation,duplication,volume
 
 ruff_config=(--config "$config")
@@ -39,9 +56,9 @@ mutate() {
 unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 	checks policy python "$(native "$standards/..")" "${tracked[@]}"
 unit format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
-	uvx -q ruff@latest format "${ruff_config[@]}" --check .
+	uvx -q "ruff@${pins[RUFF]}" format "${ruff_config[@]}" --check .
 unit lint "last 'Found [0-9]+ errors?|All checks passed'" \
-	uvx -q ruff@latest check "${ruff_config[@]}" .
+	uvx -q "ruff@${pins[RUFF]}" check "${ruff_config[@]}" .
 if [ -f uv.lock ]; then
 	environment=$(uv run --frozen -q python -c 'import sys; print(sys.executable)')
 	types_config=pyproject.toml
@@ -56,7 +73,7 @@ print(json.dumps({**config, "extraPaths": sys.argv[2:]}))' \
 			>"$logs/pyrightconfig.json"
 	fi
 	unit types "last '[0-9]+ errors?, [0-9]+ warnings?'" \
-		uvx -q basedpyright@latest --project "$types_config" \
+		uvx -q "basedpyright@${pins[BASEDPYRIGHT]}" --project "$types_config" \
 		--pythonpath "$environment" "${sources[@]}"
 	if full; then
 		thorough=(-m "")
@@ -83,10 +100,10 @@ unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
 if ((${#unused_sources[@]} > 0)); then
 	unit unused "count ': unused ' findings" \
-		uvx -q --python 3.15 vulture "${unused_sources[@]}"
+		uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "${unused_sources[@]}"
 fi
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
-	imports=(uvx -q --from import-linter lint-imports)
+	imports=(uvx -q --from "import-linter==${pins[IMPORT_LINTER]}" lint-imports)
 	if [ -f uv.lock ]; then
 		# Windows application control can block venv entry-point launchers.
 		imports=(uv run --frozen -q python -c
@@ -104,7 +121,7 @@ if full; then
 		unit mutation mutants mutate
 	fi
 	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
+		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$standards/../jscpd.json")" \
 		--format python --silent .
 	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext py,pyw --no-cocomo .
 fi

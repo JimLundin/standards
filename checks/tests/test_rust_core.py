@@ -185,20 +185,20 @@ def test_the_core_config_adds_the_pointers_to_the_base() -> None:
         ),
     ]
     fresh = clippy_run(("c.toml", "out.toml"), Inputs()).writes
-    assert len(tomllib.loads(fresh["out.toml"])["disallowed-types"]) == len(
-        POINTERS
-    )
+    assert tomllib.loads(fresh["out.toml"])["disallowed-types"] == [
+        {"path": pointer, "reason": PLAIN} for pointer in POINTERS
+    ]
 
 
 def test_toml_values_round_trip() -> None:
-    value = FrozenOrderedDict({
+    value: FrozenOrderedDict[str, object] = FrozenOrderedDict({
         "on": True,
         "off": False,
         "count": 3,
         "ratio": 0.5,
         "name": 'tab\t"quoted" ü',
-        "empty": FrozenOrderedDict(),
-        "nested": [FrozenOrderedDict({"a": [1, 2]})],
+        "empty": FrozenOrderedDict[str, object](),
+        "nested": [FrozenOrderedDict[str, object]({"a": [1, 2]})],
     })
     document = f"value = {toml_value(value)}\n"
     assert tomllib.loads(document)["value"] == {

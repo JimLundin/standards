@@ -6,8 +6,21 @@ source "$standards/../lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin typescript
-units "--toolchain=$(node --version 2>&1)" \
+pinned NODE node "nvm install {}, or another way to put Node {} on PATH" node --version
+# A check's key holds the pinned version of the tool it runs.
+versions=(
+	"--tool=format=${pins[BIOME]}"
+	"--tool=lint=${pins[BIOME]}"
+	"--tool=types=${pins[TYPESCRIPT]}"
+	"--tool=unused=${pins[KNIP]}"
+)
+if full; then
+	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
+	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
+fi
+units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
 	--project=exceptions,format,lint,types,unused,test,test-release,mutation,duplication,volume
+
 project=$(pwd)
 biome=()
 biome_config=$standards/biome.json
@@ -34,14 +47,14 @@ biome_lint() {
 		for rule in $skips; do
 			skip+=(--skip="$rule")
 		done
-		npx -y @biomejs/biome@latest lint "${biome[@]}" "${skip[@]}" "${files[@]}" || status=1
+		npx -y "@biomejs/biome@${pins[BIOME]}" lint "${biome[@]}" "${skip[@]}" "${files[@]}" || status=1
 	done < <(tool_config biome-groups "${sources[@]}")
 	while IFS='|' read -r name path; do
 		mapfile -t covered < <(tool_config without "lint/plugin/$name" "${sources[@]}")
 		((${#covered[@]} > 0)) || continue
 		mkdir -p "$logs/plugins/$name"
 		printf '{"plugins": ["%s"]}\n' "$path" >"$logs/plugins/$name/biome.json"
-		npx -y @biomejs/biome@latest lint --only=plugin \
+		npx -y "@biomejs/biome@${pins[BIOME]}" lint --only=plugin \
 			--config-path="$(native "$logs/plugins/$name/biome.json")" "${covered[@]}" || status=1
 	done < <(tool_config biome-plugins "$(native "$biome_config")")
 	return "$status"
@@ -50,7 +63,7 @@ biome_lint() {
 unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
 	checks policy typescript "$(native "$standards/..")" "${tracked[@]}"
 unit format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
-	npx -y @biomejs/biome@latest format "${biome[@]}" "${sources[@]}"
+	npx -y "@biomejs/biome@${pins[BIOME]}" format "${biome[@]}" "${sources[@]}"
 unit lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
 	biome_lint
 if [ -f tsconfig.json ]; then
@@ -59,11 +72,11 @@ if [ -f tsconfig.json ]; then
 		"$(native "$standards/tsconfig.base.json")" \
 		"$(native "$project/node_modules/@types")" >"$logs/tsconfig.json"
 	unit types "count 'error TS' errors" \
-		npx -y -p typescript@latest tsc -p "$(native "$logs/tsconfig.json")"
+		npx -y -p "typescript@${pins[TYPESCRIPT]}" tsc -p "$(native "$logs/tsconfig.json")"
 fi
 if [ -f package.json ]; then
 	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
-		npx -y -p node@26 -p knip@latest knip --no-progress
+		npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress
 fi
 tests=(test)
 test_check=test
@@ -92,7 +105,7 @@ if full; then
 		line mutation skip "@stryker-mutator/core not installed"
 	fi
 	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-		npx -y jscpd@latest --config "$(native "$standards/../jscpd.json")" \
+		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$standards/../jscpd.json")" \
 		--format typescript,javascript,css --silent .
 	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
 fi

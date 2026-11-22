@@ -1,6 +1,6 @@
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -42,6 +42,9 @@ class Context:
     language: str
     standards: str
     toolchain: str
+    tools: Mapping[str, str] = field(
+        default_factory=FrozenOrderedDict[str, str]
+    )
 
 
 def digest(fields: Sequence[str]) -> str:
@@ -49,10 +52,9 @@ def digest(fields: Sequence[str]) -> str:
 
 
 def key(context: Context, check: str, scope: str, inputs: str) -> str:
-    fields = (context.language, check, scope)
-    return digest((*fields, context.standards, context.toolchain, inputs))[
-        :LENGTH
-    ]
+    tool = context.tools.get(check, "")
+    fields = (context.language, check, scope, context.standards)
+    return digest((*fields, context.toolchain, tool, inputs))[:LENGTH]
 
 
 def parse_record(record: str) -> File:
@@ -151,6 +153,12 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         language,
         "".join(options(arguments, "--standards=")),
         "".join(options(arguments, "--toolchain=")),
+        FrozenOrderedDict(
+            (name, version)
+            for name, _, version in (
+                tool.partition("=") for tool in options(arguments, "--tool=")
+            )
+        ),
     )
     files = listing(inputs.texts.get(listed, ""))
     metadata = options(arguments, "--metadata=")

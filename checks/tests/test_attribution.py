@@ -50,3 +50,37 @@ def test_a_failure_no_package_is_named_in_fails_them_all() -> None:
 def test_only_selected_packages_pass() -> None:
     assert passing("1", CLIPPY, "home", "app") == ("home",)
     assert passing("1", CLIPPY, "app") == ()
+
+
+LINT = """\
+warning: unused variable: `x`
+ --> crates/home/src/lib.rs:3:9
+error: this could be a `const fn`
+ --> crates/client/src/lib.rs:6:1
+  |
+6 | pub fn quadruple(value: u32) -> u32 {
+error: could not compile `client` (lib) due to 1 previous error
+"""
+
+
+def test_an_error_is_credited_to_the_package_whose_file_it_is_in() -> None:
+    assert passing("1", LINT, *SELECTED) == ("proto", "home")
+
+
+def test_a_finding_of_the_standards_checks_fails_its_package() -> None:
+    log = (
+        "crates/home/src/lib.rs:12: uses `alloc::boxed::Box`\nFound 1 issues\n"
+    )
+    assert passing("1", log, *SELECTED) == ("proto", "client", "app")
+    absolute = "/work/crates/home/src/lib.rs:1: x\n"
+    assert passing("1", absolute, *SELECTED) == ("proto", "client", "app")
+
+
+def test_a_finding_outside_every_package_fails_them_all() -> None:
+    log = "crates/home/src/lib.rs:12: x\nCargo.toml: the shell makes 30 of 40\n"
+    assert passing("1", log, *SELECTED) == ()
+
+
+def test_a_package_that_cannot_be_documented_fails() -> None:
+    log = "error: could not document `home`\n"
+    assert passing("1", log, *SELECTED) == ("proto", "client", "app")
