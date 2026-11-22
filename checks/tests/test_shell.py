@@ -33,11 +33,13 @@ def invoke(
 def test_tools_dispatch_to_each_tool() -> None:
     assert tuple(TOOLS) == (
         "cache-keys",
+        "core-clippy",
         "core-libraries",
         "immutability",
         "policy",
         "purity",
         "rust-api",
+        "rust-core",
         "rust-roots",
         "rust-shell",
         "scope",

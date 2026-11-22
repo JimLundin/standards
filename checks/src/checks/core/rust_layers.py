@@ -59,6 +59,16 @@ def packages_of(
     return FrozenList(table(item) for item in entries(metadata.get("packages")))
 
 
+def core_packages(
+    packages: Sequence[Mapping[str, object]],
+) -> FrozenList[Mapping[str, object]]:
+    return FrozenList(
+        package
+        for package in packages
+        if target_kinds(package) & LIBRARY_KINDS and not is_shell(package)
+    )
+
+
 def layer_issues(
     root: str, packages: Sequence[Mapping[str, object]]
 ) -> FrozenList[str]:
@@ -78,9 +88,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     root = str(metadata.get("workspace_root"))
     packages = packages_of(metadata)
     libraries = FrozenList(
-        str(package.get("name"))
-        for package in packages
-        if target_kinds(package) & LIBRARY_KINDS and not is_shell(package)
+        str(package.get("name")) for package in core_packages(packages)
     )
     coreless = FrozenList(
         f"{manifest(root, package)}: {CORELESS}"

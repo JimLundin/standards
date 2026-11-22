@@ -101,18 +101,35 @@ core() {
 	for library in "${libraries[@]}"; do
 		packages+=(-p "$library")
 	done
-	output=$("${cargo[@]}" check --lib --target "$core_target" \
-		"${packages[@]}" 2>&1) || status=$?
+	# Lints only report here, so one library's findings don't stop its
+	# dependents from building; rust-core decides which of them fail.
+	mkdir -p "$logs/core"
+	checks core-clippy "$(native "$(clippy_config)")" "$(native "$logs/core/clippy.toml")" || return
+	output=$(CLIPPY_CONF_DIR=$(native "$logs/core") "${cargo[@]}" clippy --lib \
+		--target "$core_target" --all-features --message-format=json \
+		"${packages[@]}" -- --cap-lints warn 2>&1 >"$logs/core.jsonl") || status=$?
 	echo "$output"
-	if ((status == 0)); then
-		echo "no_std: ${libraries[*]}"
-	elif grep -q 'may not be installed' <<<"$output"; then
+	if grep -q 'may not be installed' <<<"$output"; then
 		echo "rustup target add $core_target"
-	else
+		return "$status"
+	fi
+	checks rust-core "$metadata" "$(native "$logs/core.jsonl")" "${tracked[@]}" || status=1
+	if grep -q 'could not compile' <<<"$output"; then
 		echo "uses std: $(grep -oE 'could not compile `[^`]+`' <<<"$output" |
 			cut -d'`' -f2 | sort -u | paste -sd ' ' -)"
 	fi
 	return "$status"
+}
+
+clippy_config() {
+	local file
+	for file in clippy.toml .clippy.toml; do
+		if [ -e "$file" ]; then
+			echo "$file"
+			return
+		fi
+	done
+	echo "$standards/clippy.toml"
 }
 
 api() {
