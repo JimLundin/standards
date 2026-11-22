@@ -6,6 +6,7 @@ source "$standards/../lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin rust
+source "$standards/build.sh"
 
 has() {
 	local file
