@@ -246,9 +246,8 @@ begin() {
 # Keys each unit of the run, a check over a scope: the project (`.`), a
 # package, or a suite. `checks units` derives the keys from the project's
 # files, the standards' tree, the pins of tools.env and the arguments, such
-# as the toolchain, and
-# lists the workspace's packages and the tier's suites. Out of git, every
-# unit runs and none is recorded.
+# as the toolchain, and lists the workspace's packages and the tier's
+# suites. Out of git, every unit runs and none is recorded.
 units() {
 	local kind first second
 	unit_arguments=("$@")
