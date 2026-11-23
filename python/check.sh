@@ -23,7 +23,7 @@ if [ -f uv.lock ]; then
 	python=$(uv run --frozen -q python -V 2>&1)
 fi
 units "--toolchain=$(uv --version 2>&1) $python" "${versions[@]}" \
-	--project=exceptions,format,lint,types,test,test-release,coverage,immutability,purity,unused,imports,mutation,duplication,volume
+	--project=exceptions,format,lint,types,test,test-release,immutability,purity,unused,imports,mutation,duplication,volume
 
 ruff_config=(--config "$config")
 if grep -qs '^\[tool\.ruff' pyproject.toml; then
@@ -48,6 +48,17 @@ mutate() {
 	remaining=$(uv run --frozen -q mutmut results | checks filter-mutmut)
 	echo "$remaining"
 	[ -z "$remaining" ]
+}
+
+# The release's tests and their coverage are one unit, so the report reads
+# only the data of the run before it.
+measured() {
+	uv run --frozen -q python -m coverage run -m pytest -q "${thorough[@]}" &&
+		uv run --frozen -q python -m coverage report
+}
+
+covered() {
+	echo "$(summed 'passed|failed|errors?' "$1"); coverage $(last '[0-9]+%' "$1")"
 }
 
 exceptions_unit
@@ -76,10 +87,8 @@ print(json.dumps({**config, "extraPaths": sys.argv[2:]}))' \
 		if grep -rqsE --include=conftest.py 'register_profile\(\s*"full"' .; then
 			thorough+=(--hypothesis-profile=full)
 		fi
-		unit test-release "summed 'passed|failed|errors?'" uv run --frozen -q \
-			python -m coverage run -m pytest -q "${thorough[@]}"
-		unit coverage "last '[0-9]+%'" \
-			uv run --frozen -q python -m coverage report
+		tools_of[test-release]=uv
+		unit test-release covered measured
 	elif at_least step; then
 		unit test "summed 'passed|failed|errors?'" \
 			uv run --frozen -q python -m pytest -q
@@ -111,7 +120,7 @@ fi
 if full; then
 	if [ ! -f uv.lock ]; then
 		line mutation skip "no uv.lock"
-	elif [ -z "$verify" ] && ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
+	elif ! dry && ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
 		skipped mutation "mutmut needs os.fork (Linux, macOS or WSL)"
 	else
 		unit mutation mutants mutate

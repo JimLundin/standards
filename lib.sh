@@ -5,6 +5,7 @@ tier=step
 project=.
 lookup=1
 verify=
+affected=
 outcome=
 suffix=
 keyed=
@@ -16,7 +17,7 @@ selected=()
 tracked=()
 suite_names=()
 suite_commands=()
-declare -A keys=() recorded=()
+declare -A keys=() recorded=() affected_packages=()
 # The tool a unit needs to run, where its command is a function of the
 # script; any other unit needs its command.
 declare -A tools_of=()
@@ -25,8 +26,14 @@ native() {
 	if command -v cygpath >/dev/null; then cygpath -m "$1"; else echo "$1"; fi
 }
 
+# Listing the affected packages, which alone go to stdout, the lines go to
+# stderr.
 line() {
-	printf '%-20s %-5s %s\n' "$1" "$2" "$3" | tee -a "$logs/summary.txt"
+	if [ -n "$affected" ]; then
+		printf '%-20s %-5s %s\n' "$1" "$2" "$3" | tee -a "$logs/summary.txt" >&2
+	else
+		printf '%-20s %-5s %s\n' "$1" "$2" "$3" | tee -a "$logs/summary.txt"
+	fi
 }
 
 plain() {
@@ -70,10 +77,15 @@ skipped() {
 	fi
 }
 
-# Whether the unit named second can run its tool, skipping it if not.
-# Verifying runs no tool, so needs none.
+# Whether the run runs nothing: it verifies or lists the affected packages.
+dry() {
+	[ -n "$verify$affected" ]
+}
+
+# Whether the unit named second can run its tool, skipping it if not. A dry
+# run runs no tool, so needs none.
 needs() {
-	if [ -n "$verify" ] || command -v "$1" >/dev/null; then
+	if dry || command -v "$1" >/dev/null; then
 		return 0
 	fi
 	skipped "$2" "$1 not installed"
@@ -126,8 +138,9 @@ arguments() {
 		commit | step | release) tier=$1 ;;
 		--no-cache) lookup= ;;
 		--verify) verify=1 ;;
+		--affected) affected=1 ;;
 		-*)
-			echo "unknown option $1; use [commit|step|release] [--no-cache|--verify] [project]" >&2
+			echo "unknown option $1; use [commit|step|release] [--no-cache|--verify|--affected] [project]" >&2
 			exit 2
 			;;
 		*) project=$1 ;;
@@ -136,6 +149,10 @@ arguments() {
 	done
 	if [ -n "$verify" ] && [ -z "$lookup" ]; then
 		echo "--verify reads the recorded passes, which --no-cache ignores" >&2
+		exit 2
+	fi
+	if [ -n "$verify" ] && [ -n "$affected" ]; then
+		echo "--verify and --affected are two dry runs; pick one" >&2
 		exit 2
 	fi
 }
@@ -193,25 +210,6 @@ listing() {
 	staged . ls-files -s -z -- . >"$1"
 }
 
-# Passes are notes on refs/notes/checks, which travel with origin: fetched
-# notes are merged by union, and a project without origin keeps them local.
-notes() {
-	git remote get-url origin >/dev/null 2>&1 || return 0
-	case $1 in
-	fetch)
-		git fetch -q origin "+refs/notes/checks:refs/notes/origin/checks" 2>/dev/null &&
-			git notes --ref=checks merge -q -s cat_sort_uniq refs/notes/origin/checks >/dev/null 2>&1
-		;;
-	push)
-		[ -n "$wrote" ] || return 0
-		git push -q origin refs/notes/checks 2>/dev/null ||
-			{ notes fetch && git push -q origin refs/notes/checks 2>/dev/null; } ||
-			line notes - "passes not pushed to origin"
-		;;
-	esac
-	return 0
-}
-
 declare -A pins=()
 while IFS='=' read -r name value; do
 	[[ $name =~ ^[A-Z_]+$ ]] && pins[$name]=$value
@@ -239,12 +237,12 @@ begin() {
 	pinned UV uv "uv self update {}" uv --version
 	pinned PYTHON uv "uv python install {}" uv run --no-project -q python -V
 	mapfile -t tracked < <(git ls-files)
-	notes fetch
+	checks notes fetch
 	[ -n "$lookup" ] || return 0
-	local object
-	while read -r _ object; do
-		recorded[$object]=1
-	done < <(git notes --ref=checks list 2>/dev/null)
+	local key
+	while read -r key; do
+		recorded[$key]=1
+	done < <(checks notes lookup)
 }
 
 # Keys each unit of the run, a check over a scope: the project (`.`), a
@@ -311,11 +309,12 @@ unproven() {
 	failed+=("$name")
 }
 
-# Records passes of a check's scopes as notes under their keys. If the
+# Records passes of a check's scopes under their keys. If the
 # project or the standards changed while it ran, the keys are taken afresh,
 # and only scopes whose key still matches are recorded.
 remember() {
 	local check=$1 scope key
+	local -a passes=()
 	shift
 	[ -n "$keyed" ] && (($# > 0)) || return 0
 	local -A before=()
@@ -329,14 +328,18 @@ remember() {
 	for scope; do
 		key=${keys["$check $scope"]:-}
 		[ -n "$key" ] && [ "$key" = "${before[$scope]}" ] || continue
-		git notes --ref=checks add -f -m "$language $check $scope" "$key" >/dev/null 2>&1 || continue
+		passes+=("$key" "$language $check $scope")
+	done
+	((${#passes[@]} > 0)) || return 0
+	while read -r key; do
 		recorded[$key]=1
 		wrote=1
-	done
+	done < <(checks notes record "${passes[@]}")
 }
 
 # A check of the whole project.
 unit() {
+	[ -z "$affected" ] || return 0
 	if known "$1" .; then
 		line "$1" ok "passed (recorded)"
 		return
@@ -351,7 +354,8 @@ unit() {
 # A check of packages, run once over the workspace by the function named
 # third when any package's pass isn't recorded; those packages are in
 # `selected`. `checks passed` credits each failure in its log to a package,
-# and the unrecorded packages without one are recorded.
+# and the unrecorded packages without one are recorded. Listing the
+# affected packages, they are noted and nothing runs.
 batch() {
 	local check=$1 summary=$2 run=$3 scope status=0
 	local -a passing
@@ -360,6 +364,12 @@ batch() {
 	for scope; do
 		known "$check" "$scope" || selected+=("$scope")
 	done
+	if [ -n "$affected" ]; then
+		for scope in "${selected[@]}"; do
+			affected_packages[$scope]=1
+		done
+		return
+	fi
 	if (($# > 0)) && ((${#selected[@]} == 0)); then
 		line "$check" ok "passed (recorded): $# packages"
 		return
@@ -428,9 +438,26 @@ release_units() {
 		--include-ext "$2" --no-cocomo .
 }
 
+# Prints the packages, in the workspace's order, that a package check of the
+# run would check: those without a recorded pass, which a change to one or
+# to a dependency of one leaves.
+list_affected() {
+	local member
+	for member in "${members[@]}"; do
+		[ -z "${affected_packages[$member]:-}" ] || echo "$member"
+	done
+	((${#failed[@]} == 0))
+}
+
 finish() {
+	if [ -n "$affected" ]; then
+		list_affected
+		return
+	fi
 	suites
-	notes push
+	if [ -n "$wrote" ] && ! checks notes push; then
+		line notes - "passes not pushed to origin"
+	fi
 	echo "tier: $tier, logs: $(native "$logs")"
 	((${#failed[@]} == 0))
 }

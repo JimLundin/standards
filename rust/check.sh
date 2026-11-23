@@ -229,7 +229,7 @@ if full; then
 		find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
 		unit doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
 	fi
-	if [ -z "$verify" ] && [ ! -f "$logs/shell-files.txt" ] && command -v rust-decisions >/dev/null; then
+	if ! dry && [ ! -f "$logs/shell-files.txt" ] && command -v rust-decisions >/dev/null; then
 		shell >/dev/null 2>&1
 	fi
 	if [ -f "$logs/shell-files.txt" ]; then

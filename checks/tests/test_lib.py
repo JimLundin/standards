@@ -1,9 +1,11 @@
 """lib.sh in fixture workspaces: a git project whose origin is a bare
 repository beside it, so recorded passes go nowhere else."""
 
+import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+lazy from collections.abc import Sequence
 
 import pytest
 from ordered import FrozenList
@@ -23,7 +25,7 @@ cd "$project" || exit 2
 begin python
 units --toolchain=fixture --project=present,absent
 tools_of[present]=$PRESENT_TOOL
-unit present ending bash -c 'echo ran >>"$MARKER"'
+unit present ending bash -c 'echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
 if [ -z "${{ONLY_PRESENT:-}}" ]; then
 	unit absent ending {MISSING}
 fi
@@ -55,6 +57,7 @@ class Workspace:
         ci: bool = False,
         only_present: bool = False,
         present_tool: str = "bash",
+        more: Sequence[str] = (),
     ) -> Run:
         settings = (
             f"STANDARDS={STANDARDS}",
@@ -64,6 +67,7 @@ class Workspace:
             f"PRESENT_TOOL={present_tool}",
             *(("CI=true",) if ci else ()),
             *(("ONLY_PRESENT=1",) if only_present else ()),
+            *more,
         )
         done = subprocess.run(
             (
@@ -222,3 +226,123 @@ def test_a_suite_runs_the_pinned_python(workspace: Workspace) -> None:
     _ = (workspace.project / "checks.toml").write_text(PYTHON_SUITE)
     run = workspace.run("commit", only_present=True)
     assert outcome(run, "python") == (f"ok Python {pins['PYTHON']}",)
+
+
+def test_a_pass_whose_project_changed_while_it_ran_is_not_recorded(
+    workspace: Workspace,
+) -> None:
+    changed = f"REWRITE={workspace.project / 'rewritten.txt'}"
+    run = workspace.run("commit", only_present=True, more=(changed,))
+    assert outcome(run, "present") == ("ok",)
+    assert not workspace.pushed()
+    again = workspace.run("commit", only_present=True)
+    assert outcome(again, "present") == ("ok",)
+    assert workspace.runs() == 2
+
+
+# A check script of one package check over a workspace of two packages,
+# where app depends on core.
+PACKAGES = """\
+set -uo pipefail
+source "$STANDARDS/lib.sh"
+arguments "$@"
+cd "$project" || exit 2
+begin rust
+cp "$ROOT/metadata.json" "$logs/metadata.json"
+units --toolchain=fixture "--metadata=$(native "$logs/metadata.json")" --package=lint
+lint() { echo ran >>"$MARKER"; }
+batch lint ending lint "${members[@]}"
+finish
+"""
+
+
+@pytest.fixture
+def packages(workspace: Workspace) -> Workspace:
+    root = workspace.project.as_posix()
+    _ = (workspace.root / "driver.sh").write_text(PACKAGES, newline="\n")
+    _ = (workspace.root / "metadata.json").write_text(
+        json.dumps({
+            "workspace_root": root,
+            "packages": [
+                {
+                    "name": "core",
+                    "manifest_path": f"{root}/crates/core/Cargo.toml",
+                    "dependencies": [],
+                },
+                {
+                    "name": "app",
+                    "manifest_path": f"{root}/crates/app/Cargo.toml",
+                    "dependencies": [{"path": f"{root}/crates/core"}],
+                },
+            ],
+        })
+    )
+    for name in ("core", "app"):
+        (workspace.project / "crates" / name).mkdir(parents=True)
+        _ = (workspace.project / "crates" / name / "lib.rs").write_text("")
+    return workspace
+
+
+def affected(workspace: Workspace) -> FrozenList[str]:
+    run = workspace.run("commit", "--affected")
+    assert run.status == 0
+    return run.lines
+
+
+def test_affected_lists_the_changed_packages_and_their_dependents(
+    packages: Workspace,
+) -> None:
+    assert affected(packages) == ("core", "app")
+    assert packages.run("commit").status == 0
+    assert affected(packages) == ()
+    _ = (packages.project / "crates/core/lib.rs").write_text("changed")
+    assert affected(packages) == ("core", "app")
+    assert packages.run("commit").status == 0
+    _ = (packages.project / "crates/app/lib.rs").write_text("changed")
+    assert affected(packages) == ("app",)
+    assert packages.runs() == 2
+
+
+def test_affected_and_verify_are_not_run_together(workspace: Workspace) -> None:
+    assert workspace.run("commit", "--affected", "--verify").status == 2
+
+
+FAKE_SCCACHE = """\
+#!/bin/sh
+echo "$@" >>"$CALLS"
+exit 2
+"""
+
+
+def source_build(root: Path, *settings: str) -> str:
+    fake = root / "bin/sccache"
+    fake.parent.mkdir()
+    _ = fake.write_text(FAKE_SCCACHE, newline="\n")
+    fake.chmod(0o755)
+    return subprocess.run(
+        (
+            "env",
+            "-u",
+            "RUSTC_WRAPPER",
+            f"BIN={root / 'bin'}",
+            f"CALLS={root / 'calls'}",
+            f"BUILD={STANDARDS / 'rust/build.sh'}",
+            *settings,
+            "bash",
+            "-c",
+            'PATH="$BIN:$PATH"; source "$BUILD" && echo "$RUSTC_WRAPPER"',
+        ),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def test_setting_the_sccache_wrapper_starts_its_server(tmp_path: Path) -> None:
+    assert source_build(tmp_path) == "sccache\n"
+    assert (tmp_path / "calls").read_text() == "--start-server\n"
+
+
+def test_a_wrapper_the_caller_set_starts_no_server(tmp_path: Path) -> None:
+    assert source_build(tmp_path, "RUSTC_WRAPPER=other") == "other\n"
+    assert not (tmp_path / "calls").exists()

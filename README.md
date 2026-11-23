@@ -7,18 +7,20 @@ Each config file can be copied to its usual place in a project, and the scripts 
 ## Running the checks
 
 ```bash
-python/check.sh [commit|step|release] [--no-cache|--verify] [project]
+python/check.sh [commit|step|release] [--no-cache|--verify|--affected] [project]
 rust/check.sh …
 typescript/check.sh …
 ```
 
 - `commit` runs the exceptions, format, lint, type and structure checks.
 - `step`, the default, adds the tests.
-- `release` adds mutation testing, thorough property tests, slow and ignored tests, coverage, duplication and volume.
+- `release` adds mutation testing, thorough property tests, slow and ignored tests with their coverage, one unit, duplication and volume.
 
 A unit that can't run, such as one whose tool isn't installed, is skipped; in CI (`CI` set, as GitHub Actions sets it) it fails instead, so CI passes no tree with a unit it didn't run.
 
 `--verify` runs nothing: it takes every unit key of the tier and fails each unit without a recorded pass, naming its scope and key. A queue runs it on the commit it is about to land.
+
+`--affected` runs nothing either: it prints, one a line, the packages whose units the tier would check, those without a recorded pass, which are the packages changed since their last pass and the packages that depend on them. While iterating, check only those.
 
 The scripts' own tools live in `checks`, a uv project that depends on `ordered` and passes the Python standard itself, so every language's checks need uv.
 
@@ -43,7 +45,7 @@ So a test fixture reruns its package and the packages that depend on it, and a l
 
 A pass is recorded as a git note on `refs/notes/checks` whose annotated object name is the key, so one `git notes list` reads every pass. A unit whose key has a pass reports `passed (recorded)` without running. Failures are never recorded. The keys are taken again after a check, and a pass is recorded only if its key still matches. `--no-cache` runs every unit, and still records its passes.
 
-`check.sh` fetches the notes from `origin` before a run, merges them by union (`git notes merge -s cat_sort_uniq`) and pushes them after; a project without `origin` keeps them local. The standards keep their own index of the project's files under the user's cache directory (`STANDARDS_CACHE` overrides it), so listing the files doesn't touch the project's index.
+The notes are `checks notes`'s alone: `lookup` lists the recorded keys, `record` adds passes, `fetch` merges `origin`'s notes by union (`git notes merge -s cat_sort_uniq`), and `push`, after a run that recorded one, pushes them, merging and retrying when another run pushed first. A project without `origin` keeps them local. Its notes commits carry the standards' own identity, so a CI runner needs no git config. The standards keep their own index of the project's files under the user's cache directory (`STANDARDS_CACHE` overrides it), so listing the files doesn't touch the project's index.
 
 A Rust package check runs once over the whole workspace when any package's pass is missing: cargo then resolves features once and rebuilds only what changed, where selecting packages with `-p` would resolve their features apart from the workspace's and rebuild dependencies. nextest builds the workspace's tests and runs only the unproven packages' with a filterset. A failed run credits a package only on evidence that the check reached it and found nothing in it:
 
@@ -77,7 +79,7 @@ Exceptions live only in a project's `exceptions.toml`; suppression comments and 
 
 **Flaky tests.** A test that fails only under load takes a `flaky` exception naming the test or a glob of its nextest name. nextest retries just those once, the summary reports a pass on the retry as `flaky`, and retries in a project's own nextest config fail the checks.
 
-**sccache.** `check.sh` sources `rust/build.sh`, and a shell can source it from a project root before plain cargo. Where sccache is installed, cargo compiles through it as `RUSTC_WRAPPER`, into a cache under `~/.cache/sccache` that every worktree shares, unlike a shared target dir, which is unsafe across worktrees. A `RUSTC_WRAPPER` the caller already set wins, and without sccache cargo builds as before. sccache can't cache incremental builds, proc-macros or binaries, so it saves most on dependencies, and a path inside the checkout, such as a build script's `OUT_DIR`, is part of the key, so another worktree misses on the crates that read one. Linking needs nothing: the toolchain links Linux hosts with its bundled `rust-lld`.
+**sccache.** `check.sh` sources `rust/build.sh`, and a shell can source it from a project root before plain cargo. Where sccache is installed, cargo compiles through it as `RUSTC_WRAPPER`, whose server `build.sh` starts so a first build never waits on one, into a cache under `~/.cache/sccache` that every worktree shares, unlike a shared target dir, which is unsafe across worktrees. A `RUSTC_WRAPPER` the caller already set wins, and without sccache cargo builds as before. sccache can't cache incremental builds, proc-macros or binaries, so it saves most on dependencies, and a path inside the checkout, such as a build script's `OUT_DIR`, is part of the key, so another worktree misses on the crates that read one. Linking needs nothing: the toolchain links Linux hosts with its bundled `rust-lld`.
 
 ## Python
 

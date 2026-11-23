@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
+from checks import notes
 from checks.core.tools import request, run
 from checks.core.values import Inputs
 
@@ -41,7 +42,10 @@ def gather(arguments: FrozenList[str]) -> Inputs:
 
 def main() -> int:
     arguments = FrozenList(sys.argv[1:])
-    outcome = run(arguments, gather(arguments))
+    if arguments[:1] == ("notes",):
+        outcome = notes.run(arguments[1:], ".")
+    else:
+        outcome = run(arguments, gather(arguments))
     for path, text in outcome.writes.items():
         _ = Path(path).write_bytes(text.encode())
     _ = sys.stdout.buffer.write(

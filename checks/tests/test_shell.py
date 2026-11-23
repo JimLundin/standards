@@ -7,6 +7,7 @@ lazy from pathlib import Path
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks import notes
 from checks.core.tools import TOOLS, request, run
 from checks.core.values import Inputs, Request
 from checks.shell import gather, main, read
@@ -100,6 +101,21 @@ def test_main_prints_lines_and_returns_the_status(
         "a.py:1:5: IMM004 a set literal iterates in hash order, which changes "
         "per process; use FrozenOrderedSet\nFound 1 issues\n"
     )
+
+
+def test_main_runs_the_notes_in_the_working_directory(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsysbinary: pytest.CaptureFixture[bytes],
+) -> None:
+    key = "1" * 40
+    assert notes.git(str(project), "init", "-q").returncode == 0
+    status, out = invoke(
+        monkeypatch, capsysbinary, "notes", "record", key, "python lint ."
+    )
+    assert (status, out) == (0, f"{key}\n")
+    status, out = invoke(monkeypatch, capsysbinary, "notes", "lookup")
+    assert (status, out) == (0, f"{key}\n")
 
 
 def test_main_reads_stdin_only_when_asked(

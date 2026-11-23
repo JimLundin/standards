@@ -27,3 +27,43 @@ reason = "drives lib.sh and git in fixture workspaces by name from PATH, as chec
 path = "tests/test_lib.py"
 rule = "banned-api"
 reason = "lib.sh is tested by running it in fixture workspaces, which only a subprocess can"
+
+[[exception]]
+path = "src/checks/notes.py"
+rule = "banned-api"
+reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
+
+[[exception]]
+path = "src/checks/notes.py"
+rule = "suspicious-subprocess-import"
+reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
+
+[[exception]]
+path = "src/checks/notes.py"
+rule = "subprocess-without-shell-equals-true"
+reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
+
+[[exception]]
+path = "src/checks/notes.py"
+rule = "start-process-with-partial-path"
+reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
+
+[[exception]]
+path = "tests/test_notes.py"
+rule = "banned-api"
+reason = "drives git in fixture repositories by name from PATH, with fixed arguments"
+
+[[exception]]
+path = "tests/test_notes.py"
+rule = "suspicious-subprocess-import"
+reason = "drives git in fixture repositories by name from PATH, with fixed arguments"
+
+[[exception]]
+path = "tests/test_notes.py"
+rule = "subprocess-without-shell-equals-true"
+reason = "drives git in fixture repositories by name from PATH, with fixed arguments"
+
+[[exception]]
+path = "tests/test_notes.py"
+rule = "start-process-with-partial-path"
+reason = "drives git in fixture repositories by name from PATH, with fixed arguments"
