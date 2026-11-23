@@ -8,12 +8,12 @@
 		"mutate": "stryker run"
 	},
 	"devDependencies": {
-		"typescript": "latest",
+		"typescript": "7.0.2",
 		"@types/node": "latest",
-		"@biomejs/biome": "latest",
+		"@biomejs/biome": "2.6.8",
 		"fast-check": "latest",
-		"@stryker-mutator/core": "latest",
-		"@stryker-mutator/tap-runner": "latest",
-		"knip": "latest"
+		"@stryker-mutator/core": "10.1.1",
+		"@stryker-mutator/tap-runner": "10.1.1",
+		"knip": "6.48.0"
 	}
 }

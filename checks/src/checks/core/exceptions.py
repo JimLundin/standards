@@ -27,7 +27,6 @@ UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
-SHELL_DECLARATION = '`[package.metadata.standards] layer = "shell"`'
 
 
 def rule_covers(excepted: str, found: str) -> bool:
@@ -143,11 +142,6 @@ def invalidity(
 ) -> str:
     rule_kind = kind(language, entry.rule)
     matched = FrozenList(file for file in files if matches(file, entry.path))
-    if language == "rust" and entry.rule == "std":
-        return (
-            "`std` is no longer an exception; "
-            f"declare {SHELL_DECLARATION} in {entry.path} instead"
-        )
     if not rule_kind:
         return f"unknown rule for {language}"
     if rule_kind not in UNPATHED and not matched:

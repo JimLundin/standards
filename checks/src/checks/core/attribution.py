@@ -3,7 +3,7 @@ lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.scope import Package, dependents, inside, owner, workspace
+from checks.core.cargo import Package, dependents, owner, relative, workspace
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -42,9 +42,7 @@ def located(plain: str) -> FrozenList[str]:
 def owners(
     paths: Sequence[str], root: str, packages: Sequence[Package]
 ) -> FrozenList[str]:
-    found = FrozenList(
-        owner(inside(normalized(path), root), packages) for path in paths
-    )
+    found = FrozenList(owner(relative(path, root), packages) for path in paths)
     return FrozenList(package.name if package else "" for package in found)
 
 

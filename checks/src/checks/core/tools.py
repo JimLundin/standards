@@ -30,8 +30,8 @@ TOOLS = FrozenOrderedDict({
     "rust-core": (rust_core.request, rust_core.run),
     "rust-roots": (rust_shell.roots_request, rust_shell.roots),
     "rust-shell": (rust_shell.request, rust_shell.run),
-    "tool-config": (tool_config.request, tool_config.run),
     "units": (units.request, units.run),
+    **tool_config.COMMANDS,
 })
 
 

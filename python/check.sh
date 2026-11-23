@@ -16,10 +16,7 @@ versions=(
 	"--tool=unused=${pins[VULTURE]}"
 	"--tool=imports=${pins[IMPORT_LINTER]}"
 )
-if full; then
-	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
-	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
-fi
+release_versions
 python=
 if [ -f uv.lock ]; then
 	python=$(uv run --frozen -q python -V 2>&1)
@@ -32,12 +29,11 @@ if grep -qs '^\[tool\.ruff' pyproject.toml; then
 	ruff_config=()
 fi
 mapfile -t sources < <(git ls-files '*.py' '*.pyw')
-mapfile -t tracked < <(git ls-files)
-ruff_exceptions=$(tool_config ruff-config)
+ruff_exceptions=$(checks ruff-config)
 if [ -n "$ruff_exceptions" ]; then
 	ruff_config+=(--config "$ruff_exceptions")
 fi
-mapfile -t unused_sources < <(tool_config without unused "${sources[@]}")
+mapfile -t unused_sources < <(checks without unused "${sources[@]}")
 
 mutants() {
 	plain "$1" | tr '\r' '\n' | grep -oE '(🎉|🙁) [0-9]+' | tail -2 |
@@ -48,13 +44,12 @@ mutants() {
 mutate() {
 	uv run --frozen -q mutmut run || return
 	local remaining
-	remaining=$(uv run --frozen -q mutmut results | tool_config filter-mutmut)
+	remaining=$(uv run --frozen -q mutmut results | checks filter-mutmut)
 	echo "$remaining"
 	[ -z "$remaining" ]
 }
 
-unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-	checks policy python "$(native "$standards/..")" "${tracked[@]}"
+exceptions_unit
 unit format "last '[0-9]+ files? (would be reformatted|already formatted).*'" \
 	uvx -q "ruff@${pins[RUFF]}" format "${ruff_config[@]}" --check .
 unit lint "last 'Found [0-9]+ errors?|All checks passed'" \
@@ -120,10 +115,7 @@ if full; then
 	else
 		unit mutation mutants mutate
 	fi
-	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$standards/../jscpd.json")" \
-		--format python --silent .
-	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext py,pyw --no-cocomo .
+	release_units python py,pyw
 fi
 
 finish

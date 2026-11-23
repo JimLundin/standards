@@ -8,24 +8,17 @@ cd "$project" || exit 2
 begin rust
 source "$standards/build.sh"
 
-has() {
-	local file
-	for file in "$@"; do
-		[ -e "$file" ] && return 0
-	done
-	return 1
-}
-
 cargo=(cargo +nightly)
-if has rust-toolchain rust-toolchain.toml; then
+if existing rust-toolchain rust-toolchain.toml >/dev/null; then
 	cargo=(cargo)
 fi
-if ! has clippy.toml .clippy.toml; then
+if ! clippy_config=$(existing clippy.toml .clippy.toml); then
+	clippy_config=$standards/clippy.toml
 	export CLIPPY_CONF_DIR
 	CLIPPY_CONF_DIR=$(native "$standards")
 fi
 format=()
-if ! has rustfmt.toml .rustfmt.toml; then
+if ! existing rustfmt.toml .rustfmt.toml >/dev/null; then
 	format=(-- --config-path "$(native "$standards/rustfmt.toml")")
 fi
 lints=()
@@ -55,8 +48,7 @@ if [ ! -e .cargo/mutants.toml ]; then
 fi
 while IFS= read -r glob; do
 	mutation+=(--exclude "$glob")
-done < <(tool_config globs mutation)
-mapfile -t tracked < <(git ls-files)
+done < <(checks globs mutation)
 core_target=wasm32v1-none
 
 metadata=$(native "$logs/metadata.json")
@@ -69,19 +61,13 @@ if "${cargo[@]}" metadata --no-deps --format-version 1 >"$logs/metadata.json"; t
 	mapfile -t libraries < <(grep . <<<"$layering")
 	described=("--metadata=$metadata")
 fi
-# The resolve graph gives each package's key the locked dependencies it
-# reaches; without it, or with a lockfile out of date, the whole lockfile is
-# every package's input.
-if "${cargo[@]}" metadata --locked --format-version 1 >"$logs/resolve.json" 2>/dev/null; then
-	described+=("--resolve=$(native "$logs/resolve.json")")
-fi
 
 tests=(test)
 test_options=(--quiet)
 if command -v cargo-nextest >/dev/null; then
 	tests=(nextest run)
 	test_options=(--no-fail-fast --no-tests=warn --hide-progress-bar)
-	tool_config nextest-config >"$logs/nextest.toml"
+	checks nextest-config >"$logs/nextest.toml"
 	if [ -s "$logs/nextest.toml" ]; then
 		test_options+=(--tool-config-file "standards:$(native "$logs/nextest.toml")")
 	fi
@@ -105,14 +91,12 @@ versions=("--tool=$test_check=${tests[0]} ${pins[NEXTEST]}")
 if full; then
 	pinned CARGO_MUTANTS cargo-mutants "cargo install --locked cargo-mutants@{}" cargo mutants --version
 	pinned CARGO_MACHETE cargo-machete "cargo install --locked cargo-machete@{}" cargo machete --version
-	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
 	versions+=(
 		"--tool=mutation=${pins[CARGO_MUTANTS]}"
 		"--tool=unused-dependencies=${pins[CARGO_MACHETE]}"
-		"--tool=duplication=${pins[JSCPD]}"
-		"--tool=volume=${pins[SCC]}"
 	)
 fi
+release_versions
 units "--toolchain=$("${cargo[@]}" -V 2>&1; "${cargo[@]/cargo/rustc}" -V 2>&1)" \
 	"${described[@]}" "${versions[@]}" \
 	--project=exceptions,format,doctest,mutation,unused-dependencies,duplication,volume \
@@ -133,7 +117,7 @@ core() {
 	# Lints only report here, so one library's findings don't stop its
 	# dependents from building; rust-core decides which of them fail.
 	mkdir -p "$logs/core"
-	checks core-clippy "$(native "$(clippy_config)")" "$(native "$logs/core/clippy.toml")" || return
+	checks core-clippy "$(native "$clippy_config")" "$(native "$logs/core/clippy.toml")" || return
 	output=$(CLIPPY_CONF_DIR=$(native "$logs/core") "${cargo[@]}" clippy --keep-going --lib \
 		--target "$core_target" --all-features --message-format=json \
 		"${packages[@]}" -- --cap-lints warn 2>&1 >"$logs/core.jsonl") || status=$?
@@ -148,17 +132,6 @@ core() {
 			cut -d'`' -f2 | sort -u | paste -sd ' ' -)"
 	fi
 	return "$status"
-}
-
-clippy_config() {
-	local file
-	for file in clippy.toml .clippy.toml; do
-		if [ -e "$file" ]; then
-			echo "$file"
-			return
-		fi
-	done
-	echo "$standards/clippy.toml"
 }
 
 api() {
@@ -214,8 +187,7 @@ tested() {
 	echo "${counts:-$(summed 'passed|failed' "$1")}${flaky:+ ($flaky)}"
 }
 
-unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-	checks policy rust "$(native "$standards/..")" "${tracked[@]}"
+exceptions_unit
 unit format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 batch lint "last '[0-9]+ previous errors?|Finished'" lint "${members[@]}"
 if ((listed != 0)); then
@@ -257,9 +229,7 @@ if full; then
 		line mutation skip "cargo-mutants not installed"
 	fi
 	unit unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
-	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$standards/../jscpd.json")" --format rust --silent .
-	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext rs --no-cocomo .
+	release_units rust rs
 fi
 
 finish

@@ -5,10 +5,6 @@ from checks.core.values import Inputs, Outcome, Request
 from tests.helpers import entry, inputs, lines
 
 STD = "C:/standards"
-RETIRED = (
-    "`std` is no longer an exception; "
-    'declare `[package.metadata.standards] layer = "shell"`'
-)
 
 
 def test_request_lists_project_then_standard_files() -> None:
@@ -60,8 +56,6 @@ def test_policy_validates_rust_exceptions() -> None:
         + entry("src/lib.rs", "Worse-Rule")
         + entry("src/lib.rs", "clippy::a")
         + entry("gone/**", "dead_code")
-        + entry("src/lib.rs", "std")
-        + entry("Cargo.toml", "std")
         + entry("profiles/**", "drift:lints.rust.x")
         + entry("src/lib.rs", "clippy::b"),
         "Cargo.toml": "",
@@ -72,10 +66,8 @@ def test_policy_validates_rust_exceptions() -> None:
         "exceptions.toml (src/lib.rs, Bad-Rule): unknown rule for rust",
         "exceptions.toml (src/lib.rs, Worse-Rule): unknown rule for rust",
         "exceptions.toml (gone/**, dead_code): path matches no tracked file",
-        f"exceptions.toml (src/lib.rs, std): {RETIRED} in src/lib.rs instead",
-        f"exceptions.toml (Cargo.toml, std): {RETIRED} in Cargo.toml instead",
         "exceptions.toml (src/lib.rs, clippy::b): no matching #[expect] attribute; remove the entry",
-        "Found 6 issues",
+        "Found 4 issues",
     )
 
 
