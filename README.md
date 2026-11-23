@@ -24,7 +24,7 @@ The scripts' own tools live in `checks`, a uv project that depends on `ordered` 
 
 ## Tool versions
 
-`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version.
+`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version. Python is the one uv resolves: `check.sh` sets `UV_PYTHON` to the `PYTHON` pin, so the standards' checks, a Python project's checks and its key use that interpreter whatever `python3` is on `PATH`, and a suite runs with it first on `PATH`.
 
 ## Units and recorded passes
 

@@ -17,7 +17,8 @@ versions=(
 	"--tool=imports=${pins[IMPORT_LINTER]}"
 )
 release_versions
-python=
+# The Python uv resolves for the project, at the pin, as every check runs it.
+python=$(uv run --no-project -q python -V 2>&1)
 if [ -f uv.lock ]; then
 	python=$(uv run --frozen -q python -V 2>&1)
 fi

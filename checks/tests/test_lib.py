@@ -8,12 +8,15 @@ from pathlib import Path
 import pytest
 from ordered import FrozenList
 
+from checks.core.units import pins_of
+
 STANDARDS = Path(__file__).resolve().parents[2]
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
 # marker, and one whose tool isn't installed; and the project's suites.
 DRIVER = f"""\
 set -uo pipefail
+PATH="$ROOT/bin:$PATH"
 source "$STANDARDS/lib.sh"
 arguments "$@"
 cd "$project" || exit 2
@@ -57,6 +60,7 @@ class Workspace:
             f"STANDARDS={STANDARDS}",
             f"STANDARDS_CACHE={self.root / 'cache'}",
             f"MARKER={self.root / 'marker'}",
+            f"ROOT={self.root}",
             f"PRESENT_TOOL={present_tool}",
             *(("CI=true",) if ci else ()),
             *(("ONLY_PRESENT=1",) if only_present else ()),
@@ -197,3 +201,24 @@ def test_a_unit_needs_its_declared_tool_only_to_run(
     )
     assert recorded.status == 0
     assert outcome(recorded, "present") == ("ok passed (recorded)",)
+
+
+PYTHON_SUITE = """\
+[[suite]]
+name = "python"
+command = "python3 -V"
+tools = ["PYTHON"]
+[[suite.when]]
+tier = "commit"
+"""
+
+
+def test_a_suite_runs_the_pinned_python(workspace: Workspace) -> None:
+    pins = pins_of((STANDARDS / "tools.env").read_text(encoding="utf-8"))
+    other = workspace.root / "bin/python3"
+    other.parent.mkdir()
+    _ = other.write_text("#!/bin/sh\necho Python 3.0.1\n")
+    other.chmod(0o755)
+    _ = (workspace.project / "checks.toml").write_text(PYTHON_SUITE)
+    run = workspace.run("commit", only_present=True)
+    assert outcome(run, "python") == (f"ok Python {pins['PYTHON']}",)

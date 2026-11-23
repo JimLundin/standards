@@ -216,6 +216,9 @@ declare -A pins=()
 while IFS='=' read -r name value; do
 	[[ $name =~ ^[A-Z_]+$ ]] && pins[$name]=$value
 done <"$home/tools.env"
+# uv runs every Python of the checks, the standards' and a project's, at the
+# pin, whatever python3 is on PATH.
+export UV_PYTHON=${pins[PYTHON]}
 
 # Fails fast when an installed tool isn't at its version in tools.env, naming
 # the command that installs it there, with {} for the version. A tool that
@@ -234,6 +237,7 @@ pinned() {
 begin() {
 	language=$1
 	pinned UV uv "uv self update {}" uv --version
+	pinned PYTHON uv "uv python install {}" uv run --no-project -q python -V
 	mapfile -t tracked < <(git ls-files)
 	notes fetch
 	[ -n "$lookup" ] || return 0
@@ -375,8 +379,13 @@ batch() {
 	remember "$check" "${passing[@]}"
 }
 
+# A suite runs with the pinned Python first on PATH, so its python3 is the
+# one its key names.
 suites() {
-	local index name program words
+	local index name program words python
+	if python=$(readlink -f "$(uv python find --no-project "$UV_PYTHON" 2>/dev/null)") && [ -n "$python" ]; then
+		local -x PATH="${python%/*}:$PATH"
+	fi
 	for index in "${!suite_names[@]}"; do
 		name=${suite_names[index]}
 		if known suite "$name"; then
