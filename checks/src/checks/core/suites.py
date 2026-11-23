@@ -1,7 +1,7 @@
 import re
 import tomllib
 from dataclasses import dataclass, field
-lazy from collections.abc import Mapping, Sequence
+lazy from collections.abc import Iterator, Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedSet
 
@@ -57,26 +57,25 @@ def trigger_problems(
     fields: Mapping[str, object],
     language: str,
     packages: Sequence[str],
-) -> FrozenList[str]:
+) -> Iterator[str]:
     unknown = unknown_keys(fields, WHEN_KEYS)
     if unknown:
-        return FrozenList((f"{where} has unknown keys: {unknown}",))
-    problems: FrozenList[str] = FrozenList()
+        yield f"{where} has unknown keys: {unknown}"
+        return
     if fields.get("tier") not in TIERS:
-        problems += (f"{where} needs a tier: {TIER_NAMES}",)
+        yield f"{where} needs a tier: {TIER_NAMES}"
     for key in ("paths", "packages"):
         if texts(fields.get(key)) is None:
-            problems += (f"{where} {key} must be a list of strings",)
+            yield f"{where} {key} must be a list of strings"
     named = texts(fields.get("packages")) or FrozenList()
     if named and language != "rust":
-        problems += (f"{where} packages are only for Rust projects",)
+        yield f"{where} packages are only for Rust projects"
     elif named:
-        problems += tuple(
+        yield from (
             f"{where} names no workspace package `{name}`"
             for name in named
             if name not in packages
         )
-    return problems
 
 
 def parse_trigger(fields: Mapping[str, object]) -> Trigger:
@@ -92,28 +91,25 @@ def suite_problems(
     fields: Mapping[str, object],
     language: str,
     packages: Sequence[str],
-) -> FrozenList[str]:
+) -> Iterator[str]:
     unknown = unknown_keys(fields, SUITE_KEYS)
     if unknown:
-        return FrozenList((f"{where} has unknown keys: {unknown}",))
+        yield f"{where} has unknown keys: {unknown}"
+        return
     name, command = fields.get("name"), fields.get("command")
-    problems: FrozenList[str] = FrozenList()
     if not isinstance(name, str) or not NAME.fullmatch(name):
-        problems += (
-            f"{where} needs a name of lowercase letters, digits and -",
-        )
+        yield f"{where} needs a name of lowercase letters, digits and -"
     if not isinstance(command, str) or not command.strip():
-        problems += (f"{where} needs a command",)
+        yield f"{where} needs a command"
     elif "\n" in command or "\t" in command:
-        problems += (f"{where} command must be one line without tabs",)
+        yield f"{where} command must be one line without tabs"
     whens = entries(fields.get("when"))
     if not whens:
-        problems += (f"{where} needs at least one [[suite.when]]",)
-    for index, when in enumerate(whens):
-        problems += trigger_problems(
-            f"{where} when {index + 1}", table(when), language, packages
+        yield f"{where} needs at least one [[suite.when]]"
+    for index, when in enumerate(whens, start=1):
+        yield from trigger_problems(
+            f"{where} when {index}", table(when), language, packages
         )
-    return problems
 
 
 def parse_suite(fields: Mapping[str, object]) -> Suite:
@@ -139,7 +135,7 @@ def load(text: str | None, language: str, packages: Sequence[str]) -> Suites:
     for index, entry in enumerate(entries(data.get("suite"))):
         fields = table(entry)
         where = f"{SUITES}: suite {index + 1}"
-        found = suite_problems(where, fields, language, packages)
+        found = FrozenList(suite_problems(where, fields, language, packages))
         if fields.get("name") in names:
             found += (f"{where} repeats the name `{fields.get('name')}`",)
         names += (str(fields.get("name")),)

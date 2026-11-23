@@ -27,6 +27,7 @@ from checks.core.values import (
     parse_toml,
     summarized,
     table,
+    text,
 )
 
 if TYPE_CHECKING:
@@ -47,6 +48,9 @@ STD = re.compile(r"\bextern\s+crate\s+std\b")
 TEST_ONLY = "#[cfg(test)]"
 UNCONDITIONAL = "declare `#![no_std]` unconditionally; the core does no I/O"
 TESTS_ONLY = f"`extern crate std` outside `{TEST_ONLY}`; the core does no I/O"
+# A JSON string is a TOML basic string, but only unescaped: TOML has no
+# surrogate pairs for characters outside the basic multilingual plane.
+STRING = json.JSONEncoder(ensure_ascii=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,13 +73,13 @@ def toml_value(value: object) -> str:
         return repr(value)
     if is_table(value):
         pairs = ", ".join(
-            f"{json.dumps(key)} = {toml_value(item)}"
+            f"{STRING.encode(key)} = {toml_value(item)}"
             for key, item in value.items()
         )
-        return f"{{ {pairs} }}" if pairs else "{}"
+        return f"{{ {pairs} }}"
     if isinstance(value, Sequence) and not isinstance(value, str):
         return f"[{', '.join(toml_value(item) for item in value)}]"
-    return json.dumps(str(value), ensure_ascii=False)
+    return STRING.encode(str(value))
 
 
 def disallowed_path(item: object) -> str:
@@ -135,38 +139,39 @@ def core_files(
     )
 
 
-def code_lines(text: str) -> FrozenList[str]:
+def code_lines(source: str) -> FrozenList[str]:
     return FrozenList(
-        line.split("//", 1)[0].strip() for line in text.splitlines()
+        line.partition("//")[0].strip() for line in source.splitlines()
     )
 
 
-def previous(lines: Sequence[str], number: int) -> str:
-    return next((line for line in reversed(lines[:number]) if line), "")
-
-
-def std_findings(path: str, text: str) -> Iterator[Finding]:
-    lines = code_lines(text)
-    for number, line in enumerate(lines):
+def std_findings(path: str, source: str) -> Iterator[Finding]:
+    code = FrozenList(
+        (number, line)
+        for number, line in enumerate(code_lines(source), start=1)
+        if line
+    )
+    for index, (number, line) in enumerate(code):
+        before = FrozenList(previous for _, previous in code[index - 1 : index])
         if (
             STD.search(line)
             and not line.startswith(TEST_ONLY)
-            and previous(lines, number) != TEST_ONLY
+            and TEST_ONLY not in before
         ):
-            yield Finding(path, number + 1, TESTS_ONLY)
+            yield Finding(path, number, TESTS_ONLY)
 
 
 def source_findings(
     found: Sequence[Library], files: Sequence[str], texts: Mapping[str, str]
 ) -> Iterator[Finding]:
     for library in found:
-        text = texts.get(library.root)
-        if text is not None and not any(
-            NO_STD.fullmatch(line) for line in code_lines(text)
+        root = texts.get(library.root)
+        if root is not None and not any(
+            NO_STD.fullmatch(line) for line in code_lines(root)
         ):
             yield Finding(library.root, 1, UNCONDITIONAL)
     for file in core_files(found, files):
-        yield from std_findings(file, texts.get(file, ""))
+        yield from std_findings(file, text(texts, file))
 
 
 def primary(message: Mapping[str, object], root: str) -> Finding | None:
@@ -179,7 +184,7 @@ def primary(message: Mapping[str, object], root: str) -> Finding | None:
         return None
     path = relative(str(spans[0].get("file_name")), root)
     line = spans[0].get("line_start")
-    return Finding(path, line if isinstance(line, int) else 0, "")
+    return Finding(path, line if isinstance(line, int) else 0)
 
 
 def pointer_of(message: Mapping[str, object]) -> str:
@@ -207,7 +212,7 @@ def diagnostic_finding(
         located = (
             where
             if where.path.endswith(".rs")
-            else (Finding(relative(target, root), 1, ""))
+            else Finding(relative(target, root), 1)
         )
         return replace(located, message=str(message.get("message")))
     pointer = pointer_of(message)
@@ -254,10 +259,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     findings = (
         *source_findings(found, files, inputs.texts),
         *diagnostic_findings(
-            inputs.texts.get(diagnostics, ""),
-            found,
-            root,
-            exceptions_in(inputs),
+            text(inputs.texts, diagnostics), found, root, exceptions_in(inputs)
         ),
     )
     names = " ".join(dict.fromkeys(library.name for library in found))

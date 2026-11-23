@@ -133,6 +133,16 @@ def options(arguments: Sequence[str], prefix: str) -> FrozenList[str]:
     )
 
 
+def option(arguments: Sequence[str], prefix: str) -> str:
+    """The first value of an option, or "" without one."""
+    return next(iter(options(arguments, prefix)), "")
+
+
+def text(texts: Mapping[str, str], path: str) -> str:
+    """A file's text, or "" for a file that wasn't read."""
+    return texts.get(path, "")
+
+
 def operands(arguments: Sequence[str]) -> FrozenList[str]:
     return FrozenList(
         argument for argument in arguments if not argument.startswith("--")

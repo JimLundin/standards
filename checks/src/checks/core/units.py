@@ -13,9 +13,11 @@ from checks.core.values import (
     Request,
     matches,
     operands,
+    option,
     options,
     parse_json,
     posix,
+    text,
 )
 
 VERSION = "1"
@@ -54,14 +56,16 @@ def digest(fields: Sequence[str]) -> str:
 
 
 def key(context: Context, check: str, scope: str, inputs: str) -> str:
-    tool = context.tools.get(check, "")
+    tool = FrozenList(
+        version for name, version in context.tools.items() if name == check
+    )
     fields = (context.language, check, scope, context.standards)
-    return digest((*fields, context.toolchain, tool, inputs))[:LENGTH]
+    return digest((*fields, context.toolchain, *tool, inputs))[:LENGTH]
 
 
 def parse_record(record: str) -> File:
     stat, _, path = record.partition("\t")
-    mode, blob, _stage = stat.split(" ")
+    mode, blob, _stage = stat.split()
     return File(posix(path), f"{mode} {blob}")
 
 
@@ -84,16 +88,11 @@ def package_inputs(
 ) -> FrozenOrderedDict[str, str]:
     """Each package's files and its workspace dependencies', with every
     file outside the packages and the docs, such as Cargo.lock."""
-    owners = FrozenList(owned(file.path, packages) for file in files)
+    owners = FrozenOrderedDict(
+        (file.path, owned(file.path, packages)) for file in files
+    )
     grouped = FrozenOrderedDict(
-        (
-            name,
-            FrozenList(
-                file
-                for file, owner in zip(files, owners, strict=True)
-                if owner == name
-            ),
-        )
+        (name, FrozenList(file for file in files if owners[file.path] == name))
         for name in ("", *(package.name for package in packages))
     )
     common = fingerprint(
@@ -133,7 +132,7 @@ def suite_inputs(
         fingerprint(
             FrozenList(file for file in files if any_match(file.path, globs))
         ),
-        *(packages.get(name, "") for name in named),
+        *(packages[name] for name in named),
     ))
 
 
@@ -147,10 +146,10 @@ def checks_of(arguments: Sequence[str], prefix: str) -> FrozenList[str]:
 
 
 def described(arguments: Sequence[str], inputs: Inputs) -> FrozenList[Package]:
-    metadata = options(arguments, "--metadata=")
+    metadata = option(arguments, "--metadata=")
     if not metadata:
         return FrozenList()
-    return workspace(parse_json(inputs.texts.get(metadata[0])))
+    return workspace(parse_json(inputs.texts.get(metadata)))
 
 
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
@@ -167,8 +166,8 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     language, tier, listed = operands(arguments)
     context = Context(
         language,
-        "".join(options(arguments, "--standards=")),
-        "".join(options(arguments, "--toolchain=")),
+        option(arguments, "--standards="),
+        option(arguments, "--toolchain="),
         FrozenOrderedDict(
             (name, version)
             for name, _, version in (
@@ -176,7 +175,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             )
         ),
     )
-    files = listing(inputs.texts.get(listed, ""))
+    files = listing(text(inputs.texts, listed))
     packages = described(arguments, inputs)
     whole = fingerprint(files)
     scoped = package_inputs(files, packages)

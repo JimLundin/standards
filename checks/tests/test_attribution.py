@@ -84,3 +84,17 @@ def test_a_finding_outside_every_package_fails_them_all() -> None:
 def test_a_package_that_cannot_be_documented_fails() -> None:
     log = "error: could not document `home`\n"
     assert passing("1", log, *SELECTED) == ("proto", "client", "app")
+
+
+def test_a_coloured_error_location_alone_fails_its_package() -> None:
+    log = (
+        "\x1b[1m\x1b[91merror\x1b[0m: this could be a `const fn`\n"
+        " --> crates/client/src/lib.rs:6:1\n"
+    )
+    assert passing("1", log, *SELECTED) == ("proto", "home", "app")
+
+
+def test_a_missing_log_fails_every_package() -> None:
+    texts = FrozenOrderedDict({"m.json": METADATA})
+    arguments = ("1", "run.log", "m.json", *SELECTED)
+    assert run(arguments, Inputs(texts)).lines == ()

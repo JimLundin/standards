@@ -16,6 +16,7 @@ from checks.core.values import (
     matches,
     normalized,
     operands,
+    option,
     options,
     parse_json,
     parse_toml,
@@ -23,6 +24,7 @@ from checks.core.values import (
     strings,
     summarized,
     table,
+    text,
 )
 
 segments = st.lists(st.sampled_from(("a", "b", ".", "..", "")), max_size=6)
@@ -121,6 +123,13 @@ def test_options_and_operands_split_arguments() -> None:
     assert operands(arguments) == ("x", "y")
     assert isinstance(options(arguments, "--skip="), FrozenList)
     assert isinstance(operands(arguments), FrozenList)
+    assert option(arguments, "--skip=") == "a"
+    assert not option(arguments, "--none=")
+
+
+def test_text_of_a_file_not_read_is_empty() -> None:
+    assert text({"a": "x"}, "a") == "x"
+    assert not text({"a": "x"}, "b")
 
 
 def test_normalized_keeps_leading_parents() -> None:

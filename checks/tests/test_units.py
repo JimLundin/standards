@@ -3,8 +3,19 @@ lazy from collections.abc import Mapping
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.units import request, run
-from checks.core.values import Inputs, Outcome, Request
+from checks.core.cargo import workspace
+from checks.core.units import (
+    Context,
+    File,
+    digest,
+    fingerprint,
+    key,
+    package_inputs,
+    parse_record,
+    request,
+    run,
+)
+from checks.core.values import Inputs, Outcome, Request, parse_json
 
 ROOT = "/work"
 FILES = FrozenOrderedDict({
@@ -301,6 +312,52 @@ def test_a_project_without_packages_has_only_project_units() -> None:
     )
     (line,) = run(arguments, Inputs(texts)).lines
     assert line.startswith("unit\tlint\t.\t")
+
+
+def test_keys_hash_the_language_check_scope_and_inputs() -> None:
+    context = Context(
+        "rust",
+        "tree",
+        "cargo 1.95.0-nightly",
+        FrozenOrderedDict({"lint": "clippy 0.1.95"}),
+    )
+    files = FrozenList(
+        File(path, f"100644 {blob:0<40}") for path, blob in FILES.items()
+    )
+    whole = fingerprint(files)
+    scoped = package_inputs(files, workspace(parse_json(METADATA)))
+    keys = keyed()
+    assert keys["lint app"] == key(context, "lint", "app", scoped["app"])
+    assert keys["exceptions ."] == key(context, "exceptions", ".", whole)
+    assert keys["format ."] != key(
+        Context("python", "tree", "cargo 1.95.0-nightly"), "format", ".", whole
+    )
+    assert key(context, "lint", ".", whole) != key(
+        context, "lint", "app", whole
+    )
+    scrub = fingerprint(
+        FrozenList(file for file in files if file.path == "tools/scrub.py")
+    )
+    assert keys["suite scrub"] == key(
+        context, "suite tools/scrub.py --check", "scrub", digest((scrub,))
+    )
+    assert len(FrozenOrderedSet(keys.values())) == len(keys)
+
+
+def test_a_tool_s_version_may_hold_an_equals_sign() -> None:
+    arguments = ("python", "step", "l", "--project=lint", "--tool=lint=a=b")
+    (line,) = run(arguments, Inputs()).lines
+    expected = key(
+        Context("python", "", "", FrozenOrderedDict({"lint": "a=b"})),
+        "lint",
+        ".",
+        fingerprint(()),
+    )
+    assert line == f"unit\tlint\t.\t{expected}"
+
+
+def test_a_record_s_path_may_hold_a_tab() -> None:
+    assert parse_record("100644 abc 0\ta\tb") == File("a\tb", "100644 abc")
 
 
 def test_a_tool_s_version_is_in_its_check_s_keys_only() -> None:
