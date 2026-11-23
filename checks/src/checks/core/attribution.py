@@ -11,6 +11,7 @@ from checks.core.values import (
     normalized,
     operands,
     parse_json,
+    text,
 )
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -84,7 +85,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return Outcome(
         passed(
             status,
-            inputs.texts.get(log, ""),
+            text(inputs.texts, log),
             selected,
             parse_json(inputs.texts.get(metadata)),
         )

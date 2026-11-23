@@ -13,6 +13,7 @@ from checks.core.values import (
     operands,
     parse_json,
     summarized,
+    text,
 )
 
 LIMIT = 2
@@ -159,7 +160,8 @@ def passing(items: Sequence[Function]) -> str:
 
 
 def roots_request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(operands(arguments)[:1])
+    (metadata,) = operands(arguments)
+    return Request(FrozenList((metadata,)))
 
 
 def roots(arguments: Sequence[str], inputs: Inputs) -> Outcome:
@@ -174,7 +176,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     metadata, measures, files = arguments
     items = records(
-        FrozenList(inputs.texts.get(measures, "").splitlines()),
+        FrozenList(text(inputs.texts, measures).splitlines()),
         parse_json(inputs.texts.get(metadata)),
     )
     issues = findings(items, exceptions_in(inputs))

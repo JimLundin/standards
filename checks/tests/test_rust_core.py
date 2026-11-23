@@ -108,7 +108,9 @@ def test_a_clean_core_passes() -> None:
 
 def test_the_root_declares_no_std_unconditionally() -> None:
     assert checked(root="#![cfg_attr(not(test), no_std)]\n").status == 0
-    assert checked(root="// #![no_std]\n#![no_std] // pure\n").status == 0
+    assert (
+        checked(root="// #![no_std]\n#![no_std] // pure // core\n").status == 0
+    )
     for root in ("", '#![cfg_attr(not(target_os = "none"), no_std)]\n'):
         assert checked(root=root).lines == (
             f"{CORE_ROOT}:1: {UNCONDITIONAL}",
@@ -124,6 +126,10 @@ def test_std_is_for_tests_only() -> None:
         f"core/src/a.rs:2: {TESTS_ONLY}",
         "Found 1 issues",
     )
+    apart = "#[cfg(test)]\nfn f() {}\nextern crate std;\n"
+    assert checked(other=apart).lines[0] == f"core/src/a.rs:3: {TESTS_ONLY}"
+    first = "extern crate std;\nfn f() {}\n#[cfg(test)]\n"
+    assert checked(other=first).lines[0] == f"core/src/a.rs:1: {TESTS_ONLY}"
 
 
 def test_core_libraries_use_no_pointers() -> None:
@@ -163,10 +169,14 @@ def test_build_errors_are_reported() -> None:
     assert checked(unsourced).lines[0] == (
         f"{CORE_ROOT}:1: can't find crate for `std`"
     )
+    lineless = error.replace('"line_start": 7', '"line_start": null')
+    assert checked(lineless).lines[0] == (
+        f"{CORE_ROOT}:0: can't find crate for `std`"
+    )
 
 
 def test_the_core_config_adds_the_pointers_to_the_base() -> None:
-    base = 'msrv = "1.90"\ndisallowed-types = ["core::cell::Cell", { path = "alloc::rc::Rc", reason = "mine" }]\n'
+    base = 'msrv = "1.90"\ndisallowed-types = ["core::cell::Cell", "alloc::boxed::Box", { path = "alloc::rc::Rc", reason = "mine" }]\n'
     assert clippy_request(("c.toml", "out.toml"), Inputs()) == Request(
         FrozenList(("c.toml",))
     )
@@ -177,11 +187,12 @@ def test_the_core_config_adds_the_pointers_to_the_base() -> None:
     assert config["msrv"] == "1.90"
     assert config["disallowed-types"] == [
         "core::cell::Cell",
+        "alloc::boxed::Box",
         {"path": "alloc::rc::Rc", "reason": "mine"},
         *(
             {"path": pointer, "reason": PLAIN}
             for pointer in POINTERS
-            if pointer != "alloc::rc::Rc"
+            if pointer not in {"alloc::rc::Rc", "alloc::boxed::Box"}
         ),
     ]
     fresh = clippy_run(("c.toml", "out.toml"), Inputs()).writes
@@ -197,6 +208,8 @@ def test_toml_values_round_trip() -> None:
         "count": 3,
         "ratio": 0.5,
         "name": 'tab\t"quoted" ü',
+        "emoji": "😀",
+        "😀": "key",
         "empty": FrozenOrderedDict[str, object](),
         "nested": [FrozenOrderedDict[str, object]({"a": [1, 2]})],
     })
@@ -207,6 +220,8 @@ def test_toml_values_round_trip() -> None:
         "count": 3,
         "ratio": 0.5,
         "name": 'tab\t"quoted" ü',
+        "emoji": "😀",
+        "😀": "key",
         "empty": {},
         "nested": [{"a": [1, 2]}],
     }
@@ -218,4 +233,15 @@ def test_findings_sort_by_line() -> None:
         f"core/src/a.rs:2: {TESTS_ONLY}",
         f"core/src/a.rs:11: {TESTS_ONLY}",
         "Found 2 issues",
+    )
+
+
+def test_every_core_library_is_named() -> None:
+    metadata = json.dumps({
+        "workspace_root": ROOT,
+        "packages": [package("core", "lib"), package("wire", "rlib")],
+    })
+    texts = {"m.json": metadata, CORE_ROOT: CLEAN, "wire/src/lib.rs": CLEAN}
+    assert run(("m.json", "d.jsonl"), inputs(texts)).lines == (
+        "no_std: core wire",
     )

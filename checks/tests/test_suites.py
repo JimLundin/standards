@@ -61,8 +61,10 @@ def test_load_without_a_file_has_no_suites() -> None:
 
 
 def test_load_reports_invalid_toml() -> None:
-    (problem,) = load("[[suite]\n", "rust", ()).problems
+    loaded = load("[[suite]\n", "rust", ())
+    (problem,) = loaded.problems
     assert problem.startswith("checks.toml: ")
+    assert loaded.entries == ()
 
 
 @pytest.mark.parametrize(
@@ -86,6 +88,10 @@ def test_load_reports_invalid_toml() -> None:
             "checks.toml: suite 1 command must be one line without tabs",
         ),
         (
+            '[[suite]]\nname = "a"\ncommand = "b\\nc"\n[[suite.when]]\ntier = "step"\n',
+            "checks.toml: suite 1 command must be one line without tabs",
+        ),
+        (
             '[[suite]]\nname = "a"\ncommand = "b"\n',
             "checks.toml: suite 1 needs at least one [[suite.when]]",
         ),
@@ -104,6 +110,10 @@ def test_load_reports_invalid_toml() -> None:
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npaths = [""]\n',
             "checks.toml: suite 1 when 1 paths must be a list of strings",
+        ),
+        (
+            '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npackages = "proto"\n',
+            "checks.toml: suite 1 when 1 packages must be a list of strings",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npackages = ["ghost"]\n',
@@ -143,3 +153,41 @@ def test_a_suite_is_active_from_the_tier_of_a_trigger() -> None:
         Trigger("step", FrozenList(("crates/app/**", "crates/proto/**"))),
     )
     assert active(browser, "release") == browser.triggers
+
+
+def test_every_problem_of_a_suite_is_reported() -> None:
+    text = (
+        '[other]\n[[suite]]\nname = "A"\ncommand = " "\nwhy = 1\nhow = 2\n'
+        '[[suite]]\nname = "B"\ncommand = " "\n'
+        '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "x"\n'
+        'paths = "p"\npackages = ["proto"]\n'
+        '[[suite.when]]\ntier = "step"\npackages = ["ghost", "proto", "spirit"]\n'
+    )
+    assert load(text, "rust", PACKAGES).problems == (
+        "checks.toml: unknown table `other`",
+        "checks.toml: suite 1 has unknown keys: how, why",
+        "checks.toml: suite 2 needs a name of lowercase letters, digits and -",
+        "checks.toml: suite 2 needs a command",
+        "checks.toml: suite 2 needs at least one [[suite.when]]",
+        "checks.toml: suite 3 when 1 needs a tier: `commit` or `step` or `release`",
+        "checks.toml: suite 3 when 1 paths must be a list of strings",
+        "checks.toml: suite 3 when 2 names no workspace package `ghost`",
+        "checks.toml: suite 3 when 2 names no workspace package `spirit`",
+    )
+    rust_only = '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "x"\npaths = "p"\npackages = ["proto"]\n'
+    assert load(rust_only, "python", ()).problems == (
+        "checks.toml: suite 1 when 1 needs a tier: `commit` or `step` or `release`",
+        "checks.toml: suite 1 when 1 paths must be a list of strings",
+        "checks.toml: suite 1 when 1 packages are only for Rust projects",
+    )
+
+
+def test_a_repeated_name_is_found_among_all_earlier_suites() -> None:
+    suite = '[[suite]]\nname = "{}"\ncommand = "{}"\n[[suite.when]]\ntier = "step"\n'
+    text = (
+        suite.format("a", "b") + suite.format("c", "d") + suite.format("a", " ")
+    )
+    assert load(text, "rust", ()).problems == (
+        "checks.toml: suite 3 needs a command",
+        "checks.toml: suite 3 repeats the name `a`",
+    )

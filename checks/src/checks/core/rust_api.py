@@ -48,7 +48,7 @@ OWNERS = FrozenList(("struct", "enum", "union", "trait", "type_alias", "impl"))
 class Finding:
     path: str
     line: int
-    message: str
+    message: str = ""
 
 
 @dataclass(frozen=True, slots=True)
