@@ -175,13 +175,3 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "nextest-config": (exceptions_only, nextest_config),
     })
 )
-
-
-def request(arguments: Sequence[str], inputs: Inputs) -> Request:
-    command, *rest = arguments
-    return COMMANDS[command][0](rest, inputs)
-
-
-def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    command, *rest = arguments
-    return COMMANDS[command][1](rest, inputs)

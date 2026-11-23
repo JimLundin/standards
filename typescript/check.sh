@@ -15,25 +15,25 @@ versions=(
 	"--tool=unused=${pins[KNIP]}"
 )
 if full; then
-	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
-	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
+	versions+=("--tool=mutation=${pins[STRYKER]}")
+	if [ -e node_modules/@stryker-mutator/core ]; then
+		pinned STRYKER node "npm install -D @stryker-mutator/core@{} @stryker-mutator/tap-runner@{}" \
+			node -p 'require("./node_modules/@stryker-mutator/core/package.json").version'
+	fi
 fi
+release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
 	--project=exceptions,format,lint,types,unused,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
 biome=()
-biome_config=$standards/biome.json
-for name in biome.json biome.jsonc; do
-	[ -e "$name" ] && biome_config=$name
-done
-if [ "$biome_config" = "$standards/biome.json" ]; then
+if ! biome_config=$(existing biome.json biome.jsonc); then
+	biome_config=$standards/biome.json
 	biome=(--config-path="$(native "$biome_config")")
 fi
 
 mapfile -t sources < <(git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' |
 	grep -vE '(^|/)(package-lock|tsconfig)\.json$')
-mapfile -t tracked < <(git ls-files)
 
 # Biome can only skip all plugins at once, so built-in rules run first with
 # plugins skipped, then each plugin runs alone on the files it still covers.
@@ -48,20 +48,19 @@ biome_lint() {
 			skip+=(--skip="$rule")
 		done
 		npx -y "@biomejs/biome@${pins[BIOME]}" lint "${biome[@]}" "${skip[@]}" "${files[@]}" || status=1
-	done < <(tool_config biome-groups "${sources[@]}")
+	done < <(checks biome-groups "${sources[@]}")
 	while IFS='|' read -r name path; do
-		mapfile -t covered < <(tool_config without "lint/plugin/$name" "${sources[@]}")
+		mapfile -t covered < <(checks without "lint/plugin/$name" "${sources[@]}")
 		((${#covered[@]} > 0)) || continue
 		mkdir -p "$logs/plugins/$name"
 		printf '{"plugins": ["%s"]}\n' "$path" >"$logs/plugins/$name/biome.json"
 		npx -y "@biomejs/biome@${pins[BIOME]}" lint --only=plugin \
 			--config-path="$(native "$logs/plugins/$name/biome.json")" "${covered[@]}" || status=1
-	done < <(tool_config biome-plugins "$(native "$biome_config")")
+	done < <(checks biome-plugins "$(native "$biome_config")")
 	return "$status"
 }
 
-unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-	checks policy typescript "$(native "$standards/..")" "${tracked[@]}"
+exceptions_unit
 unit format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y "@biomejs/biome@${pins[BIOME]}" format "${biome[@]}" "${sources[@]}"
 unit lint "joined 'Found [0-9]+ (error|warning|info)s?'" \
@@ -94,7 +93,7 @@ if full; then
 		stryker_config=$standards/stryker.config.json
 		mutation=("$(native "$stryker_config")")
 	fi
-	mutate=$(tool_config stryker-mutate "$(native "$stryker_config")")
+	mutate=$(checks stryker-mutate "$(native "$stryker_config")")
 	if [ -n "$mutate" ]; then
 		mutation+=(--mutate "$mutate")
 	fi
@@ -104,10 +103,7 @@ if full; then
 	else
 		line mutation skip "@stryker-mutator/core not installed"
 	fi
-	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
-		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$standards/../jscpd.json")" \
-		--format typescript,javascript,css --silent .
-	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp --include-ext ts,tsx,js,mjs,jsx,css --no-cocomo .
+	release_units typescript,javascript,css ts,tsx,js,mjs,jsx,css
 fi
 
 finish

@@ -12,6 +12,7 @@ standards_tree=
 unit_arguments=()
 members=()
 selected=()
+tracked=()
 suite_names=()
 suite_commands=()
 declare -A keys=() recorded=()
@@ -82,16 +83,22 @@ checks() {
 		uv run --frozen -q --project "$(native "$home/checks")" python -I -m checks "$@"
 }
 
-tool_config() {
-	checks tool-config "$@"
+# Prints the first of the files that exists.
+existing() {
+	local file
+	for file; do
+		if [ -e "$file" ]; then
+			echo "$file"
+			return 0
+		fi
+	done
+	return 1
 }
 
 arguments() {
 	while (($# > 0)); do
 		case $1 in
 		commit | step | release) tier=$1 ;;
-		fast) tier=step ;;
-		full) tier=release ;;
 		--no-cache) lookup= ;;
 		-*)
 			echo "unknown option $1; use [commit|step|release] [--no-cache] [project]" >&2
@@ -197,7 +204,7 @@ pinned() {
 begin() {
 	language=$1
 	pinned UV uv "uv self update {}" uv --version
-	pinned PYTHON python3 "uv python install {}, and put it first on PATH as python3" python3 --version
+	mapfile -t tracked < <(git ls-files)
 	notes fetch
 	[ -n "$lookup" ] || return 0
 	local object
@@ -208,46 +215,48 @@ begin() {
 
 # Keys each unit of the run, a check over a scope: the project (`.`), a
 # package, or a suite. `checks units` derives the keys from the project's
-# files, the standards' tree and the arguments, such as the toolchain. Out of
-# git, every unit runs and none is recorded.
+# files, the standards' tree and the arguments, such as the toolchain, and
+# lists the workspace's packages and the tier's suites. Out of git, every
+# unit runs and none is recorded.
 units() {
-	local output kind first second rest first_time=1
-	((${#unit_arguments[@]} == 0)) || first_time=
+	local kind first second
 	unit_arguments=("$@")
+	rekey || return
+	while IFS=$'\t' read -r kind first second; do
+		case $kind in
+		package) members+=("$first") ;;
+		suite)
+			suite_names+=("$first")
+			suite_commands+=("$second")
+			;;
+		problem)
+			line suites FAIL "$first"
+			failed+=(suites)
+			;;
+		esac
+	done <"$logs/units.txt"
+}
+
+# Takes every unit's key afresh from the project as it is now.
+rekey() {
+	local kind first second key
 	keyed=1
 	standards_tree=$(tree_of "$home") && listing "$logs/listing" || {
 		keyed=
 		: >"$logs/listing"
 	}
-	output=$(checks units "$language" "$tier" "$(native "$logs/listing")" \
-		"--standards=$standards_tree" "$@")
-	if [ -z "$output" ]; then
+	checks units "$language" "$tier" "$(native "$logs/listing")" \
+		"--standards=$standards_tree" "${unit_arguments[@]}" >"$logs/units.txt"
+	if [ ! -s "$logs/units.txt" ]; then
 		line units FAIL "the units check failed"
 		failed+=(units)
 		keyed=
-		return
+		return 1
 	fi
 	keys=()
-	while IFS=$'\t' read -r kind first second rest; do
-		case $kind in
-		unit) keys["$first $second"]=$rest ;;
-		*) [ -z "$first_time" ] || unlisted "$kind" "$first" "$second" ;;
-		esac
-	done <<<"$output"
-}
-
-unlisted() {
-	case $1 in
-	package) members+=("$2") ;;
-	suite)
-		suite_names+=("$2")
-		suite_commands+=("$3")
-		;;
-	problem)
-		line suites FAIL "$2"
-		failed+=(suites)
-		;;
-	esac
+	while IFS=$'\t' read -r kind first second key; do
+		[ "$kind" != unit ] || keys["$first $second"]=$key
+	done <"$logs/units.txt"
 }
 
 known() {
@@ -267,7 +276,7 @@ remember() {
 	done
 	if ! listing "$logs/listing-now" || ! cmp -s "$logs/listing" "$logs/listing-now" ||
 		[ "$(tree_of "$home")" != "$standards_tree" ]; then
-		units "${unit_arguments[@]}"
+		rekey
 	fi
 	for scope; do
 		key=${keys["$check $scope"]:-}
@@ -340,6 +349,29 @@ suites() {
 		ok | flaky) remember suite "$name" ;;
 		esac
 	done
+}
+
+# A release adds a version of scc to the keys of the volume unit and of
+# jscpd to the duplication unit's.
+release_versions() {
+	full || return 0
+	pinned SCC scc "go install github.com/boyter/scc/v3@v{}" scc --version
+	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
+}
+
+exceptions_unit() {
+	unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
+		checks policy "$language" "$(native "$home")" "${tracked[@]}"
+}
+
+# The duplication and volume units of a release, over jscpd's formats and
+# the file extensions of the language.
+release_units() {
+	unit duplication "last '[0-9]+ exact clones with [^ ]+ duplicated lines'" \
+		npx -y "jscpd@${pins[JSCPD]}" --config "$(native "$home/jscpd.json")" \
+		--format "$1" --silent .
+	unit volume totals scc --exclude-dir .git,mutants,mutants.out,mutants.out.old,.stryker-tmp \
+		--include-ext "$2" --no-cocomo .
 }
 
 finish() {

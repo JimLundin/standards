@@ -7,10 +7,15 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks.core.cargo import (
+    core_packages,
+    is_library,
+    packages_of,
+    relative,
+    targets_of,
+)
 from checks.core.exceptions import BOX, EXCEPTIONS, Exceptions, exceptions_in
 from checks.core.rust_api import Finding
-from checks.core.rust_layers import LIBRARY_KINDS, core_packages, packages_of
-from checks.core.rust_shell import relative
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -20,8 +25,6 @@ from checks.core.values import (
     normalized,
     parse_json,
     parse_toml,
-    posix,
-    strings,
     summarized,
     table,
 )
@@ -108,14 +111,11 @@ def clippy_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
 
 
 def library_of(package: Mapping[str, object], root: str) -> Iterator[Library]:
-    for target in map(table, entries(package.get("targets"))):
-        if any(kind in LIBRARY_KINDS for kind in strings(target.get("kind"))):
-            source = str(target.get("src_path"))
-            yield Library(
-                str(package.get("name")),
-                relative(source, root),
-                normalized(posix(source)),
-            )
+    for target in filter(is_library, targets_of(package)):
+        source = str(target.get("src_path"))
+        yield Library(
+            str(package.get("name")), relative(source, root), normalized(source)
+        )
 
 
 def libraries(metadata: Mapping[str, object]) -> FrozenList[Library]:
@@ -211,7 +211,7 @@ def diagnostic_finding(
         )
         return replace(located, message=str(message.get("message")))
     pointer = pointer_of(message)
-    source = normalized(posix(target))
+    source = normalized(target)
     if (
         not pointer
         or source not in sources

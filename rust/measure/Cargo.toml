@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Counts the decisions each Rust function writes in its source"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/JimLundin/home"
+repository = "https://github.com/JimLundin/standards"
 readme = false
 keywords = ["complexity", "decisions", "metrics"]
 categories = ["development-tools"]
@@ -20,26 +20,3 @@ syn = { version = "3.0.10", default-features = false, features = ["full", "parsi
 
 [workspace]
 
-[lints.rust]
-warnings = "deny"
-unsafe_code = "deny"
-
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-nursery = { level = "deny", priority = -1 }
-cargo = { level = "deny", priority = -1 }
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-todo = "deny"
-unimplemented = "deny"
-dbg_macro = "deny"
-allow_attributes = "deny"
-allow_attributes_without_reason = "deny"
-undocumented_unsafe_blocks = "deny"
-shadow_reuse = "deny"
-shadow_same = "deny"
-print_stdout = "deny"
-print_stderr = "deny"
-exit = "deny"

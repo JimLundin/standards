@@ -1,24 +1,18 @@
 from dataclasses import dataclass, replace
-from pathlib import PurePosixPath
 lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
+from checks.core.cargo import is_shell, kinds, packages_of, relative, targets_of
 from checks.core.exceptions import EXCEPTIONS, SHELL, Exceptions, exceptions_in
-from checks.core.rust_layers import is_shell, packages_of
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
-    entries,
     listing,
-    normalized,
     operands,
     parse_json,
-    posix,
-    strings,
     summarized,
-    table,
 )
 
 LIMIT = 2
@@ -54,10 +48,6 @@ class Failure:
     error: str
 
 
-def kinds(target: Mapping[str, object]) -> FrozenList[str]:
-    return strings(target.get("kind"))
-
-
 def package_targets(
     package: Mapping[str, object],
 ) -> FrozenList[tuple[str, bool]]:
@@ -66,7 +56,7 @@ def package_targets(
             str(target.get("src_path")),
             "bin" in kinds(target) or is_shell(package),
         )
-        for target in map(table, entries(package.get("targets")))
+        for target in targets_of(package)
         if any(kind in MEASURED_KINDS for kind in kinds(target))
     )
 
@@ -77,13 +67,6 @@ def targets(metadata: Mapping[str, object]) -> FrozenOrderedDict[str, bool]:
         for package in packages_of(metadata)
         for target in package_targets(package)
     )
-
-
-def relative(path: str, root: str) -> str:
-    whole = PurePosixPath(normalized(path))
-    if whole.is_relative_to(posix(root)):
-        return whole.relative_to(posix(root)).as_posix()
-    return whole.as_posix()
 
 
 def measured(

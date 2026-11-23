@@ -2,7 +2,7 @@ import json
 
 from ordered import FrozenList
 
-from checks.core.tool_config import request, run
+from checks.core.tools import request, run
 from checks.core.values import Inputs, Request
 from tests.helpers import entry, inputs, lines
 

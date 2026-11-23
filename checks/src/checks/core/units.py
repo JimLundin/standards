@@ -5,20 +5,13 @@ lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core import manifests, suites
-from checks.core.scope import (
-    DOCS,
-    Package,
-    any_match,
-    dependencies,
-    owned,
-    workspace,
-)
+from checks.core import suites
+from checks.core.cargo import Package, dependencies, owned, workspace
 from checks.core.values import (
-    EMPTY,
     Inputs,
     Outcome,
     Request,
+    matches,
     operands,
     options,
     parse_json,
@@ -30,25 +23,20 @@ PROJECT = "."
 # A key names the object its note annotates, so it is as long as a SHA-1
 # object name.
 LENGTH = 40
-LOCKFILE = "Cargo.lock"
-MANIFEST = "Cargo.toml"
+# Files no check reads: a change to them reruns no package.
+DOCS = FrozenList((
+    "**/*.md",
+    "docs/**",
+    "**/LICENSE*",
+    "**/COPYING*",
+    ".github/**",
+))
 
 
 @dataclass(frozen=True, slots=True)
 class File:
     path: str
     blob: str
-
-
-@dataclass(frozen=True, slots=True)
-class Workspace:
-    packages: Sequence[Package]
-    # Parsed manifests by path, the root's included; empty when any of
-    # them can't be read, so every manifest counts as its blob.
-    manifests: Mapping[str, Mapping[str, object]]
-    # Each package's resolved dependencies outside the workspace; None
-    # without a resolve graph, so the lockfile counts as its blob.
-    locks: Mapping[str, Sequence[str]] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,109 +75,47 @@ def fingerprint(files: Sequence[File]) -> str:
     return digest(FrozenList(f"{file.blob} {file.path}" for file in files))
 
 
-def manifest_of(package: Package) -> str:
-    return f"{package.path}/{MANIFEST}" if package.path else MANIFEST
-
-
-def counted(file: File, workspace: Workspace) -> bool:
-    return file.path != LOCKFILE or workspace.locks is None
-
-
-def seen(file: File, owner: Package, workspace: Workspace) -> str:
-    manifest = workspace.manifests.get(file.path)
-    if manifest is None or file.path != manifest_of(owner):
-        return f"{file.blob} {file.path}"
-    return digest(manifests.published(manifest))
-
-
-def common_inputs(
-    unowned: Sequence[File], root: Mapping[str, object] | None
-) -> str:
-    return digest((
-        fingerprint(
-            FrozenList(
-                file
-                for file in unowned
-                if not any_match(file.path, DOCS)
-                and (root is None or file.path != MANIFEST)
-            )
-        ),
-        *(manifests.shared(root) if root is not None else ()),
-    ))
+def any_match(file: str, globs: Sequence[str]) -> bool:
+    return any(matches(file, glob) for glob in globs)
 
 
 def package_inputs(
-    files: Sequence[File], workspace: Workspace
+    files: Sequence[File], packages: Sequence[Package]
 ) -> FrozenOrderedDict[str, str]:
-    packages = workspace.packages
-    counted = FrozenList(
-        file
-        for file in files
-        if file.path != LOCKFILE or workspace.locks is None
-    )
-    owners = FrozenList(owned(file.path, packages) for file in counted)
+    """Each package's files and its workspace dependencies', with every
+    file outside the packages and the docs, such as Cargo.lock."""
+    owners = FrozenList(owned(file.path, packages) for file in files)
     grouped = FrozenOrderedDict(
         (
             name,
             FrozenList(
                 file
-                for file, owner in zip(counted, owners, strict=True)
+                for file, owner in zip(files, owners, strict=True)
                 if owner == name
             ),
         )
         for name in ("", *(package.name for package in packages))
     )
-    root = workspace.manifests.get(MANIFEST)
-    common = common_inputs(grouped[""], root)
+    common = fingerprint(
+        FrozenList(
+            file for file in grouped[""] if not any_match(file.path, DOCS)
+        )
+    )
     return FrozenOrderedDict(
         (
             package.name,
             digest((
                 common,
-                *own_inputs(package, root or EMPTY, grouped, workspace),
+                *(
+                    fingerprint(grouped[name])
+                    for name in dependencies(
+                        FrozenOrderedSet((package.name,)), packages
+                    )
+                ),
             )),
         )
         for package in packages
     )
-
-
-def own_inputs(
-    package: Package,
-    root: Mapping[str, object],
-    grouped: Mapping[str, Sequence[File]],
-    workspace: Workspace,
-) -> FrozenList[str]:
-    packages = workspace.packages
-    closure = dependencies(FrozenOrderedSet((package.name,)), packages)
-    others = FrozenList(
-        other
-        for other in packages
-        if other.name in closure and other.name != package.name
-    )
-    manifest = workspace.manifests.get(manifest_of(package), EMPTY)
-    locks = workspace.locks or FrozenOrderedDict[str, Sequence[str]]()
-    return FrozenList((
-        fingerprint(grouped[package.name]),
-        digest(
-            FrozenList(
-                seen(file, other, workspace)
-                for other in others
-                for file in grouped[other.name]
-            )
-        ),
-        *manifests.inherited(manifest, root, dev=True),
-        *manifests.linted(manifest, root),
-        *(
-            line
-            for other in others
-            for line in manifests.inherited(
-                workspace.manifests.get(manifest_of(other), EMPTY),
-                root,
-                dev=False,
-            )
-        ),
-        *locks.get(package.name, ()),
-    ))
 
 
 def suite_inputs(
@@ -227,45 +153,12 @@ def described(arguments: Sequence[str], inputs: Inputs) -> FrozenList[Package]:
     return workspace(parse_json(inputs.texts.get(metadata[0])))
 
 
-def manifest_paths(packages: Sequence[Package]) -> FrozenOrderedSet[str]:
-    if not packages:
-        return FrozenOrderedSet()
-    return FrozenOrderedSet((MANIFEST, *map(manifest_of, packages)))
-
-
-def parsed_manifests(
-    packages: Sequence[Package], inputs: Inputs
-) -> FrozenOrderedDict[str, Mapping[str, object]]:
-    found = FrozenOrderedDict(
-        (path, manifests.parsed(inputs.texts.get(path)))
-        for path in manifest_paths(packages)
-    )
-    if any(manifest is None for manifest in found.values()):
-        return FrozenOrderedDict()
-    return FrozenOrderedDict(
-        (path, manifest)
-        for path, manifest in found.items()
-        if manifest is not None
-    )
-
-
-def resolved(
-    arguments: Sequence[str], inputs: Inputs
-) -> Mapping[str, Sequence[str]] | None:
-    paths = options(arguments, "--resolve=")
-    if not paths:
-        return None
-    return manifests.locked(parse_json(inputs.texts.get(paths[0])))
-
-
-def request(arguments: Sequence[str], inputs: Inputs) -> Request:
+def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
     return Request(
         FrozenList((
             operands(arguments)[2],
             suites.SUITES,
             *options(arguments, "--metadata="),
-            *options(arguments, "--resolve="),
-            *manifest_paths(described(arguments, inputs)),
         ))
     )
 
@@ -286,14 +179,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     files = listing(inputs.texts.get(listed, ""))
     packages = described(arguments, inputs)
     whole = fingerprint(files)
-    scoped = package_inputs(
-        files,
-        Workspace(
-            packages,
-            parsed_manifests(packages, inputs),
-            resolved(arguments, inputs),
-        ),
-    )
+    scoped = package_inputs(files, packages)
     names = FrozenList(package.name for package in packages)
     loaded = suites.load(inputs.texts.get(suites.SUITES), language, names)
     chosen = FrozenList(

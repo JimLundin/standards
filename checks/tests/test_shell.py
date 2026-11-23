@@ -42,8 +42,15 @@ def test_tools_dispatch_to_each_tool() -> None:
         "rust-core",
         "rust-roots",
         "rust-shell",
-        "tool-config",
         "units",
+        "ruff-config",
+        "without",
+        "globs",
+        "biome-groups",
+        "biome-plugins",
+        "filter-mutmut",
+        "stryker-mutate",
+        "nextest-config",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(
         FrozenList(("exceptions.toml", "a.py"))
@@ -105,16 +112,11 @@ def test_main_reads_stdin_only_when_asked(
     )
     lines = "app.x.f__mutmut_1: survived\napp.y.g__mutmut_2: survived\n"
     status, out = invoke(
-        monkeypatch, capsysbinary, "tool-config", "filter-mutmut", stdin=lines
+        monkeypatch, capsysbinary, "filter-mutmut", stdin=lines
     )
     assert (status, out) == (0, "app.y.g__mutmut_2: survived\n")
     status, out = invoke(
-        monkeypatch,
-        capsysbinary,
-        "tool-config",
-        "globs",
-        "mutation",
-        stdin=lines,
+        monkeypatch, capsysbinary, "globs", "mutation", stdin=lines
     )
     assert (status, out) == (0, "app/x.py\n")
 
@@ -198,10 +200,6 @@ def test_main_resolves_paths_against_the_working_directory(
         '{"plugins": ["p/a.grit"]}', encoding="utf-8"
     )
     status, out = invoke(
-        monkeypatch,
-        capsysbinary,
-        "tool-config",
-        "biome-plugins",
-        "conf/biome.json",
+        monkeypatch, capsysbinary, "biome-plugins", "conf/biome.json"
     )
     assert (status, out) == (0, f"a|{project.as_posix()}/conf/p/a.grit\n")

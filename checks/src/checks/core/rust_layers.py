@@ -1,72 +1,33 @@
 import json
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.values import (
-    Inputs,
-    Outcome,
-    Request,
-    entries,
-    listing,
-    lookup,
-    parse_json,
-    posix,
-    strings,
-    table,
+from checks.core.cargo import (
+    core_packages,
+    is_shell,
+    layer,
+    packages_of,
+    relative,
+    target_kinds,
 )
+from checks.core.values import Inputs, Outcome, Request, listing, parse_json
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-LIBRARY_KINDS = FrozenOrderedSet(("lib", "rlib"))
 LAYERS = FrozenOrderedSet(("core", "shell"))
 LAYER = "package.metadata.standards.layer"
 USE = 'use "core" or "shell"'
 CORELESS = "has binaries but no no_std library to hold the pure core"
 
 
-def target_kinds(package: Mapping[str, object]) -> FrozenOrderedSet[str]:
-    return FrozenOrderedSet(
-        kind
-        for target in entries(package.get("targets"))
-        for kind in strings(table(target).get("kind"))
-    )
-
-
 def manifest(root: str, package: Mapping[str, object]) -> str:
-    path = PurePosixPath(posix(str(package.get("manifest_path"))))
-    return path.relative_to(posix(root)).as_posix()
-
-
-def layer(package: Mapping[str, object]) -> object:
-    declared = lookup(package, "metadata.standards.layer")
-    return "core" if declared is None else declared
+    return relative(str(package.get("manifest_path")), root)
 
 
 def valid(declared: object) -> bool:
     return isinstance(declared, str) and declared in LAYERS
-
-
-def is_shell(package: Mapping[str, object]) -> bool:
-    return layer(package) == "shell"
-
-
-def packages_of(
-    metadata: Mapping[str, object],
-) -> FrozenList[Mapping[str, object]]:
-    return FrozenList(table(item) for item in entries(metadata.get("packages")))
-
-
-def core_packages(
-    packages: Sequence[Mapping[str, object]],
-) -> FrozenList[Mapping[str, object]]:
-    return FrozenList(
-        package
-        for package in packages
-        if target_kinds(package) & LIBRARY_KINDS and not is_shell(package)
-    )
 
 
 def layer_issues(

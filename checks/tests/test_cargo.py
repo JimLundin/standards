@@ -3,12 +3,14 @@ lazy from collections.abc import Mapping
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.scope import (
+from checks.core.cargo import (
     Package,
     dependencies,
     dependents,
     owned,
     owner,
+    reach,
+    relative,
     workspace,
 )
 from checks.core.values import parse_json
@@ -99,3 +101,19 @@ def test_owned_files_are_every_file_in_a_package_s_folder() -> None:
     assert owned("crates/home/Cargo.toml", PACKAGES) == "home"
     assert owned("crates/home/src/flow/test-flow.toml", PACKAGES) == "home"
     assert not owned("tools/check.sh", PACKAGES)
+
+
+def test_reach_follows_edges_and_keeps_names_without_any() -> None:
+    edges = {"a": ("b",), "b": ("c", "a")}
+    assert reach(FrozenOrderedSet(("a",)), edges) == FrozenOrderedSet((
+        "a",
+        "b",
+        "c",
+    ))
+    assert reach(FrozenOrderedSet(("x",)), edges) == FrozenOrderedSet(("x",))
+
+
+def test_relative_is_empty_at_the_root_and_whole_outside_it() -> None:
+    assert relative("C:\\work\\src\\lib.rs", "C:\\work") == "src/lib.rs"
+    assert not relative("/work/", "/work")
+    assert relative("/elsewhere/x.rs", "/work") == "/elsewhere/x.rs"
