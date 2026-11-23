@@ -17,6 +17,9 @@ tracked=()
 suite_names=()
 suite_commands=()
 declare -A keys=() recorded=()
+# The tool a unit needs to run, where its command is a function of the
+# script; any other unit needs its command.
+declare -A tools_of=()
 
 native() {
 	if command -v cygpath >/dev/null; then cygpath -m "$1"; else echo "$1"; fi
@@ -83,7 +86,7 @@ needs() {
 step() {
 	local name=$1 summary=$2 log
 	shift 2
-	if ! needs "$1" "$name"; then
+	if ! needs "${tools_of[$name]:-$1}" "$name"; then
 		outcome=skip
 		return
 	fi

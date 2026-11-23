@@ -19,6 +19,7 @@ arguments "$@"
 cd "$project" || exit 2
 begin python
 units --toolchain=fixture --project=present,absent
+tools_of[present]=$PRESENT_TOOL
 unit present ending bash -c 'echo ran >>"$MARKER"'
 if [ -z "${{ONLY_PRESENT:-}}" ]; then
 	unit absent ending {MISSING}
@@ -46,12 +47,17 @@ class Workspace:
     project: Path
 
     def run(
-        self, *arguments: str, ci: bool = False, only_present: bool = False
+        self,
+        *arguments: str,
+        ci: bool = False,
+        only_present: bool = False,
+        present_tool: str = "bash",
     ) -> Run:
         settings = (
             f"STANDARDS={STANDARDS}",
             f"STANDARDS_CACHE={self.root / 'cache'}",
             f"MARKER={self.root / 'marker'}",
+            f"PRESENT_TOOL={present_tool}",
             *(("CI=true",) if ci else ()),
             *(("ONLY_PRESENT=1",) if only_present else ()),
         )
@@ -172,3 +178,22 @@ def test_verify_needs_the_recorded_passes(workspace: Workspace) -> None:
     run = workspace.run("commit", "--verify", "--no-cache")
     assert run.status == 2
     assert workspace.runs() == 0
+
+
+def test_a_unit_needs_its_declared_tool_only_to_run(
+    workspace: Workspace,
+) -> None:
+    _ = (workspace.project / "checks.toml").unlink()
+    missing = workspace.run(
+        "commit", ci=True, only_present=True, present_tool=MISSING
+    )
+    assert missing.status == 1
+    assert outcome(missing, "present") == (
+        f"FAIL {MISSING} not installed; CI runs every unit",
+    )
+    assert workspace.run("commit", only_present=True).status == 0
+    recorded = workspace.run(
+        "commit", ci=True, only_present=True, present_tool=MISSING
+    )
+    assert recorded.status == 0
+    assert outcome(recorded, "present") == ("ok passed (recorded)",)

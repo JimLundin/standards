@@ -217,12 +217,10 @@ else
 	batch core ending core "${libraries[@]}"
 	batch api issues api "${libraries[@]}"
 fi
-if needs rust-decisions shell; then
-	batch shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell "${members[@]}"
-fi
-if needs rust-decisions shell-share; then
-	unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
-fi
+tools_of[shell]=rust-decisions
+tools_of[shell-share]=rust-decisions
+batch shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell "${members[@]}"
+unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
 if at_least step; then
 	batch "$test_check" tested run_tests "${members[@]}"
 fi
@@ -239,10 +237,9 @@ if full; then
 			mutation+=(--exclude "$file")
 		done <"$logs/shell-files.txt"
 	fi
-	if needs cargo-mutants mutation; then
-		unit mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \
-			env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
-	fi
+	tools_of[mutation]=cargo-mutants
+	unit mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \
+		env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
 	unit unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
 	release_units rust rs
 fi
