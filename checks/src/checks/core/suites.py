@@ -9,7 +9,7 @@ from checks.core.values import entries, is_list, parse_toml, table
 
 SUITES = "checks.toml"
 TIERS = FrozenList(("commit", "step", "release"))
-SUITE_KEYS = FrozenOrderedSet(("name", "command", "when"))
+SUITE_KEYS = FrozenOrderedSet(("name", "command", "tools", "when"))
 WHEN_KEYS = FrozenOrderedSet(("tier", "paths", "packages"))
 NAME = re.compile(r"[a-z][a-z0-9-]*")
 TIER_NAMES = " or ".join(f"`{tier}`" for tier in TIERS)
@@ -27,6 +27,7 @@ class Suite:
     name: str
     command: str
     triggers: FrozenList[Trigger]
+    tools: FrozenList[str] = field(default_factory=FrozenList)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,11 +87,26 @@ def parse_trigger(fields: Mapping[str, object]) -> Trigger:
     )
 
 
+def tool_problems(
+    where: str, value: object, pinned: Sequence[str]
+) -> Iterator[str]:
+    tools = texts(value)
+    if tools is None:
+        yield f"{where} tools must be a list of strings"
+        return
+    yield from (
+        f"{where} names no pinned tool `{tool}`"
+        for tool in tools
+        if tool not in pinned
+    )
+
+
 def suite_problems(
     where: str,
     fields: Mapping[str, object],
     language: str,
     packages: Sequence[str],
+    pinned: Sequence[str],
 ) -> Iterator[str]:
     unknown = unknown_keys(fields, SUITE_KEYS)
     if unknown:
@@ -103,6 +119,7 @@ def suite_problems(
         yield f"{where} needs a command"
     elif "\n" in command or "\t" in command:
         yield f"{where} command must be one line without tabs"
+    yield from tool_problems(where, fields.get("tools"), pinned)
     whens = entries(fields.get("when"))
     if not whens:
         yield f"{where} needs at least one [[suite.when]]"
@@ -119,10 +136,16 @@ def parse_suite(fields: Mapping[str, object]) -> Suite:
         FrozenList(
             parse_trigger(table(when)) for when in entries(fields.get("when"))
         ),
+        texts(fields.get("tools")) or FrozenList(),
     )
 
 
-def load(text: str | None, language: str, packages: Sequence[str]) -> Suites:
+def load(
+    text: str | None,
+    language: str,
+    packages: Sequence[str],
+    pinned: Sequence[str] = (),
+) -> Suites:
     try:
         data = parse_toml(text)
     except tomllib.TOMLDecodeError as error:
@@ -135,7 +158,9 @@ def load(text: str | None, language: str, packages: Sequence[str]) -> Suites:
     for index, entry in enumerate(entries(data.get("suite"))):
         fields = table(entry)
         where = f"{SUITES}: suite {index + 1}"
-        found = FrozenList(suite_problems(where, fields, language, packages))
+        found = FrozenList(
+            suite_problems(where, fields, language, packages, pinned)
+        )
         if fields.get("name") in names:
             found += (f"{where} repeats the name `{fields.get('name')}`",)
         names += (str(fields.get("name")),)

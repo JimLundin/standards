@@ -4,6 +4,7 @@ failed=()
 tier=step
 project=.
 lookup=1
+verify=
 outcome=
 suffix=
 keyed=
@@ -54,15 +55,36 @@ totals() {
 	plain "$1" | awk '/^Total/ { printf "%s files, %s code, %s comments, %s complexity", $2, $6, $5, $7 }'
 }
 
+# A unit that can't run, such as one whose tool isn't installed, is skipped;
+# in CI (`CI` set, as GitHub Actions sets it) it fails, so CI passes no tree
+# with a unit it didn't run.
+skipped() {
+	if [ -n "${CI:-}" ] && [ "$CI" != false ]; then
+		line "$1" FAIL "$2; CI runs every unit"
+		failed+=("$1")
+	else
+		line "$1" skip "$2"
+	fi
+}
+
+# Whether the unit named second can run its tool, skipping it if not.
+# Verifying runs no tool, so needs none.
+needs() {
+	if [ -n "$verify" ] || command -v "$1" >/dev/null; then
+		return 0
+	fi
+	skipped "$2" "$1 not installed"
+	return 1
+}
+
 # A step passes as flaky when a test listed as flaky failed and passed on
 # its retry; nextest marks each such test FLAKY. Its result is left in
 # `outcome`, and `suffix`, when set, is added to its summary.
 step() {
 	local name=$1 summary=$2 log
 	shift 2
-	if ! command -v "$1" >/dev/null; then
+	if ! needs "$1" "$name"; then
 		outcome=skip
-		line "$name" skip "$1 not installed"
 		return
 	fi
 	log="$logs/$name.log"
@@ -100,14 +122,19 @@ arguments() {
 		case $1 in
 		commit | step | release) tier=$1 ;;
 		--no-cache) lookup= ;;
+		--verify) verify=1 ;;
 		-*)
-			echo "unknown option $1; use [commit|step|release] [--no-cache] [project]" >&2
+			echo "unknown option $1; use [commit|step|release] [--no-cache|--verify] [project]" >&2
 			exit 2
 			;;
 		*) project=$1 ;;
 		esac
 		shift
 	done
+	if [ -n "$verify" ] && [ -z "$lookup" ]; then
+		echo "--verify reads the recorded passes, which --no-cache ignores" >&2
+		exit 2
+	fi
 }
 
 at_least() {
@@ -215,7 +242,8 @@ begin() {
 
 # Keys each unit of the run, a check over a scope: the project (`.`), a
 # package, or a suite. `checks units` derives the keys from the project's
-# files, the standards' tree and the arguments, such as the toolchain, and
+# files, the standards' tree, the pins of tools.env and the arguments, such
+# as the toolchain, and
 # lists the workspace's packages and the tier's suites. Out of git, every
 # unit runs and none is recorded.
 units() {
@@ -246,7 +274,8 @@ rekey() {
 		: >"$logs/listing"
 	}
 	checks units "$language" "$tier" "$(native "$logs/listing")" \
-		"--standards=$standards_tree" "${unit_arguments[@]}" >"$logs/units.txt"
+		"--standards=$standards_tree" "--pins=$(native "$home/tools.env")" \
+		"${unit_arguments[@]}" >"$logs/units.txt"
 	if [ ! -s "$logs/units.txt" ]; then
 		line units FAIL "the units check failed"
 		failed+=(units)
@@ -261,6 +290,19 @@ rekey() {
 
 known() {
 	[ -n "$lookup" ] && [ -n "$keyed" ] && [ -n "${recorded[${keys["$1 $2"]:-none}]:-}" ]
+}
+
+# Verifying, fails the unit named second for each of the check's scopes,
+# which have no recorded pass, naming the key, and is true; it runs nothing.
+unproven() {
+	local check=$1 name=$2 scope
+	shift 2
+	[ -n "$verify" ] || return 1
+	(($# > 0)) || return 0
+	for scope; do
+		line "$name" FAIL "no recorded pass of $scope under ${keys["$check $scope"]:-no key}"
+	done
+	failed+=("$name")
 }
 
 # Records passes of a check's scopes as notes under their keys. If the
@@ -293,6 +335,7 @@ unit() {
 		line "$1" ok "passed (recorded)"
 		return
 	fi
+	unproven "$1" "$1" . && return
 	step "$@"
 	case $outcome in
 	ok | flaky) remember "$1" . ;;
@@ -318,13 +361,15 @@ batch() {
 	if ((${#selected[@]} < $#)); then
 		suffix="unproven ${selected[*]}; $(($# - ${#selected[@]})) passed (recorded)"
 	fi
+	unproven "$check" "$check" "${selected[@]}" && return
 	step "$check" "$summary" "$run"
 	case $outcome in
 	skip) return ;;
 	FAIL) status=1 ;;
 	esac
-	mapfile -t passing < <(checks passed "$status" "$(native "$logs/$check.log")" \
-		"$(native "$logs/metadata.json")" "${selected[@]}")
+	mapfile -t passing < <(checks passed "$check" "$status" "$(native "$logs/$check.log")" \
+		"$(native "$logs/metadata.json")" "--artifacts=$(native "$logs/$check.jsonl")" \
+		"${selected[@]}")
 	remember "$check" "${passing[@]}"
 }
 
@@ -336,14 +381,12 @@ suites() {
 			line "$name" ok "passed (recorded)"
 			continue
 		fi
+		unproven suite "$name" "$name" && continue
 		read -r -a words <<<"${suite_commands[index]}"
 		for program in "${words[@]}"; do
 			[[ $program == *=* ]] || break
 		done
-		if ! command -v "$program" >/dev/null; then
-			line "$name" skip "$program not installed"
-			continue
-		fi
+		needs "$program" "$name" || continue
 		step "$name" ending bash -c "${suite_commands[index]}"
 		case $outcome in
 		ok | flaky) remember suite "$name" ;;

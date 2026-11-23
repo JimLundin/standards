@@ -84,10 +84,15 @@ if full; then
 fi
 pinned NEXTEST cargo-nextest "cargo install --locked cargo-nextest@{}" cargo nextest --version
 pinned SCCACHE sccache "cargo install --locked sccache@{}" sccache --version
+pinned RUST_DECISIONS rust-decisions \
+	"cargo install --locked --path $(native "$standards/measure")" rust-decisions --version
 # A check's key holds the pinned version of the tool it runs; the
-# toolchain's covers rustfmt and clippy, and the standards' tree covers
-# rust-decisions.
-versions=("--tool=$test_check=${tests[0]} ${pins[NEXTEST]}")
+# toolchain's covers rustfmt and clippy.
+versions=(
+	"--tool=$test_check=${tests[0]} ${pins[NEXTEST]}"
+	"--tool=shell=${pins[RUST_DECISIONS]}"
+	"--tool=shell-share=${pins[RUST_DECISIONS]}"
+)
 if full; then
 	pinned CARGO_MUTANTS cargo-mutants "cargo install --locked cargo-mutants@{}" cargo mutants --version
 	pinned CARGO_MACHETE cargo-machete "cargo install --locked cargo-machete@{}" cargo machete --version
@@ -99,14 +104,16 @@ fi
 release_versions
 units "--toolchain=$("${cargo[@]}" -V 2>&1; "${cargo[@]/cargo/rustc}" -V 2>&1)" \
 	"${described[@]}" "${versions[@]}" \
-	--project=exceptions,format,doctest,mutation,unused-dependencies,duplication,volume \
+	--project=exceptions,format,shell-share,doctest,mutation,unused-dependencies,duplication,volume \
 	"--package=lint,core,api,shell,$test_check"
 
 # The package checks run over the whole workspace, so that cargo resolves
 # features once and rebuilds only what changed; `-p` would resolve each
-# selection's features apart. Their findings are credited to packages by file.
+# selection's features apart. Their findings are credited to packages by
+# file, and cargo's messages of what it built say which packages it reached.
 lint() {
-	"${cargo[@]}" clippy --workspace --keep-going --all-targets -- "${lints[@]}"
+	"${cargo[@]}" clippy --workspace --keep-going --all-targets \
+		--message-format=json-render-diagnostics -- "${lints[@]}" >"$logs/lint.jsonl"
 }
 
 core() {
@@ -165,6 +172,15 @@ shell() {
 		"$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
 }
 
+# The shell's share of the project's decisions, a unit of the whole project
+# since a change to any package moves it.
+shell_share() {
+	local roots
+	mapfile -t roots < <(checks rust-roots "$metadata")
+	rust-decisions "${roots[@]}" >"$logs/share.jsonl" || return
+	checks rust-shell-share "$metadata" "$(native "$logs/share.jsonl")"
+}
+
 # nextest builds the workspace's tests and runs the unproven packages';
 # cargo test can't select packages without -p, so it runs them all.
 run_tests() {
@@ -193,7 +209,7 @@ batch lint "last '[0-9]+ previous errors?|Finished'" lint "${members[@]}"
 if ((listed != 0)); then
 	line core FAIL "${layering:-cargo metadata failed}"
 	failed+=(core)
-	line api skip "no libraries"
+	skipped api "no libraries"
 elif ((${#libraries[@]} == 0)); then
 	line core ok "no libraries"
 	line api ok "no libraries"
@@ -201,10 +217,11 @@ else
 	batch core ending core "${libraries[@]}"
 	batch api issues api "${libraries[@]}"
 fi
-if command -v rust-decisions >/dev/null; then
+if needs rust-decisions shell; then
 	batch shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell "${members[@]}"
-else
-	line shell skip "rust-decisions not installed"
+fi
+if needs rust-decisions shell-share; then
+	unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
 fi
 if at_least step; then
 	batch "$test_check" tested run_tests "${members[@]}"
@@ -214,7 +231,7 @@ if full; then
 		find . -path ./target -prune -o -name lib.rs -path '*/src/*' -print | grep -q .; then
 		unit doctest "summed 'passed|failed'" "${cargo[@]}" test --doc --quiet
 	fi
-	if [ ! -f "$logs/shell-files.txt" ] && command -v rust-decisions >/dev/null; then
+	if [ -z "$verify" ] && [ ! -f "$logs/shell-files.txt" ] && command -v rust-decisions >/dev/null; then
 		shell >/dev/null 2>&1
 	fi
 	if [ -f "$logs/shell-files.txt" ]; then
@@ -222,11 +239,9 @@ if full; then
 			mutation+=(--exclude "$file")
 		done <"$logs/shell-files.txt"
 	fi
-	if command -v cargo-mutants >/dev/null; then
+	if needs cargo-mutants mutation; then
 		unit mutation "last '[0-9]+ mutants tested.*|No mutants found.*'" \
 			env PROPTEST_CASES=32 "${cargo[@]}" mutants "${mutation[@]}"
-	else
-		line mutation skip "cargo-mutants not installed"
 	fi
 	unit unused-dependencies "last '(didn.t find any|found the following) unused dependencies'" cargo machete
 	release_units rust rs

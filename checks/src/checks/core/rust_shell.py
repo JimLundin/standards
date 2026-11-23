@@ -121,15 +121,20 @@ def findings(
         for item in failures(items)
         if not exceptions.covers(SHELL, item.path)
     )
-    measured_functions = functions(items)
     complex_functions = FrozenList(
         f"{item.path}:{item.line}: {COMPLEX} `{item.name}` makes {item.decisions} decisions (limit {LIMIT}){MOVE}"
-        for item in shell_functions(measured_functions)
+        for item in shell_functions(functions(items))
         if item.decisions > LIMIT and not exceptions.covers(SHELL, item.path)
     )
-    total = decisions(measured_functions)
-    shell = decisions(shell_functions(measured_functions))
-    share = (
+    return unmeasured + complex_functions
+
+
+def share_findings(
+    items: Sequence[Function], exceptions: Exceptions
+) -> FrozenList[str]:
+    total = decisions(items)
+    shell = decisions(shell_functions(items))
+    return FrozenList(
         (
             f"Cargo.toml: {SHARED} {shell} of {total} decisions (limit {SHARE:.0%}){MOVE}",
         )
@@ -138,7 +143,6 @@ def findings(
         and not exceptions.covers(SHELL, "Cargo.toml")
         else ()
     )
-    return unmeasured + complex_functions + share
 
 
 def shell_files(items: Sequence[Function]) -> FrozenList[str]:
@@ -173,12 +177,27 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
     return Request(FrozenList((EXCEPTIONS, *arguments[:2])))
 
 
-def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    metadata, measures, files = arguments
-    items = records(
+def measures_of(
+    arguments: Sequence[str], inputs: Inputs
+) -> FrozenList[Function | Failure]:
+    metadata, measures, *_ = arguments
+    return records(
         FrozenList(text(inputs.texts, measures).splitlines()),
         parse_json(inputs.texts.get(metadata)),
     )
+
+
+def share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    measured_functions = functions(measures_of(arguments, inputs))
+    return summarized(
+        share_findings(measured_functions, exceptions_in(inputs)),
+        passing(measured_functions),
+    )
+
+
+def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    files = arguments[2]
+    items = measures_of(arguments, inputs)
     issues = findings(items, exceptions_in(inputs))
     measured_functions = functions(items)
     return replace(

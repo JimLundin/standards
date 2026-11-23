@@ -7,7 +7,7 @@ Each config file can be copied to its usual place in a project, and the scripts 
 ## Running the checks
 
 ```bash
-python/check.sh [commit|step|release] [--no-cache] [project]
+python/check.sh [commit|step|release] [--no-cache|--verify] [project]
 rust/check.sh …
 typescript/check.sh …
 ```
@@ -16,17 +16,21 @@ typescript/check.sh …
 - `step`, the default, adds the tests.
 - `release` adds mutation testing, thorough property tests, slow and ignored tests, coverage, duplication and volume.
 
+A unit that can't run, such as one whose tool isn't installed, is skipped; in CI (`CI` set, as GitHub Actions sets it) it fails instead, so CI passes no tree with a unit it didn't run.
+
+`--verify` runs nothing: it takes every unit key of the tier and fails each unit without a recorded pass, naming its scope and key. A queue runs it on the commit it is about to land.
+
 The scripts' own tools live in `checks`, a uv project that depends on `ordered` and passes the Python standard itself, so every language's checks need uv.
 
 ## Tool versions
 
-`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version.
+`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version.
 
 ## Units and recorded passes
 
 A tier runs as units, each a check over a scope:
 
-- in Rust, the lint, `no_std` core, API, shell and test checks of each package, and the exceptions, format and release checks of the whole project;
+- in Rust, the lint, `no_std` core, API, shell and test checks of each package, and the exceptions, format, shell share and release checks of the whole project;
 - in Python and TypeScript, each check of the project;
 - each suite in `checks.toml`.
 
@@ -41,11 +45,17 @@ A pass is recorded as a git note on `refs/notes/checks` whose annotated object n
 
 `check.sh` fetches the notes from `origin` before a run, merges them by union (`git notes merge -s cat_sort_uniq`) and pushes them after; a project without `origin` keeps them local. The standards keep their own index of the project's files under the user's cache directory (`STANDARDS_CACHE` overrides it), so listing the files doesn't touch the project's index.
 
-A Rust package check runs once over the whole workspace when any package's pass is missing: cargo then resolves features once and rebuilds only what changed, where selecting packages with `-p` would resolve their features apart from the workspace's and rebuild dependencies. nextest builds the workspace's tests and runs only the unproven packages' with a filterset. Each failure in the output is credited to a package: an error's location or a finding's path to the package whose directory holds it, cargo's `could not compile` to a package and its dependents, and a failed test to its package. The packages without a failure are recorded, and a failure outside every package records none.
+A Rust package check runs once over the whole workspace when any package's pass is missing: cargo then resolves features once and rebuilds only what changed, where selecting packages with `-p` would resolve their features apart from the workspace's and rebuild dependencies. nextest builds the workspace's tests and runs only the unproven packages' with a filterset. A failed run credits a package only on evidence that the check reached it and found nothing in it:
+
+- the tests, where nextest built every test binary (`Starting`) and ran to its summary, credit each package without a failed test; a failed test build or build script, a run cut short, or the `cargo test` fallback credits none;
+- the lint and the `no_std` build credit only the packages cargo built a target of, by its JSON messages;
+- the core, API and shell analyses credit nothing unless the analysis printed its last line.
+
+Each error and finding is then credited to a package: its location or path to the package whose directory holds it, and cargo's `could not compile` or a failed build script to a package and its dependents. An error or finding no workspace package owns credits none.
 
 ## Suites
 
-A project declares its own suites in `checks.toml`. Each `[[suite]]` has a `name`, a `command` run by bash from the project root, and `[[suite.when]]` entries of a `tier` with `paths` globs, in Rust `packages`, or neither. A suite is a unit at the lowest of those tiers and above, and reads the files its `paths` match and the inputs of its `packages`, or the whole project when an entry names neither.
+A project declares its own suites in `checks.toml`. Each `[[suite]]` has a `name`, a `command` run by bash from the project root, and `[[suite.when]]` entries of a `tier` with `paths` globs, in Rust `packages`, or neither. A suite is a unit at the lowest of those tiers and above, and its key reads what it reads: the files its `paths` match and the inputs of its `packages` (their own files, their workspace dependencies', and the files outside the packages, such as `Cargo.lock`), or the whole project when an entry names neither, and the pins of its `tools`, names from `tools.env`. A suite that builds a crate names it in `packages`, and one that runs Node names `tools = ["NODE"]`.
 
 ## Exceptions
 
@@ -61,7 +71,7 @@ Exceptions live only in a project's `exceptions.toml`; suppression comments and 
 
 **Data-only API.** A core library's public API takes only data: no trait objects, function pointers, `async`, or bounds other than the standard value traits (`Clone`, `Ord`, `Hash`, `Display`, `From` and the like), so the shell can't hand the core an effect through a port, a callback or an iterator. A file that needs one takes an `api` exception.
 
-**Thin shell.** No function in a binary or a shell package may make more than 2 decisions, and once a project makes 20 decisions, the shell may make at most 25% of them. A decision is an `if`, a `match` of more than one arm, a match guard, a `for` or `while` loop, a `let … else` or a run of `&&` or `||`, written in the function, its closures or a macro's arguments; `?`, `.await` and macro expansions are not. `rust-decisions`, in `rust/measure`, counts them from the source; install it with `cargo install --locked --path rust/measure`. A file takes a `shell` exception for the first rule and `Cargo.toml` for the second. Mutation testing skips shell-only files.
+**Thin shell.** No function in a binary or a shell package may make more than 2 decisions, and once a project makes 20 decisions, the shell may make at most 25% of them. A decision is an `if`, a `match` of more than one arm, a match guard, a `for` or `while` loop, a `let … else` or a run of `&&` or `||`, written in the function, its closures or a macro's arguments; `?`, `.await` and macro expansions are not. `rust-decisions`, in `rust/measure`, counts them from the source; install it with `cargo install --locked --path rust/measure`, and bump its version and `RUST_DECISIONS` in `tools.env` with every change to it. A file takes a `shell` exception for the first rule and `Cargo.toml` for the second. The second is the `shell-share` unit of the whole project, so a merge of two branches that each kept the share is checked again. Mutation testing skips shell-only files.
 
 **Lints.** A project without its own `[lints]` is linted with those of `rust/Cargo.fragment.toml`.
 

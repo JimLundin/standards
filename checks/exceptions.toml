@@ -7,3 +7,23 @@ reason = "the shell reads argv and stdin and writes stdout for the core"
 path = "src/checks/core/decoding.py"
 rule = "mutation"
 reason = "json.loads returns Any, and the cast that types it does nothing at runtime, so mutating its arguments can never be caught"
+
+[[exception]]
+path = "tests/test_lib.py"
+rule = "suspicious-subprocess-import"
+reason = "drives lib.sh and git in fixture workspaces by name from PATH, as check.sh does, with fixed arguments"
+
+[[exception]]
+path = "tests/test_lib.py"
+rule = "subprocess-without-shell-equals-true"
+reason = "drives lib.sh and git in fixture workspaces by name from PATH, as check.sh does, with fixed arguments"
+
+[[exception]]
+path = "tests/test_lib.py"
+rule = "start-process-with-partial-path"
+reason = "drives lib.sh and git in fixture workspaces by name from PATH, as check.sh does, with fixed arguments"
+
+[[exception]]
+path = "tests/test_lib.py"
+rule = "banned-api"
+reason = "lib.sh is tested by running it in fixture workspaces, which only a subprocess can"

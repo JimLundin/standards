@@ -97,11 +97,11 @@ if full; then
 	if [ -n "$mutate" ]; then
 		mutation+=(--mutate "$mutate")
 	fi
-	if [ -e node_modules/@stryker-mutator/core ]; then
+	if [ -n "$verify" ] || [ -e node_modules/@stryker-mutator/core ]; then
 		unit mutation "last 'mutation score (of )?[0-9.]+'" \
 			npx --no-install stryker run "${mutation[@]}"
 	else
-		line mutation skip "@stryker-mutator/core not installed"
+		skipped mutation "@stryker-mutator/core not installed"
 	fi
 	release_units typescript,javascript,css ts,tsx,js,mjs,jsx,css
 fi

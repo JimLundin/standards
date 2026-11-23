@@ -110,8 +110,8 @@ fi
 if full; then
 	if [ ! -f uv.lock ]; then
 		line mutation skip "no uv.lock"
-	elif ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
-		line mutation skip "mutmut needs os.fork (Linux, macOS or WSL)"
+	elif [ -z "$verify" ] && ! uv run --frozen -q python -c 'import os; os.fork' 2>/dev/null; then
+		skipped mutation "mutmut needs os.fork (Linux, macOS or WSL)"
 	else
 		unit mutation mutants mutate
 	fi

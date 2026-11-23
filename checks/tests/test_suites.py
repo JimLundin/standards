@@ -6,6 +6,7 @@ from ordered import FrozenList
 from checks.core.suites import Suite, Trigger, active, load
 
 PACKAGES = ("proto", "client", "app")
+PINNED = ("NODE", "DX")
 CONDUCTOR = """
 [[suite]]
 name = "ip-scrub"
@@ -119,10 +120,18 @@ def test_load_reports_invalid_toml() -> None:
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npackages = ["ghost"]\n',
             "checks.toml: suite 1 when 1 names no workspace package `ghost`",
         ),
+        (
+            '[[suite]]\nname = "a"\ncommand = "b"\ntools = "NODE"\n[[suite.when]]\ntier = "step"\n',
+            "checks.toml: suite 1 tools must be a list of strings",
+        ),
+        (
+            '[[suite]]\nname = "a"\ncommand = "b"\ntools = ["NODE", "GHOST"]\n[[suite.when]]\ntier = "step"\n',
+            "checks.toml: suite 1 names no pinned tool `GHOST`",
+        ),
     ],
 )
 def test_load_reports_each_problem(text: str, problem: str) -> None:
-    loaded = load(text, "rust", PACKAGES)
+    loaded = load(text, "rust", PACKAGES, PINNED)
     assert loaded.problems == (problem,)
     assert loaded.entries == ()
 
@@ -191,3 +200,11 @@ def test_a_repeated_name_is_found_among_all_earlier_suites() -> None:
         "checks.toml: suite 3 needs a command",
         "checks.toml: suite 3 repeats the name `a`",
     )
+
+
+def test_a_suite_names_the_pinned_tools_it_runs() -> None:
+    text = '[[suite]]\nname = "a"\ncommand = "b"\ntools = ["DX", "NODE"]\n[[suite.when]]\ntier = "step"\n'
+    loaded = load(text, "rust", PACKAGES, PINNED)
+    assert loaded.problems == ()
+    assert loaded.entries[0].tools == ("DX", "NODE")
+    assert load(CONDUCTOR, "rust", PACKAGES).entries[0].tools == ()

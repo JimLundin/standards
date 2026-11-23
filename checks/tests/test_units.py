@@ -36,7 +36,10 @@ FILES = FrozenOrderedDict({
     "crates/home/src/flow/test-flow.toml": "d2",
     "crates/app/Cargo.toml": "e0",
     "crates/app/src/main.rs": "e1",
+    "crates/app/tests-e2e/scenarios/hosts.ts": "e2",
+    "tools/e2e.sh": "a7",
 })
+PINS = "# The versions.\nNODE=26.13.1\nDX=0.7.10\nnot a pin\n"
 SUITES = """
 [[suite]]
 name = "scrub"
@@ -55,9 +58,11 @@ packages = ["client"]
 [[suite]]
 name = "browser"
 command = "tools/e2e.sh"
+tools = ["NODE"]
 [[suite.when]]
 tier = "step"
-paths = ["crates/app/**"]
+packages = ["app"]
+paths = ["tools/e2e.sh"]
 [[suite.when]]
 tier = "release"
 """
@@ -104,6 +109,7 @@ def outcome(
     *,
     tier: str = "commit",
     suites: str = SUITES,
+    pins: str = PINS,
     **versions: str,
 ) -> Outcome:
     toolchain = versions.get("toolchain", "cargo 1.95.0-nightly")
@@ -113,12 +119,14 @@ def outcome(
         "listing": listing(files),
         "checks.toml": suites,
         "m.json": METADATA,
+        "tools.env": pins,
     })
     arguments = (
         "rust",
         tier,
         "listing",
         "--metadata=m.json",
+        "--pins=tools.env",
         f"--standards={standards}",
         f"--toolchain={toolchain}",
         "--project=exceptions,format",
@@ -161,10 +169,12 @@ def rerun(*paths: str, tier: str = "commit") -> FrozenList[str]:
 PROJECT_UNITS = ("exceptions .", "format .")
 
 
-def test_request_reads_the_listing_the_suites_and_the_metadata() -> None:
-    arguments = ("rust", "step", "l", "--metadata=m.json")
+def test_request_reads_the_listing_the_suites_the_metadata_and_the_pins() -> (
+    None
+):
+    arguments = ("rust", "step", "l", "--metadata=m.json", "--pins=t.env")
     assert request(arguments, Inputs()) == (
-        Request(FrozenList(("l", "checks.toml", "m.json")))
+        Request(FrozenList(("l", "checks.toml", "m.json", "t.env")))
     )
     assert request(("python", "step", "l"), Inputs()) == Request(
         FrozenList(("l", "checks.toml"))
@@ -371,3 +381,35 @@ def test_a_tool_s_version_is_in_its_check_s_keys_only() -> None:
         if old != new
     )
     assert changed == tuple(unit for unit in PACKAGE_UNITS if "lint" in unit)
+
+
+def test_changing_a_browser_scenario_reruns_the_browser_suite() -> None:
+    scenario = "crates/app/tests-e2e/scenarios/hosts.ts"
+    assert "suite browser" in rerun(scenario, tier="step")
+    for read in ("tools/e2e.sh", "crates/proto/src/lib.rs", "Cargo.lock"):
+        assert "suite browser" in rerun(read, tier="step")
+    assert "suite browser" not in rerun("crates/home/src/lib.rs", tier="step")
+    assert "suite browser" not in rerun("README.md", tier="step")
+
+
+def suite_keys(pins: str) -> FrozenOrderedDict[str, str]:
+    return FrozenOrderedDict(
+        (fields[2], fields[3])
+        for line in outcome(tier="step", pins=pins).lines
+        if (fields := line.split("\t"))[:2] == ["unit", "suite"]
+    )
+
+
+def test_a_suite_s_key_holds_the_pins_of_its_tools() -> None:
+    before = suite_keys(PINS)
+    after = suite_keys(PINS.replace("26.13.1", "26.14.0"))
+    assert changed(before, after) == ("browser",)
+    assert suite_keys(PINS.replace("DX=0.7.10", "DX=0.8.0")) == before
+
+
+def test_a_suite_naming_an_unpinned_tool_is_a_problem() -> None:
+    result = outcome(pins="DX=0.7.10\n")
+    assert result.lines[-1] == (
+        "problem\tchecks.toml: suite 3 names no pinned tool `NODE`"
+    )
+    assert result.status == 1

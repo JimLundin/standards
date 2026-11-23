@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 lazy from collections.abc import Mapping, Sequence
 
@@ -25,6 +26,7 @@ PROJECT = "."
 # A key names the object its note annotates, so it is as long as a SHA-1
 # object name.
 LENGTH = 40
+PIN = re.compile(r"^([A-Z_]+)=(.*)$", re.MULTILINE)
 # Files no check reads: a change to them reruns no package.
 DOCS = FrozenList((
     "**/*.md",
@@ -117,13 +119,21 @@ def package_inputs(
     )
 
 
+def pins_of(text: str) -> FrozenOrderedDict[str, str]:
+    """The `NAME=version` lines of a tools.env."""
+    return FrozenOrderedDict(PIN.findall(text))
+
+
 def suite_inputs(
     triggers: Sequence[suites.Trigger],
     files: Sequence[File],
     packages: Mapping[str, str],
+    tools: Sequence[str],
 ) -> str:
+    """The files a suite's triggers name, the inputs of the packages they
+    name, or every file when one names neither, with the pins of its tools."""
     if any(not trigger.paths and not trigger.packages for trigger in triggers):
-        return fingerprint(files)
+        return digest((fingerprint(files), *tools))
     globs = FrozenList(glob for trigger in triggers for glob in trigger.paths)
     named = FrozenList(
         name for trigger in triggers for name in trigger.packages
@@ -133,6 +143,7 @@ def suite_inputs(
             FrozenList(file for file in files if any_match(file.path, globs))
         ),
         *(packages[name] for name in named),
+        *tools,
     ))
 
 
@@ -158,6 +169,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
             operands(arguments)[2],
             suites.SUITES,
             *options(arguments, "--metadata="),
+            *options(arguments, "--pins="),
         ))
     )
 
@@ -180,7 +192,10 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     whole = fingerprint(files)
     scoped = package_inputs(files, packages)
     names = FrozenList(package.name for package in packages)
-    loaded = suites.load(inputs.texts.get(suites.SUITES), language, names)
+    pins = pins_of(text(inputs.texts, option(arguments, "--pins=")))
+    loaded = suites.load(
+        inputs.texts.get(suites.SUITES), language, names, FrozenList(pins)
+    )
     chosen = FrozenList(
         (suite, triggers)
         for suite in loaded.entries
@@ -203,7 +218,14 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
                     context,
                     f"suite {suite.command}",
                     suite.name,
-                    suite_inputs(triggers, files, scoped),
+                    suite_inputs(
+                        triggers,
+                        files,
+                        scoped,
+                        FrozenList(
+                            f"{tool}={pins[tool]}" for tool in suite.tools
+                        ),
+                    ),
                 )
                 for suite, triggers in chosen
             ),

@@ -13,6 +13,7 @@ from checks.core.rust_shell import (
     roots,
     roots_request,
     run,
+    share_run,
     targets,
 )
 from checks.core.values import Inputs, Request, parse_json
@@ -81,6 +82,16 @@ def outcome(
         texts |= {"exceptions.toml": exceptions}
     result = run(("m.json", "d.jsonl", "files.txt"), Inputs(texts))
     return result.lines, result.status, result.writes["files.txt"]
+
+
+def shared(
+    *lines: str, exceptions: str | None = None
+) -> tuple[FrozenList[str], int]:
+    texts = FrozenOrderedDict({"m.json": METADATA, "d.jsonl": "\n".join(lines)})
+    if exceptions is not None:
+        texts |= {"exceptions.toml": exceptions}
+    result = share_run(("m.json", "d.jsonl"), Inputs(texts))
+    return result.lines, result.status
 
 
 def test_requests_read_the_metadata_and_the_measures() -> None:
@@ -225,7 +236,7 @@ def test_unmeasured_files_fail_unless_excepted() -> None:
 
 def test_the_shell_share_applies_from_twenty_decisions() -> None:
     shell_lines = (shell("src/main.rs", line, 2) for line in range(3))
-    lines, status, _ = outcome(*shell_lines, core("src/lib.rs", 1, 15))
+    lines, status = shared(*shell_lines, core("src/lib.rs", 1, 15))
     assert lines == (
         f"Cargo.toml: the shell makes 6 of 21 decisions (limit 25%){MOVE}",
         "Found 1 issues",
@@ -238,7 +249,7 @@ def test_the_shell_share_boundaries() -> None:
         shell_lines = tuple(
             shell("src/main.rs", line, 1) for line in range(functions)
         )
-        return outcome(*shell_lines, core("src/lib.rs", 1, core_decisions))[0]
+        return shared(*shell_lines, core("src/lib.rs", 1, core_decisions))[0]
 
     assert share(5, 15) == ("shell makes 5 of 20 decisions",)
     assert share(6, 14) == (
@@ -250,7 +261,7 @@ def test_the_shell_share_boundaries() -> None:
 
 def test_a_shell_exception_on_cargo_toml_lifts_the_share_limit() -> None:
     shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
-    lines, status, _ = outcome(
+    lines, status = shared(
         *shell_lines, exceptions=entry("Cargo.toml", "shell")
     )
     assert lines == ("shell makes 20 of 20 decisions",)
@@ -259,8 +270,13 @@ def test_a_shell_exception_on_cargo_toml_lifts_the_share_limit() -> None:
 
 def test_an_api_exception_on_cargo_toml_leaves_the_share_limit() -> None:
     shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
-    lines, status, _ = outcome(
-        *shell_lines, exceptions=entry("Cargo.toml", "api")
-    )
+    lines, status = shared(*shell_lines, exceptions=entry("Cargo.toml", "api"))
     assert lines[0].startswith("Cargo.toml: the shell makes 20 of 20")
     assert status == 1
+
+
+def test_the_package_check_leaves_the_share_to_the_project_s_unit() -> None:
+    shell_lines = (shell("src/main.rs", line, 2) for line in range(10))
+    lines, status, _ = outcome(*shell_lines)
+    assert lines == ("shell makes 20 of 20 decisions",)
+    assert status == 0
