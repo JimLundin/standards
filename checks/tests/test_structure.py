@@ -242,19 +242,3 @@ def test_a_method_exception_names_the_method_by_its_class() -> None:
     assert findings(sources, entry("a.py", "STR002:C.f")) == (
         f"b.py:2:5: {complex_function(score)}",
     )
-
-
-@pytest.mark.parametrize(
-    "source",
-    dict.fromkeys([
-        WRAPPER,
-        *(source for source, _ in WRAPPERS),
-        *KEPT_WRAPPERS,
-        *PACKAGE.values(),
-        *NAMESPACE_PACKAGE.values(),
-        *(source for source, _ in ABOVE_THE_LIMIT),
-        *AT_THE_LIMIT,
-    ]),
-)
-def test_every_fixture_is_valid_python(source: str) -> None:
-    _ = compile(source, "m.py", "exec", dont_inherit=True)

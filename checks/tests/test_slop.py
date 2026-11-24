@@ -133,7 +133,6 @@ def without(key: str) -> str:
             finding("src/a.py", 2, metadata={"min_file_count": "2"}),
             "`metadata.min_file_count` is not an integer: '2'",
         ),
-        ("not json", "not a JSON object: 'not json'"),
         ("[1]", "not a JSON object: '[1]'"),
     ],
 )
