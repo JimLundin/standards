@@ -58,6 +58,15 @@ def number(value: object) -> int:
     return value if isinstance(value, int) else 0
 
 
+def required_integer(record: Mapping[str, object], field: str) -> int:
+    match record.get(field):
+        case int() as value:
+            return value
+        case value:
+            message = f"`{field}` is not an integer: {value!r}"
+            raise ValueError(message)
+
+
 def strings(value: object) -> FrozenList[str]:
     return FrozenList(item for item in entries(value) if isinstance(item, str))
 
