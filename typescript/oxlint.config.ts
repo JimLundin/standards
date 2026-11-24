@@ -9,6 +9,17 @@ const promise = "a Promise: bridge a Promise library with Effect.tryPromise";
 const unvalidated =
   "unvalidated input: decode it with Schema.decodeUnknown over Schema.fromJsonString";
 const tests = ["**/*.test.{ts,tsx}", "**/test/**"] as const;
+const restrictedGlobals = [
+  { message: ambient, name: "process" },
+  { message: boundary, name: "fetch" },
+  { message: boundary, name: "setTimeout" },
+  { message: boundary, name: "setInterval" },
+  { message: boundary, name: "setImmediate" },
+  { message: boundary, name: "queueMicrotask" },
+  { message: nondeterministic, name: "Date" },
+  { message: nondeterministic, name: "performance" },
+  { message: nondeterministic, name: "crypto" },
+] as const;
 
 export default defineConfig({
   categories: {
@@ -77,23 +88,18 @@ export default defineConfig({
     "new-cap": ["error", { capIsNewExceptionPattern: String.raw`^[A-Z]\w*\.[A-Z]` }],
     // Cloudflare's import/consistent-type-specifier-style puts type imports in their own declaration.
     "no-duplicate-imports": ["error", { allowSeparateTypeImports: true }],
-    "no-restricted-globals": [
-      "error",
-      { message: ambient, name: "process" },
-      { message: boundary, name: "fetch" },
-      { message: boundary, name: "setTimeout" },
-      { message: boundary, name: "setInterval" },
-      { message: boundary, name: "setImmediate" },
-      { message: boundary, name: "queueMicrotask" },
-      { message: nondeterministic, name: "Date" },
-      { message: nondeterministic, name: "performance" },
-      { message: nondeterministic, name: "crypto" },
-    ],
+    "no-restricted-globals": ["error", ...restrictedGlobals],
     "no-restricted-properties": [
       "error",
       { message: nondeterministic, object: "Math", property: "random" },
       { message: promise, property: "then" },
       { message: unvalidated, object: "JSON", property: "parse" },
+      // A restricted global stays restricted read off globalThis; unicorn/prefer-global-this reports a read off window or self.
+      ...restrictedGlobals.map(({ message, name }) => ({
+        message,
+        object: "globalThis",
+        property: name,
+      })),
     ],
     // Contradicts unicorn/prefer-ternary.
     "no-ternary": "off",

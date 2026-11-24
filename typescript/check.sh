@@ -123,7 +123,7 @@ oxlint_lint() {
 		untyped=(--untyped)
 	fi
 	mkdir -p node_modules/.cache/standards
-	if ! oxlint_config=$(checks oxlint-config "${untyped[@]}" "$(native "$oxlint_config")" "${scripts[@]}"); then
+	if ! oxlint_config=$(checks oxlint-config "${untyped[@]}" "--standard=$(native "$run/oxlint.config.ts")" "$(native "$oxlint_config")" "${scripts[@]}"); then
 		printf '%s\n' "$oxlint_config"
 		return 1
 	fi

@@ -176,6 +176,41 @@ def test_the_shell_and_the_ui_may_not_import_each_other() -> None:
     assert group(ui) == ("@w/io", "@w/io/**")
 
 
+EFFECT_HOOKS = FrozenOrderedDict({
+    "name": "react",
+    "importNames": ["useEffect", "useLayoutEffect"],
+    "message": (
+        "an effect in a component: run it in an atom of effect/reactivity"
+    ),
+})
+
+
+def test_the_ui_may_not_import_reacts_effect_hooks() -> None:
+    *_, ui = overrides(NESTED, *NESTED_FILES)
+    assert restriction(ui).get("paths") == [EFFECT_HOOKS]
+    alone = {"packages/app/package.json": named("@w/app", "ui")}
+    (_, only) = overrides(alone, "x.ts", "packages/app/c.tsx")
+    assert restriction(only) == {"paths": [EFFECT_HOOKS]}
+
+
+def test_only_a_ui_package_restricts_browser_globals() -> None:
+    outcome = run(
+        ("oxlint-config", "/std/oxlint.config.ts", *NESTED_FILES),
+        inputs(NESTED, cwd="/work"),
+    )
+    (config,) = outcome.writes.values()
+    (browser,) = (
+        line for line in config.splitlines() if "no-restricted-globals" in line
+    )
+    scoped = (
+        '\t\t{"files": ["/work/packages/app/**"], "excludeFiles": ['
+        '"/work/**/*.test.{ts,tsx}"'
+    )
+    assert browser.startswith(scoped)
+    assert '"no-restricted-globals": ["error", ...restricted(' in browser
+    assert '"no-restricted-properties": ["error", ...restricted(' in browser
+
+
 CORE_GROUP = (
     "**",
     "!./**",

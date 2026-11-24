@@ -21,6 +21,7 @@ from checks.core.values import (
     absolute,
     listing,
     operands,
+    option,
     parse_json,
     posix,
     strings,
@@ -80,11 +81,17 @@ def file_url(path: str) -> str:
 # here is not the project root, and matches a file outside that folder by
 # its absolute path, so each glob is anchored at the project root. The
 # exceptions come last, so that one turning a rule off wins. Untyped, for a
-# project without a tsconfig.json, the type-aware rules are off.
+# project without a tsconfig.json, the type-aware rules are off. An override
+# that adds to a restricting rule's options reads them with `restricted`,
+# from the config, or from the standard's (`--standard`, which defaults to
+# the config) where the config is a project's that leaves them to it.
 def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     path, *files = operands(arguments)
     root = posix(inputs.cwd)
     config = json.dumps(file_url(absolute(path, inputs.cwd)))
+    standard = json.dumps(
+        file_url(absolute(option(arguments, "--standard=") or path, inputs.cwd))
+    )
     options = (
         "\toptions: { ...config.options, typeAware: false },\n"
         if "--untyped" in arguments
@@ -98,7 +105,10 @@ def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         root, placed, exceptions
     ) + "".join(oxlint_override(root, entry) for entry in exceptions.entries)
     text = (
-        f"import config from {config};\n\n"
+        f"import config from {config};\n"
+        f"import standard from {standard};\n\n"
+        "const restricted = (rule) =>\n"
+        "\t(config.rules?.[rule] ?? standard.rules[rule]).slice(1);\n\n"
         "export default {\n"
         "\textends: [config],\n"
         f"{options}"

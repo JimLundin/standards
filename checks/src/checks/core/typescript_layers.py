@@ -69,6 +69,10 @@ CORE = (
     " exception"
 )
 UNORDERED = "iterates in hash order: use a ReadonlyMap or a ReadonlySet"
+EFFECT_HOOKS = FrozenList(("useEffect", "useLayoutEffect"))
+IN_ATOMS = "an effect in a component: run it in an atom of effect/reactivity"
+BROWSER = FrozenList(("window", "document", "localStorage"))
+IN_BROWSER = "a browser global in a component: reach it in an atom over @effect/platform-browser"
 APART = FrozenOrderedDict({
     "shell": ("ui", "the shell meets the UI only through contracts in core"),
     "ui": ("shell", "the UI meets the shell only through contracts in core"),
@@ -266,14 +270,41 @@ def core_rule(core: Sequence[str], allowed: Sequence[str]) -> object:
 
 
 def scoped(
-    root: str, files: Sequence[str], excluded: Sequence[str], rule: object
+    root: str, files: Sequence[str], excluded: Sequence[str], rules: str
 ) -> str:
-    override = {
-        "files": [f"{root}/{glob}" for glob in files],
-        "excludeFiles": [f"{root}/{glob}" for glob in (*excluded, *TOOLING)],
-        "rules": {"no-restricted-imports": ["error", rule]},
-    }
-    return f"\t\t{json.dumps(override)},\n"
+    anchored_files = json.dumps([f"{root}/{glob}" for glob in files])
+    anchored_excluded = json.dumps([
+        f"{root}/{glob}" for glob in (*excluded, *TOOLING)
+    ])
+    return (
+        f'\t\t{{"files": {anchored_files}, "excludeFiles": {anchored_excluded},'
+        f' "rules": {rules}}},\n'
+    )
+
+
+def imports(rule: object) -> str:
+    return json.dumps({"no-restricted-imports": ["error", rule]})
+
+
+# An override replaces a rule's options, so the UI's restrictions extend the
+# config's own, which `restricted` of the written config reads.
+def extended(rule: str, added: Sequence[object]) -> str:
+    name = json.dumps(rule)
+    listed = ", ".join(map(json.dumps, added))
+    return f'{name}: ["error", ...restricted({name}), {listed}]'
+
+
+def browser() -> str:
+    globals_ = [{"message": IN_BROWSER, "name": name} for name in BROWSER]
+    # Unicorn/prefer-global-this reports a read off window or self.
+    properties = [
+        {"message": IN_BROWSER, "object": "globalThis", "property": name}
+        for name in BROWSER
+    ]
+    return (
+        f"{{{extended('no-restricted-globals', globals_)},"
+        f" {extended('no-restricted-properties', properties)}}}"
+    )
 
 
 def folder_glob(folder: str) -> str:
@@ -308,13 +339,28 @@ def layer_rule(package: Package, packages: Sequence[Package]) -> object:
         for name in names_in(packages, other)
         for glob in (name, f"{name}/**")
     )
-    if not group:
-        return None
-    return {
-        "patterns": [
-            {"group": list(group), "caseSensitive": True, "message": message}
+    paths = (
+        [
+            {
+                "name": "react",
+                "importNames": list(EFFECT_HOOKS),
+                "message": IN_ATOMS,
+            }
         ]
+        if package.layer == "ui"
+        else []
+    )
+    patterns = (
+        [{"group": list(group), "caseSensitive": True, "message": message}]
+        if group
+        else []
+    )
+    rule = {
+        key: value
+        for key, value in (("paths", paths), ("patterns", patterns))
+        if value
     }
+    return rule or None
 
 
 def allowances(
@@ -342,8 +388,9 @@ def allowances(
 def import_overrides(
     root: str, placed: Sequence[Placement], exceptions: Exceptions
 ) -> str:
-    """An override per package restricting its imports to its layer's, then
-    one per set of modules that purity exceptions allow core files."""
+    """An override per package restricting its imports to its layer's, one
+    per UI package restricting browser globals, then one per set of modules
+    that purity exceptions allow core files."""
     packages = packages_of(placed)
     core = names_in(packages, UNDECLARED)
     layers = "".join(
@@ -351,13 +398,23 @@ def import_overrides(
             root,
             (folder_glob(package.folder),),
             nested_in(package, packages),
-            rule,
+            imports(rule),
         )
         for package in packages
         if (rule := layer_rule(package, packages)) is not None
     )
+    browsers = "".join(
+        scoped(
+            root,
+            (folder_glob(package.folder),),
+            nested_in(package, packages),
+            browser(),
+        )
+        for package in packages
+        if package.layer == "ui"
+    )
     excepted = "".join(
-        scoped(root, files, (), core_rule(core, allowed))
+        scoped(root, files, (), imports(core_rule(core, allowed)))
         for allowed, files in allowances(placed, exceptions).items()
     )
-    return layers + excepted
+    return layers + browsers + excepted

@@ -859,3 +859,164 @@ def test_a_core_import_beyond_its_allowlist_fails_lint_unless_excepted(
     assert findings.count("'react' import is restricted") == 1
     assert unexcepted in findings
     assert excepted not in findings
+
+
+def component(name: str, imports: str, body: str) -> str:
+    return (
+        'import type { ReactElement } from "react";\n'
+        f"{imports}\n"
+        f"export const {name} = (): ReactElement => {body};\n"
+    )
+
+
+EFFECTED = """import type { ReactElement } from "react";
+import { {hook} } from "react";
+
+interface Shown {
+	readonly onShow: () => void;
+}
+
+export const {name} = ({ onShow }: Shown): ReactElement => {
+	{hook}(() => {
+		onShow();
+	}, [onShow]);
+	return <p />;
+};
+"""
+# Each break of the UI's bans, with the rule that reports it.
+UI_BANS = FrozenOrderedDict({
+    "packages/ui/src/effected.tsx": (
+        "eslint(no-restricted-imports)",
+        EFFECTED.replace("{hook}", "useEffect").replace("{name}", "Effected"),
+    ),
+    "packages/ui/src/laid.tsx": (
+        "eslint(no-restricted-imports)",
+        EFFECTED.replace("{hook}", "useLayoutEffect").replace("{name}", "Laid"),
+    ),
+    "packages/ui/src/windowed.tsx": (
+        "eslint(no-restricted-globals)",
+        component("Windowed", "", "<p>{window.name}</p>"),
+    ),
+    "packages/ui/src/documented.tsx": (
+        "eslint(no-restricted-globals)",
+        component("Documented", "", "<p>{document.title}</p>"),
+    ),
+    "packages/ui/src/stored.tsx": (
+        "eslint(no-restricted-globals)",
+        component("Stored", "", '<p>{localStorage.getItem("name")}</p>'),
+    ),
+    "packages/ui/src/reached.tsx": (
+        "eslint(no-restricted-properties)",
+        component("Reached", "", "<p>{globalThis.document.title}</p>"),
+    ),
+})
+TOGGLED = """import { useCallback, useState } from "react";
+import { AsyncResult } from "effect/reactivity";
+import type { ReactElement } from "react";
+import { greeting } from "./greeting.ts";
+import { useAtomValue } from "@effect/atom-react";
+
+export const Toggled = (): ReactElement => {
+	const [hidden, setHidden] = useState(false);
+	const hide = useCallback(() => {
+		setHidden(true);
+	}, []);
+	return (
+		<button hidden={hidden} onClick={hide} type="button">
+			{AsyncResult.getOrElse(useAtomValue(greeting), () => "")}
+		</button>
+	);
+};
+"""
+
+
+def test_a_component_with_an_effect_hook_or_a_browser_global_fails_lint(
+    fixtures: Fixtures,
+) -> None:
+    toggled = "packages/ui/src/toggled.tsx"
+    run = fixtures.check(
+        "commit",
+        files={
+            toggled: TOGGLED,
+            **{path: text for path, (_, text) in UI_BANS.items()},
+        },
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    for path, (rule, _) in UI_BANS.items():
+        found = FrozenList(
+            line for line in lint.findings.splitlines() if f"{path}:" in line
+        )
+        assert len(found) == 1, (path, found)
+        assert rule in found[0], (rule, found)
+    assert toggled not in lint.findings, lint.findings
+
+
+# The bans of every layer that the UI's own restricted globals and
+# properties must keep.
+EVERYWHERE = FrozenOrderedDict({
+    "fetched.ts": (
+        "eslint(no-restricted-globals)",
+        'export const fetched = (): Promise<Response> => fetch("/");\n',
+    ),
+    "waited.ts": (
+        "eslint(no-restricted-globals)",
+        "export const waited: string = typeof setTimeout;\n",
+    ),
+    "argued.ts": (
+        "eslint(no-restricted-globals)",
+        "export const argued = (): string => process.title;\n",
+    ),
+    "reached.ts": (
+        "eslint(no-restricted-properties)",
+        'export const reached = (): Promise<Response> =>\n\tglobalThis.fetch("/");\n',
+    ),
+    "stamped.ts": (
+        "eslint(no-restricted-properties)",
+        "export const stamped = (): number => globalThis.Date.now();\n",
+    ),
+})
+
+
+def test_the_bans_of_every_layer_still_fail_lint_in_the_ui(
+    fixtures: Fixtures,
+) -> None:
+    banned = FrozenOrderedDict(
+        (f"packages/{layer}/src/{name}", found)
+        for layer in ("core", "ui")
+        for name, found in EVERYWHERE.items()
+    )
+    run = fixtures.check(
+        "commit", files={path: text for path, (_, text) in banned.items()}
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    for path, (rule, _) in banned.items():
+        found = FrozenList(
+            line for line in lint.findings.splitlines() if f"{path}:" in line
+        )
+        assert len(found) == 1, (path, found)
+        assert rule in found[0], (rule, found)
+
+
+TITLED = """export const titled = (): string =>
+	`${document.title} ${window.name} ${localStorage.length}`;
+"""
+
+
+def test_a_core_or_shell_file_is_not_held_to_the_ui_bans(
+    fixtures: Fixtures,
+) -> None:
+    titled = FrozenList(
+        f"packages/{layer}/src/titled.ts" for layer in ("core", "shell")
+    )
+    hooked = "packages/shell/src/hooked.ts"
+    run = fixtures.check(
+        "commit",
+        files={
+            **dict.fromkeys(titled, TITLED),
+            hooked: 'export { useEffect } from "react";\n',
+        },
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "ok", lint.findings
