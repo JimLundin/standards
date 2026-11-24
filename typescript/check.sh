@@ -22,7 +22,7 @@ pinned NODE node "nvm install {}, or another way to put Node {} on PATH" node --
 versions=(
 	"--tool=format=${pins[OXFMT]}"
 	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
-	"--tool=types=${pins[TYPESCRIPT]}"
+	"--tool=types=${pins[TYPESCRIPT]},${pins[EFFECT_TSGO]}"
 	"--tool=unused=${pins[KNIP]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
 	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
@@ -162,12 +162,17 @@ unit format "last 'Format issues found in above [0-9]+ files?|All matched files 
 unit lint "joined 'Found [0-9]+ (warnings? and [0-9]+ )?(error|warning|info)s?'" \
 	oxlint_lint
 if [ -f tsconfig.json ]; then
-	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"]}}\n' \
+	# The types unit runs the Effect-patched tsc of @effect/tsgo at the pinned
+	# TypeScript, with the Effect language service set here, where a project's
+	# own tsconfig can't weaken it. Effect's errors, such as floatingEffect,
+	# fail the unit; its warnings stay in the log.
+	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"], "plugins": [{"name": "@effect/language-service", "ignoreEffectWarningsInTscExitCode": true}]}}\n' \
 		"$(native "$project/tsconfig.json")" \
 		"$(native "$standards/tsconfig.base.json")" \
 		"$(native "$project/node_modules/@types")" >"$logs/tsconfig.json"
 	unit types "count 'error TS' errors" \
-		npx -y -p "typescript@${pins[TYPESCRIPT]}" tsc -p "$(native "$logs/tsconfig.json")"
+		npx -y -p "@effect/tsgo@${pins[EFFECT_TSGO]}" \
+		effect-tsgo "tsc@${pins[TYPESCRIPT]}" -p "$(native "$logs/tsconfig.json")"
 fi
 if [ -f package.json ]; then
 	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \

@@ -413,6 +413,34 @@ def test_an_async_function_returning_a_promise_unawaited_passes_lint(
     assert returned not in lint.findings
 
 
+FLOATING = """import { Console } from "effect";
+
+export const start = (): void => {
+  Console.log("started");
+};
+"""
+MISTYPED = """export const count: number = "one";
+"""
+
+
+@pytest.mark.parametrize(
+    ("path", "text", "diagnostic"),
+    [
+        ("packages/shell/src/floating.ts", FLOATING, "error TS377001"),
+        ("packages/core/src/mistyped.ts", MISTYPED, "error TS2322"),
+    ],
+    ids=["floating-effect", "plain-type-error"],
+)
+def test_a_floating_effect_or_a_type_error_fails_types(
+    fixtures: Fixtures, path: str, text: str, diagnostic: str
+) -> None:
+    run = fixtures.check("commit", files={path: text})
+    types = run.units["types"]
+    assert types.outcome == "FAIL"
+    assert f"{path}(" in types.findings
+    assert diagnostic in types.findings
+
+
 def test_an_exception_clears_its_rule_in_its_file_alone(
     fixtures: Fixtures,
 ) -> None:
