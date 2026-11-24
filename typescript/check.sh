@@ -8,16 +8,19 @@ cd "$project" || exit 2
 begin typescript
 # The standard's own part holds the fixture trees of its S1 harness, which
 # typescript_fixtures.py checks as projects of their own and whose breaking
-# trees break rules on purpose, and the oxlint-plugins package, a part of its
-# own, so its checks leave them out.
+# trees break rules on purpose, and the oxlint-plugins and measure packages,
+# parts of their own, so its checks leave them out.
 foreign=()
 own=
 if [ "$(pwd -P)" = "$(cd "$standards" && pwd -P)" ]; then
 	own=1
-	foreign=(':!fixtures/' ':!oxlint-plugins/')
+	foreign=(':!fixtures/' ':!oxlint-plugins/' ':!measure/')
 	mapfile -t tracked < <(git ls-files -- . "${foreign[@]}")
 fi
 pinned NODE node "nvm install {}, or another way to put Node {} on PATH" node --version
+pinned TS_MEASURE typescript-measure \
+	"npm ci --prefix $(native "$standards/measure") && npm install -g $(native "$standards/measure")" \
+	typescript-measure --version
 # A check's key holds the pinned version of the tool it runs.
 versions=(
 	"--tool=format=${pins[OXFMT]}"

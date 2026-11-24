@@ -1,0 +1,32 @@
+{
+  "name": "@standards/measure",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "typescript-measure": "./main.ts"
+  },
+  "workspaces": [
+    "core"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --mode fast"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.1.5",
+    "@standards/measure-core": "*",
+    "effect": "4.1.5",
+    "typescript": "7.0.2"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.5",
+    "@vitest/coverage-v8": "5.1.1",
+    "vitest": "5.1.1"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "standards": {
+    "layer": "shell"
+  }
+}

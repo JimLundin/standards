@@ -280,3 +280,34 @@ def test_the_package_check_leaves_the_share_to_the_project_s_unit() -> None:
     lines, status, _ = outcome(*shell_lines)
     assert lines == ("shell makes 20 of 20 decisions",)
     assert status == 0
+
+
+def compact(record: Mapping[str, object]) -> str:
+    return json.dumps(record, separators=(",", ":"))
+
+
+def test_typescript_measure_records_are_read() -> None:
+    # Records as typescript-measure prints them, with the layer it adds.
+    lines = (
+        compact({
+            "decisions": 3,
+            "function": "View",
+            "layer": "ui",
+            "line": 2,
+            "path": "packages/ui/src/view.tsx",
+            "root": "packages/ui",
+        }),
+        compact({
+            "error": "not in the project",
+            "layer": "shell",
+            "path": "packages/shell/src/gone.ts",
+            "root": "packages/shell",
+        }),
+    )
+    metadata = parse_json(
+        json.dumps({"workspace_root": "/work", "packages": []})
+    )
+    assert records(lines, metadata) == (
+        Function("packages/ui/src/view.tsx", 2, "View", 3, in_shell=False),
+        Failure("packages/shell/src/gone.ts", "not in the project"),
+    )
