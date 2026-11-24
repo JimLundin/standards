@@ -5,7 +5,14 @@ from ordered import FrozenList, FrozenOrderedDict
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
 from checks.core.exceptions import EXCEPTIONS, exceptions_in, validate
 from checks.core.suppressions import is_source, suppressions, used_attributes
-from checks.core.values import Inputs, Outcome, Request, summarized
+from checks.core.values import (
+    Inputs,
+    Outcome,
+    Request,
+    operands,
+    options,
+    summarized,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,9 +28,18 @@ def project_paths(language: str, files: Sequence[str]) -> FrozenList[str]:
     )
 
 
-def snapshot_of(
-    language: str, standards: str, files: Sequence[str], inputs: Inputs
-) -> Snapshot:
+# Each `--resolved=<config>=<file>` names a file holding a config, the
+# project's or a standard's, as its tool resolves it.
+def resolved_files(arguments: Sequence[str]) -> FrozenOrderedDict[str, str]:
+    return FrozenOrderedDict(
+        (config, file)
+        for option in options(arguments, "--resolved=")
+        for config, _, file in (option.partition("="),)
+    )
+
+
+def snapshot_of(arguments: Sequence[str], inputs: Inputs) -> Snapshot:
+    language, standards, *files = operands(arguments)
     project = FrozenOrderedDict(
         (path, text)
         for path in project_paths(language, files)
@@ -34,18 +50,29 @@ def snapshot_of(
         for path in STANDARD_FILES[language]
         if (text := inputs.texts.get(f"{standards}/{path}")) is not None
     )
-    return Snapshot(FrozenList(files), project, shared)
+    resolved = FrozenOrderedDict(
+        (config, text)
+        for config, file in resolved_files(arguments).items()
+        if (text := inputs.texts.get(file)) is not None
+    )
+    return Snapshot(FrozenList(files), project, shared, resolved)
 
 
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    language, standards, *files = arguments
+    language, standards, *files = operands(arguments)
     shared = (f"{standards}/{path}" for path in STANDARD_FILES[language])
-    return Request(FrozenList((*project_paths(language, files), *shared)))
+    return Request(
+        FrozenList((
+            *project_paths(language, files),
+            *shared,
+            *resolved_files(arguments).values(),
+        ))
+    )
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    language, standards, *files = arguments
-    snapshot = snapshot_of(language, standards, files, inputs)
+    language = operands(arguments)[0]
+    snapshot = snapshot_of(arguments, inputs)
     exceptions = exceptions_in(inputs)
     attributes = used_attributes(snapshot.project)
     drifted = FrozenList(

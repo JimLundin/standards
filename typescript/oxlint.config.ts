@@ -20,7 +20,13 @@ export default defineConfig({
 	},
 	extends: [cloudflare],
 	// The standards plugin sits beside this file, wherever a run copies it.
-	jsPlugins: [import.meta.resolve("./oxlint-plugins/index.ts")],
+	// Named, it resolves under its name, which drift compares.
+	jsPlugins: [
+		{
+			name: "standards",
+			specifier: import.meta.resolve("./oxlint-plugins/index.ts"),
+		},
+	],
 	// A rule is turned off in exceptions.toml, never by a comment.
 	options: { respectEslintDisableDirectives: false, typeAware: true },
 	overrides: [

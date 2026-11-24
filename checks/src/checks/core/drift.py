@@ -1,7 +1,7 @@
 import ast
+import json
 import re
-from dataclasses import dataclass
-from pathlib import PurePosixPath
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -52,8 +52,7 @@ PROJECT_FILES = FrozenOrderedDict({
         ".config/nextest.toml",
     )),
     "typescript": FrozenList((
-        "biome.json",
-        "biome.jsonc",
+        "oxlint.config.ts",
         "tsconfig.json",
         "stryker.config.json",
         "knip.json",
@@ -65,7 +64,7 @@ STANDARD_FILES = FrozenOrderedDict({
     "python": FrozenList(("python/pyproject.toml", "python/conftest.py")),
     "rust": FrozenList(("rust/Cargo.fragment.toml", "rust/clippy.toml")),
     "typescript": FrozenList((
-        "typescript/biome.json",
+        "typescript/oxlint.config.ts",
         "typescript/tsconfig.base.json",
         "typescript/stryker.config.json",
         "typescript/knip.json",
@@ -79,6 +78,11 @@ class Snapshot:
     files: FrozenList[str]
     project: FrozenOrderedDict[str, str]
     standards: FrozenOrderedDict[str, str]
+    # The project's and the standard's configs, as their tools resolve them,
+    # under the path of each.
+    resolved: FrozenOrderedDict[str, str] = field(
+        default_factory=FrozenOrderedDict
+    )
 
     def toml(self, path: str) -> Mapping[str, object]:
         return parse_toml(self.project.get(path))
@@ -385,104 +389,174 @@ def rust_drift(snapshot: Snapshot) -> Iterator[Issue]:
         )
 
 
-def biome_levels(rules: Mapping[str, object]) -> FrozenOrderedDict[str, str]:
+# Oxlint prints a finding's rule as `plugin(rule)`, but its resolved config
+# names eslint's rules bare, a plugin with an underscore, and react's hooks
+# rules under react, so drift names a rule as a finding prints it.
+OXLINT_PLUGINS = FrozenOrderedDict({
+    "jsx_a11y": "jsx-a11y",
+    "react_perf": "react-perf",
+})
+HOOKS = FrozenOrderedSet(("rules-of-hooks", "exhaustive-deps"))
+OXLINT_RANKS = FrozenOrderedDict({"allow": 0, "warn": 1, "deny": 2})
+RESTRICTED = FrozenList(("no-restricted-globals", "no-restricted-imports"))
+STANDARD_OXLINT = "#standards/oxlint"
+# A project's oxlint.config.ts imports the standard's as `#standards/oxlint`,
+# which check.sh maps to its copy, and names that import in `extends`.
+STANDARD_IMPORT = re.compile(
+    rf"""import\s+(\w+)\s+from\s+["']{STANDARD_OXLINT}["']"""
+)
+EXTENDS = re.compile(r"\bextends\s*:\s*\[([^\]]*)\]")
+
+
+def printed(rule: str) -> str:
+    plugin, slash, name = rule.rpartition("/")
+    if not slash:
+        return f"eslint/{rule}"
+    if plugin == "react" and name in HOOKS:
+        return f"react-hooks/{name}"
+    return f"{OXLINT_PLUGINS.get(plugin, plugin)}/{name}"
+
+
+def by_printed(rules: Mapping[str, object]) -> Mapping[str, object]:
     return FrozenOrderedDict(
-        pair
-        for group, value in rules.items()
-        for pair in (
-            ((group, value),)
-            if isinstance(value, str)
-            else (
-                (f"{group}/{rule}", level(setting))
-                for rule, setting in table(value).items()
+        (printed(rule), value) for rule, value in rules.items()
+    )
+
+
+def oxlint_level(value: object) -> str:
+    setting = next(iter(entries(value)), value)
+    return setting if isinstance(setting, str) else "off"
+
+
+def weaker(
+    path: str,
+    key: str,
+    standard: Mapping[str, object],
+    project: Mapping[str, object],
+) -> Iterator[Issue]:
+    for name, value in standard.items():
+        wanted, actual = oxlint_level(value), oxlint_level(project.get(name))
+        if OXLINT_RANKS.get(actual, 0) < OXLINT_RANKS.get(wanted, 0):
+            label = f"{key}.{name}"
+            yield drift(
+                path, label, f"{label} is `{actual}`, weaker than `{wanted}`"
             )
-        )
-    )
 
 
-def biome_options(
-    rules: Mapping[str, object], rule: str, key: str
-) -> FrozenList[str]:
-    group, name = rule.split("/")
-    options = table(table(table(rules.get(group)).get(name)).get("options"))
-    return FrozenList(table(options.get(key)))
-
-
-def overrides(
-    config: Mapping[str, object],
-) -> FrozenOrderedSet[tuple[str, str, str]]:
-    return FrozenOrderedSet(
-        (",".join(strings(table(override).get("includes"))), rule, setting)
-        for override in entries(config.get("overrides"))
-        for rule, setting in biome_levels(
-            table(lookup(table(override), "linter.rules"))
-        ).items()
-    )
-
-
-def plugin_paths(config: Mapping[str, object]) -> FrozenList[str]:
+def js_plugins(config: Mapping[str, object]) -> FrozenList[str]:
     return FrozenList(
         plugin
         if isinstance(plugin, str)
-        else str(table(plugin).get("path", ""))
-        for plugin in entries(config.get("plugins"))
+        else str(table(plugin).get("name", ""))
+        for plugin in entries(config.get("jsPlugins"))
     )
 
 
-def biome_drift(
+def restricted(value: object) -> FrozenList[str]:
+    return FrozenList(
+        name
+        for option in entries(value)[1:]
+        for item in (option, *entries(table(option).get("paths")))
+        if isinstance(
+            name := item if isinstance(item, str) else table(item).get("name"),
+            str,
+        )
+    )
+
+
+def oxlint_overrides(
+    config: Mapping[str, object],
+) -> FrozenOrderedSet[tuple[str, str, str]]:
+    return FrozenOrderedSet(
+        (
+            ",".join(strings(table(override).get("files"))),
+            rule,
+            oxlint_level(value),
+        )
+        for override in entries(config.get("overrides"))
+        for rule, value in table(table(override).get("rules")).items()
+    )
+
+
+def extends_standard(source: str) -> bool:
+    imported = STANDARD_IMPORT.search(source)
+    return imported is not None and any(
+        re.search(rf"\b{imported[1]}\b", found[1])
+        for found in EXTENDS.finditer(source)
+    )
+
+
+def oxlint_drift(
     standard: Mapping[str, object], project: Mapping[str, object]
 ) -> Iterator[Issue]:
-    path = "biome.json"
-    rules_key = "linter.rules"
-    wanted, actual = (
-        table(lookup(standard, rules_key)),
-        table(lookup(project, rules_key)),
-    )
-    if actual.get("preset") != wanted.get("preset"):
-        yield drift(
-            path,
-            f"{rules_key}.preset",
-            f"{rules_key}.preset is not `{wanted.get('preset')}`",
-        )
-    if lookup(project, "linter.enabled") is False:
-        yield drift(path, "linter.enabled", "the linter is disabled")
-    yield from missing(
+    path = "oxlint.config.ts"
+    yield from weaker(
         path,
-        "plugins",
-        FrozenList(
-            PurePosixPath(plugin).name for plugin in plugin_paths(standard)
-        ),
-        FrozenList(
-            PurePosixPath(plugin).name for plugin in plugin_paths(project)
-        ),
+        "categories",
+        table(standard.get("categories")),
+        table(project.get("categories")),
     )
-    standard_levels = biome_levels(wanted)
-    yield from (
-        drift(path, f"{rules_key}.{rule}", f"{rules_key}.{rule} is `{setting}`")
-        for rule, setting in biome_levels(actual).items()
-        if setting in WEAK and standard_levels.get(rule) != setting
+    wanted, actual = table(standard.get("rules")), table(project.get("rules"))
+    yield from weaker(path, "rules", by_printed(wanted), by_printed(actual))
+    yield from missing(
+        path, "jsPlugins", js_plugins(standard), js_plugins(project)
     )
-    for rule, key in (
-        ("style/noRestrictedGlobals", "deniedGlobals"),
-        ("style/noRestrictedImports", "paths"),
-    ):
+    for rule in RESTRICTED:
         yield from missing(
             path,
-            f"{rules_key}.{rule}.{key}",
-            biome_options(wanted, rule, key),
-            biome_options(actual, rule, key),
+            f"rules.{printed(rule)}",
+            restricted(wanted.get(rule)),
+            restricted(actual.get(rule)),
         )
-    standard_overrides = overrides(standard)
+    standard_overrides = oxlint_overrides(standard)
     yield from (
         drift(
             path,
-            f"overrides.{includes}.{rule}",
-            f"override for {includes} sets {rule} to `{setting}`",
+            f"overrides.{files}.{printed(rule)}",
+            f"override for {files} sets {printed(rule)} to `{setting}`",
         )
-        for includes, rule, setting in overrides(project)
-        if setting in WEAK
-        and (includes, rule, setting) not in standard_overrides
+        for files, rule, setting in oxlint_overrides(project)
+        if (files, rule, setting) not in standard_overrides
+        and OXLINT_RANKS.get(setting, 0)
+        < OXLINT_RANKS.get(oxlint_level(wanted.get(rule)), 0)
     )
+    options = table(project.get("options"))
+    yield from (
+        drift(
+            path,
+            f"options.{name}",
+            f"options.{name} is `{json.dumps(options.get(name))}`, not `{json.dumps(value)}`",
+        )
+        for name, value in table(standard.get("options")).items()
+        if options.get(name) != value
+    )
+    yield from extra(
+        path,
+        "ignorePatterns",
+        strings(project.get("ignorePatterns")),
+        strings(standard.get("ignorePatterns")),
+    )
+
+
+def typescript_oxlint_drift(snapshot: Snapshot) -> Iterator[Issue]:
+    path = "oxlint.config.ts"
+    source = snapshot.project.get(path)
+    standard_path = f"typescript/{path}"
+    if source is None:
+        return
+    if source != snapshot.standards.get(standard_path) and not extends_standard(
+        source
+    ):
+        yield drift(
+            path,
+            "extends",
+            f"{path} doesn't extend the standard's, imported from `{STANDARD_OXLINT}`",
+        )
+    project = parse_json(snapshot.resolved.get(path))
+    if project:
+        yield from oxlint_drift(
+            parse_json(snapshot.resolved.get(standard_path)), project
+        )
 
 
 def vitest_runs(text: str | None) -> FrozenOrderedDict[str, int]:
@@ -522,11 +596,7 @@ def stryker_drift(
 
 def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
     folder = "typescript/"
-    project = snapshot.json("biome.json") or snapshot.json("biome.jsonc")
-    if project:
-        yield from biome_drift(
-            snapshot.standard_json(f"{folder}biome.json"), project
-        )
+    yield from typescript_oxlint_drift(snapshot)
     compiler = "compilerOptions"
     options = table(snapshot.json("tsconfig.json").get(compiler))
     base = table(

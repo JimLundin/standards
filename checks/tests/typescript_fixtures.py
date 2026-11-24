@@ -513,6 +513,69 @@ def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
     assert "drift:arbitrary.fast" in exceptions.findings
 
 
+# A project's own oxlint.config.ts, which extends the standard's.
+EXTENDING = """import standard from "#standards/oxlint";
+
+export default {
+	extends: [standard],
+	rules: {rules},
+};
+"""
+
+
+@pytest.mark.parametrize(
+    ("config", "rule"),
+    [
+        (
+            EXTENDING.replace("{rules}", '{ "no-bitwise": "off" }'),
+            "drift:rules.eslint/no-bitwise",
+        ),
+        (
+            'export default { rules: { "no-bitwise": "error" } };\n',
+            "drift:extends",
+        ),
+    ],
+    ids=["rule-off", "not-extending"],
+)
+def test_a_weaker_oxlint_config_drifts(
+    fixtures: Fixtures, config: str, rule: str
+) -> None:
+    run = fixtures.check("commit", files={"oxlint.config.ts": config})
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "FAIL"
+    assert rule in exceptions.findings
+
+
+def test_an_oxlint_config_turning_an_extra_rule_on_passes(
+    fixtures: Fixtures,
+) -> None:
+    extra = EXTENDING.replace("{rules}", '{ "no-unreachable-loop": "error" }')
+    run = fixtures.check("commit", files={"oxlint.config.ts": extra})
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "ok", exceptions.findings
+    assert run.units["lint"].outcome == "ok", run.units["lint"].findings
+
+
+def test_an_exception_named_as_oxlint_prints_the_rule_clears_it(
+    fixtures: Fixtures,
+) -> None:
+    hooked = "packages/core/src/hooked.tsx"
+    run = fixtures.check(
+        "commit",
+        files={
+            "exceptions.toml": (
+                "[[exception]]\n"
+                f'path = "{hooked}"\n'
+                'rule = "lint/react-hooks/rules-of-hooks"\n'
+                'reason = "a fixture"\n'
+            ),
+            hooked: HOOKED,
+        },
+    )
+    assert run.units["exceptions"].outcome == "ok"
+    assert run.units["lint"].outcome == "ok", run.units["lint"].findings
+
+
 NODE_IMPORTS = FrozenOrderedDict({
     "packages/core/src/read.ts": (
         'import { readFileSync } from "node:fs";\n\n'
