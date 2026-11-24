@@ -49,6 +49,8 @@ def test_ruff_config_groups_rules_by_path() -> None:
         + entry("a.py", "T201")
         + entry("a.py", "IMM001")
         + entry("a.py", "unused")
+        + entry("a.py", "slop:for-range-len")
+        + entry("a.py", "STR001")
     }
     assert lines(run(("ruff-config",), inputs(texts))) == (
         'lint.extend-per-file-ignores = {"a.py" = ["E501", "T201"], "b.py" = ["F401"]}',

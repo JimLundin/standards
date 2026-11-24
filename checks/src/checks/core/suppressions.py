@@ -18,6 +18,7 @@ PYTHON_MARKERS = FrozenList((
     r"pragma\s*:\s*no\s+(?:mutate|cover)",
     r"fmt\s*:\s*(?:off|skip)",
     r"isort\s*:\s*skip",
+    r"scbc\s+(?:ignore|boundary)\b",
 ))
 TYPESCRIPT_MARKERS = FrozenList((
     r"biome-ignore",

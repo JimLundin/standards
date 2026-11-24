@@ -90,6 +90,22 @@ def test_flaky_tests_are_named_not_tracked_paths() -> None:
     )
 
 
+def test_policy_validates_slop_and_structure_paths() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.py", "slop:for-range-len")
+        + entry("src/a.py", "STR001")
+        + entry("gone.py", "slop:for-range-len")
+        + entry("gone.py", "STR002"),
+        "src/a.py": "x = 1\n",
+    }
+    outcome = run(("python", STD, "src/a.py"), inputs(texts))
+    assert lines(outcome) == (
+        "exceptions.toml (gone.py, slop:for-range-len): path matches no tracked file",
+        "exceptions.toml (gone.py, STR002): path matches no tracked file",
+        "Found 2 issues",
+    )
+
+
 def test_policy_ignores_attributes_outside_rust() -> None:
     texts = {
         "exceptions.toml": entry("a.ts", "lint/style/noVar"),

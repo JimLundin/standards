@@ -26,6 +26,8 @@ RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY, BOX))
 UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
+STRUCTURE = re.compile(r"STR\d{3}")
+SLOP = re.compile(r"slop:[\w-]+")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
 
 
@@ -131,6 +133,10 @@ def python_kind(rule: str) -> str:
         return "immutability"
     if PURITY.fullmatch(rule):
         return "purity"
+    if STRUCTURE.fullmatch(rule):
+        return "structure"
+    if SLOP.fullmatch(rule):
+        return "slop"
     return "unused" if rule == "unused" else "ruff"
 
 

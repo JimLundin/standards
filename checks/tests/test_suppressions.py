@@ -54,6 +54,8 @@ def test_is_source(language: str, file: str, *, expected: bool) -> None:
         "# fmt: skip",
         "# isort: skip",
         "# NOQA",
+        "# scbc ignore[for-range-len]",
+        "# scbc boundary",
     ],
 )
 def test_python_markers_find_suppressions(comment: str) -> None:
@@ -66,6 +68,8 @@ def test_python_markers_find_suppressions(comment: str) -> None:
     "text",
     [
         'x = "# noqa"\n',
+        'x = "# scbc boundary"\n',
+        "scbc = 1\n",
         "# noqanot\n",
         "# a plain comment\n",
         "# pragma: no branch\n",
