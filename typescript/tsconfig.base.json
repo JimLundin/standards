@@ -16,7 +16,6 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"allowUnreachableCode": false,
-		"allowUnusedLabels": false,
-		"types": ["node"]
+		"allowUnusedLabels": false
 	}
 }
