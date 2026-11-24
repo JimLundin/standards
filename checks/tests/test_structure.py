@@ -1,3 +1,5 @@
+lazy from collections.abc import Mapping
+
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
@@ -10,7 +12,7 @@ TARGET = "def g(x):\n    return x + 1\n\n"
 
 
 def findings(
-    texts: dict[str, str], exceptions: str | None = None
+    texts: Mapping[str, str], exceptions: str | None = None
 ) -> FrozenList[str]:
     files = FrozenOrderedDict(texts)
     if exceptions is not None:
@@ -90,8 +92,8 @@ def test_a_wrapper_with_a_reason_to_exist_is_not_reported(source: str) -> None:
 
 
 def test_an_exception_drops_the_findings_in_its_paths() -> None:
-    sources = {"a.py": "def f(x):\n    return x\n", "b.py": TARGET}
-    sources["c.py"] = sources["a.py"]
+    wrapper = "def f(x):\n    return x\n"
+    sources = {"a.py": wrapper, "b.py": TARGET, "c.py": wrapper}
     assert findings(sources, entry("a.py", "STR001")) == (f"c.py:1:1: {WRAPS}",)
 
 
