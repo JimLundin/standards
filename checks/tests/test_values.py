@@ -55,14 +55,26 @@ def test_required_integer_reads_an_int_field() -> None:
     assert required_integer({"line": 7}, "line") == 7
 
 
+def test_required_integer_follows_a_dotted_path() -> None:
+    record = {"range": {"start": {"line": 7}}}
+    assert required_integer(record, "range.start.line") == 7
+
+
 @pytest.mark.parametrize(
-    "record", [{}, {"line": "7"}, {"line": None}, {"line": True}]
+    "record",
+    [
+        {},
+        {"range": {}},
+        {"range": {"start": {"line": "7"}}},
+        {"range": {"start": {"line": None}}},
+        {"range": {"start": {"line": True}}},
+    ],
 )
 def test_required_integer_names_a_field_that_is_not_an_int(
     record: Mapping[str, object],
 ) -> None:
-    with pytest.raises(ValueError, match="`line`"):
-        _ = required_integer(record, "line")
+    with pytest.raises(ValueError, match=r"`range\.start\.line`"):
+        _ = required_integer(record, "range.start.line")
 
 
 def test_lookup_follows_dotted_keys() -> None:

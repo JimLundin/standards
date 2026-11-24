@@ -110,8 +110,11 @@ unit immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	checks immutability "${sources[@]}"
 unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
-tools_of[slop]=uvx
-unit slop "last 'Found [0-9]+ issues|All checks passed'" slop_findings
+# With no paths, ast-grep scans the working directory.
+if ((${#sources[@]} > 0)); then
+	tools_of[slop]=uvx
+	unit slop "last 'Found [0-9]+ issues|All checks passed'" slop_findings
+fi
 unit structure "last 'Found [0-9]+ issues|All checks passed'" \
 	checks structure "${sources[@]}"
 if ((${#unused_sources[@]} > 0)); then

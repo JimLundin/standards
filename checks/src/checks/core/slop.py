@@ -1,22 +1,26 @@
+from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ordered import FrozenList
+from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
-    lookup,
-    number,
-    parse_json,
+    json_object,
     posix,
+    required_integer,
+    required_string,
+    required_table,
     summarized,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+NO_THRESHOLD = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,20 +33,26 @@ class Finding:
     min_file_count: int
 
 
+def min_file_count(record: Mapping[str, object]) -> int:
+    if "min_file_count" not in required_table(record, "metadata"):
+        return NO_THRESHOLD
+    return required_integer(record, "metadata.min_file_count")
+
+
 def parse_finding(record: Mapping[str, object]) -> Finding:
     return Finding(
-        str(record.get("ruleId")),
-        posix(str(record.get("file"))),
-        number(lookup(record, "range.start.line")) + 1,
-        number(lookup(record, "range.start.column")) + 1,
-        str(record.get("message")),
-        number(lookup(record, "metadata.min_file_count")),
+        required_string(record, "ruleId"),
+        posix(required_string(record, "file")),
+        required_integer(record, "range.start.line") + 1,
+        required_integer(record, "range.start.column") + 1,
+        required_string(record, "message"),
+        min_file_count(record),
     )
 
 
 def findings(stdin: str, exceptions: Exceptions) -> FrozenList[Finding]:
     parsed = (
-        parse_finding(parse_json(line))
+        parse_finding(json_object(line))
         for line in stdin.splitlines()
         if line.strip()
     )
@@ -53,21 +63,16 @@ def findings(stdin: str, exceptions: Exceptions) -> FrozenList[Finding]:
     )
 
 
-def in_file(finding: Finding, found: Sequence[Finding]) -> int:
-    return sum(
-        1
-        for other in found
-        if (other.rule, other.path) == (finding.rule, finding.path)
-    )
-
-
 def reported(found: Sequence[Finding]) -> FrozenList[Finding]:
+    in_file = FrozenOrderedDict[tuple[str, str], int](
+        Counter((finding.rule, finding.path) for finding in found)
+    )
     return FrozenList(
         sorted(
             (
                 finding
                 for finding in found
-                if in_file(finding, found) >= finding.min_file_count
+                if in_file[finding.rule, finding.path] >= finding.min_file_count
             ),
             key=lambda finding: (finding.path, finding.line, finding.column),
         )

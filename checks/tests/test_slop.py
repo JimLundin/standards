@@ -1,6 +1,8 @@
 import json
+import re
 lazy from collections.abc import Mapping
 
+import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.slop import request, run
@@ -12,6 +14,23 @@ GUARD = "isinstance-guard-raise"
 MESSAGE = "swallows every error and returns a sentinel"
 
 
+def fields(
+    path: str,
+    line: int,
+    rule: str = SENTINEL,
+    metadata: Mapping[str, object] | None = None,
+    severity: str = "warning",
+) -> dict[str, object]:
+    return {
+        "file": path,
+        "range": {"start": {"line": line, "column": 4}},
+        "ruleId": rule,
+        "severity": severity,
+        "message": MESSAGE,
+        "metadata": metadata if metadata is not None else {"min_file_count": 2},
+    }
+
+
 def finding(
     path: str,
     line: int,
@@ -19,14 +38,7 @@ def finding(
     metadata: Mapping[str, object] | None = None,
     severity: str = "warning",
 ) -> str:
-    return json.dumps({
-        "file": path,
-        "range": {"start": {"line": line, "column": 4}},
-        "ruleId": rule,
-        "severity": severity,
-        "message": MESSAGE,
-        "metadata": metadata if metadata is not None else {"min_file_count": 2},
-    })
+    return json.dumps(fields(path, line, rule, metadata, severity))
 
 
 def scanned(*findings: str, exceptions: str | None = None) -> Outcome:
@@ -91,6 +103,48 @@ def test_a_rule_without_a_file_count_reports_its_first_finding() -> None:
         f"src/a.py:1:5: for-range-len {MESSAGE}",
         "Found 1 issues",
     )
+
+
+def test_a_rule_with_metadata_but_no_file_count_reports_its_first_finding() -> (
+    None
+):
+    outcome = scanned(finding("src/a.py", 0, "for-range-len", {"weight": 5}))
+    assert outcome.lines == (
+        f"src/a.py:1:5: for-range-len {MESSAGE}",
+        "Found 1 issues",
+    )
+
+
+def without(key: str) -> str:
+    record = fields("src/a.py", 2)
+    return json.dumps({name: record[name] for name in record if name != key})
+
+
+@pytest.mark.parametrize(
+    ("line", "error"),
+    [
+        (without("ruleId"), "`ruleId` is not a string: None"),
+        (without("file"), "`file` is not a string: None"),
+        (without("message"), "`message` is not a string: None"),
+        (without("range"), "`range.start.line` is not an integer: None"),
+        (
+            json.dumps({**fields("src/a.py", 2), "range": {}}),
+            "`range.start.line` is not an integer: None",
+        ),
+        (without("metadata"), "`metadata` is not a table: None"),
+        (
+            finding("src/a.py", 2, metadata={"min_file_count": "2"}),
+            "`metadata.min_file_count` is not an integer: '2'",
+        ),
+        ("not json", "not a JSON object: 'not json'"),
+        ("[1]", "not a JSON object: '[1]'"),
+    ],
+)
+def test_a_malformed_record_fails_naming_what_is_wrong(
+    line: str, error: str
+) -> None:
+    with pytest.raises(ValueError, match=f"^{re.escape(error)}"):
+        _ = scanned(line)
 
 
 def test_an_exception_drops_the_findings_of_its_rule_in_its_paths() -> None:

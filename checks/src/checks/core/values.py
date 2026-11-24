@@ -55,17 +55,44 @@ def entries(value: object) -> FrozenList[object]:
     return FrozenList(value) if is_list(value) else FrozenList()
 
 
-def number(value: object) -> int:
-    return value if isinstance(value, int) else 0
-
-
-def required_integer(record: Mapping[str, object], field: str) -> int:
-    match record.get(field):
+def required_integer(record: Mapping[str, object], dotted: str) -> int:
+    match lookup(record, dotted):
         case int() as value if not isinstance(value, bool):
             return value
         case value:
-            message = f"`{field}` is not an integer: {value!r}"
+            message = f"`{dotted}` is not an integer: {value!r}"
             raise ValueError(message)
+
+
+def required_string(record: Mapping[str, object], dotted: str) -> str:
+    match lookup(record, dotted):
+        case str() as value:
+            return value
+        case value:
+            message = f"`{dotted}` is not a string: {value!r}"
+            raise ValueError(message)
+
+
+def required_table(
+    record: Mapping[str, object], dotted: str
+) -> Mapping[str, object]:
+    match lookup(record, dotted):
+        case value if is_table(value):
+            return value
+        case value:
+            message = f"`{dotted}` is not a table: {value!r}"
+            raise ValueError(message)
+
+
+def json_object(text: str) -> Mapping[str, object]:
+    message = f"not a JSON object: {text!r}"
+    try:
+        loaded = decode(text)
+    except json.JSONDecodeError as error:
+        raise ValueError(message) from error
+    if not is_table(loaded):
+        raise ValueError(message)
+    return loaded
 
 
 def strings(value: object) -> FrozenList[str]:
