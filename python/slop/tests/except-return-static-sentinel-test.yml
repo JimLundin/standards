@@ -1,0 +1,13 @@
+id: except-return-static-sentinel
+valid:
+  - |
+    try:
+        value = load()
+    except KeyError:
+        return None
+invalid:
+  - |
+    try:
+        value = load()
+    except Exception:
+        return None

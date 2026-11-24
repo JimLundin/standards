@@ -1,0 +1,27 @@
+id: parse-and-fallback-exception
+language: python
+severity: warning
+message: "`try: return int/float/json.loads(x) except Exception: return <default>` parse-with-silent-fallback swallows format errors."
+metadata:
+  weight: 6
+  category: slop
+  min_file_count: 2
+rule:
+  kind: try_statement
+  all:
+    - has:
+        stopBy: neighbor
+        kind: block
+        has:
+          stopBy: neighbor
+          kind: return_statement
+          any:
+            - regex: '^return\s+int\('
+            - regex: '^return\s+float\('
+            - regex: '^return\s+bool\('
+            - regex: '^return\s+json\.loads?\('
+            - regex: '^return\s+ast\.literal_eval\('
+    - has:
+        stopBy: neighbor
+        kind: except_clause
+        regex: '^except\s+(Exception|BaseException|ValueError|TypeError)(\s+as\s+\w+)?\s*:'

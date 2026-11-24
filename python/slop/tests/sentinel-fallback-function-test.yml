@@ -1,0 +1,15 @@
+id: sentinel-fallback-function
+valid:
+  - |
+    def load(path):
+        try:
+            return read(path)
+        except OSError:
+            return None
+invalid:
+  - |
+    def load(path):
+        try:
+            return read(path)
+        except Exception:
+            return None

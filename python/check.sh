@@ -15,6 +15,7 @@ versions=(
 	"--tool=types=${pins[BASEDPYRIGHT]}"
 	"--tool=unused=${pins[VULTURE]}"
 	"--tool=imports=${pins[IMPORT_LINTER]}"
+	"--tool=slop=${pins[AST_GREP]}"
 )
 release_versions
 # The Python uv resolves for the project, at the pin, as every check runs it.
@@ -23,7 +24,7 @@ if [ -f uv.lock ]; then
 	python=$(uv run --frozen -q python -V 2>&1)
 fi
 units "--toolchain=$(uv --version 2>&1) $python" "${versions[@]}" \
-	--project=exceptions,format,lint,types,test,test-release,immutability,purity,unused,imports,mutation,duplication,volume
+	--project=exceptions,format,lint,types,test,test-release,immutability,purity,slop,unused,imports,mutation,duplication,volume
 
 ruff_config=(--config "$config")
 if grep -qs '^\[tool\.ruff' pyproject.toml; then
@@ -55,6 +56,12 @@ mutate() {
 measured() {
 	uv run --frozen -q python -m coverage run -m pytest -q "${thorough[@]}" &&
 		uv run --frozen -q python -m coverage report
+}
+
+slop_findings() {
+	uvx -q --from "ast-grep-cli==${pins[AST_GREP]}" ast-grep scan \
+		--config "$(native "$standards/slop/sgconfig.yml")" \
+		--json=stream --include-metadata "${sources[@]}" | checks slop
 }
 
 covered() {
@@ -103,6 +110,8 @@ unit immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	checks immutability "${sources[@]}"
 unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
+tools_of[slop]=uvx
+unit slop "last 'Found [0-9]+ issues|All checks passed'" slop_findings
 if ((${#unused_sources[@]} > 0)); then
 	unit unused "count ': unused ' findings" \
 		uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "${unused_sources[@]}"

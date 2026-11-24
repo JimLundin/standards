@@ -1,0 +1,13 @@
+id: parse-and-fallback-exception
+valid:
+  - |
+    try:
+        return int(text)
+    except OverflowError:
+        return 0
+invalid:
+  - |
+    try:
+        return int(text)
+    except ValueError:
+        return 0

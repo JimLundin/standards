@@ -1,0 +1,10 @@
+The rules in rules/ are copied from scb-check 0.2.0
+(https://github.com/gabeorlanski/scb-check, tag v0.2.0, commit
+f808b0fb214501092ae3c7d914dfe98fe2a312af), from
+src/scb_check/resources/slop_rules/. Upstream is not tracked.
+
+The release's pyproject.toml declares the MIT licence, and its LICENSE file
+is the Apache License 2.0, which LICENSE here reproduces.
+
+Changes from the release: each rule is in a file of its own, named for its
+id, and the rule tests in tests/ are the standards' own.

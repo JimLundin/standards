@@ -1,0 +1,8 @@
+# The rule tests of the Python standard's vendored slop rules, each rule on
+# its invalid and valid cases, with ast-grep at its tools.env pin.
+[[suite]]
+name = "python-slop-rules"
+command = "cd .. && . ./tools.env && uvx -q --from \"ast-grep-cli==$AST_GREP\" ast-grep test -c python/slop/sgconfig.yml --skip-snapshot-tests"
+tools = ["AST_GREP"]
+[[suite.when]]
+tier = "commit"

@@ -1,0 +1,29 @@
+id: except-return-static-sentinel
+language: python
+severity: warning
+message: "`except Exception: return None/False/[]/{}` is bare-exception-to-sentinel; catch something specific or let it propagate."
+metadata:
+  weight: 6
+  category: slop
+  min_file_count: 2
+rule:
+  kind: except_clause
+  all:
+    - any:
+        - regex: '^except\s*:'
+        - regex: '^except\s+(Exception|BaseException)(\s+as\s+\w+)?\s*:'
+    - has:
+        stopBy: neighbor
+        kind: block
+        all:
+          - has:
+              stopBy: neighbor
+              kind: return_statement
+              regex: '^return\s+(None|False|True|\[\]|\{\}|""|0|\(\)|set\(\))\s*$'
+          - not:
+              has:
+                stopBy: neighbor
+                not:
+                  any:
+                    - kind: return_statement
+                    - kind: comment
