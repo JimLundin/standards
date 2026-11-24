@@ -44,6 +44,8 @@ def test_tools_dispatch_to_each_tool() -> None:
         "rust-roots",
         "rust-shell",
         "rust-shell-share",
+        "slop",
+        "structure",
         "units",
         "ruff-config",
         "without",

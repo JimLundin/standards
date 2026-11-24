@@ -24,7 +24,7 @@ if [ -f uv.lock ]; then
 	python=$(uv run --frozen -q python -V 2>&1)
 fi
 units "--toolchain=$(uv --version 2>&1) $python" "${versions[@]}" \
-	--project=exceptions,format,lint,types,test,test-release,immutability,purity,slop,unused,imports,mutation,duplication,volume
+	--project=exceptions,format,lint,types,test,test-release,immutability,purity,slop,structure,unused,imports,mutation,duplication,volume
 
 ruff_config=(--config "$config")
 if grep -qs '^\[tool\.ruff' pyproject.toml; then
@@ -112,6 +112,8 @@ unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
 tools_of[slop]=uvx
 unit slop "last 'Found [0-9]+ issues|All checks passed'" slop_findings
+unit structure "last 'Found [0-9]+ issues|All checks passed'" \
+	checks structure "${sources[@]}"
 if ((${#unused_sources[@]} > 0)); then
 	unit unused "count ': unused ' findings" \
 		uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "${unused_sources[@]}"

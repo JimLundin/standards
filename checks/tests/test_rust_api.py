@@ -25,33 +25,30 @@ PATHS = json.dumps({
 })
 
 
-def node(**fields: object) -> object:
-    return fields
-
-
-POINTER = node(function_pointer=node())
+def pointer() -> object:
+    return {"function_pointer": dict[str, object]()}
 
 
 def bound(trait: str, path: str = "", args: object = None) -> object:
-    return node(trait_bound=node(trait=node(id=trait, path=path, args=args)))
+    return {"trait_bound": {"trait": {"id": trait, "path": path, "args": args}}}
 
 
 def dyn(*traits: str) -> object:
-    return node(
-        dyn_trait=node(traits=[node(trait=node(id=trait)) for trait in traits])
-    )
+    return {
+        "dyn_trait": {"traits": [{"trait": {"id": trait}} for trait in traits]}
+    }
 
 
 def generics(*params: object, where: Sequence[object] = ()) -> object:
-    return node(params=list(params), where_predicates=list(where))
+    return {"params": list(params), "where_predicates": list(where)}
 
 
 def param(name: str, *bounds: object) -> object:
-    return node(name=name, kind=node(type=node(bounds=list(bounds))))
+    return {"name": name, "kind": {"type": {"bounds": list(bounds)}}}
 
 
 def span(line: int, filename: str = "core/src/lib.rs") -> object:
-    return node(filename=filename, begin=[line, 1])
+    return {"filename": filename, "begin": [line, 1]}
 
 
 def function(
@@ -62,17 +59,22 @@ def function(
     *,
     is_async: bool = False,
 ) -> object:
-    signature = node(inputs=[["x", kind] for kind in inputs], output=dyn())
-    details = node(
-        sig=signature,
-        generics=types or generics(),
-        header=node(is_async=is_async),
-    )
-    return node(crate_id=0, name=name, span=at, inner=node(function=details))
+    signature = {"inputs": [["x", kind] for kind in inputs], "output": dyn()}
+    details = {
+        "sig": signature,
+        "generics": types or generics(),
+        "header": {"is_async": is_async},
+    }
+    return {
+        "crate_id": 0,
+        "name": name,
+        "span": at,
+        "inner": {"function": details},
+    }
 
 
 def item(name: str | None, line: int, **inner: object) -> object:
-    return node(crate_id=0, name=name, span=span(line), inner=inner)
+    return {"crate_id": 0, "name": name, "span": span(line), "inner": inner}
 
 
 def implementation(
@@ -86,9 +88,11 @@ def implementation(
 
 
 def document(index: Mapping[str, object], version: int = 61) -> str:
-    return json.dumps(
-        node(format_version=version, index=dict(index), paths=parse_json(PATHS))
-    )
+    return json.dumps({
+        "format_version": version,
+        "index": dict(index),
+        "paths": parse_json(PATHS),
+    })
 
 
 METADATA = json.dumps({
@@ -134,68 +138,70 @@ def test_request_reads_the_exceptions_and_metadata_first() -> None:
 
 
 def test_data_only_api_passes() -> None:
-    vector = node(
-        resolved_path=node(
-            path="Vec",
-            args=node(
-                angle_bracketed=node(args=[node(type=node(primitive="u8"))])
-            ),
-        )
-    )
+    vector = {
+        "resolved_path": {
+            "path": "Vec",
+            "args": {
+                "angle_bracketed": {"args": [{"type": {"primitive": "u8"}}]}
+            },
+        }
+    }
     index = {
         "10": function("plain", span(3), [vector]),
         "11": function(
             "cloned",
             span(4),
-            [node(generic="T")],
+            [{"generic": "T"}],
             generics(param("T", bound("2"))),
         ),
-        "12": node(
-            crate_id=1,
-            name="foreign",
-            inner=node(function=node(header=node(is_async=True))),
-        ),
+        "12": {
+            "crate_id": 1,
+            "name": "foreign",
+            "inner": {"function": {"header": {"is_async": True}}},
+        },
     }
     assert check(index) == ("All checks passed",)
 
 
 def test_every_way_to_hand_the_core_an_effect() -> None:
-    callback = node(
-        impl_trait=[bound("3", args=node(parenthesized=node(inputs=[POINTER])))]
-    )
-    lines_bound = node(bound_predicate=node(bounds=[bound("4")]))
+    callback = {
+        "impl_trait": [
+            bound("3", args={"parenthesized": {"inputs": [pointer()]}})
+        ]
+    }
+    lines_bound = {"bound_predicate": {"bounds": [bound("4")]}}
     index = {
         "20": function(
             "port",
             span(5),
-            [node(generic="S")],
+            [{"generic": "S"}],
             generics(param("S", bound("1"))),
         ),
         "21": function(
-            "dyn_port", span(6), [node(borrowed_ref=node(type=dyn("1", "2")))]
+            "dyn_port", span(6), [{"borrowed_ref": {"type": dyn("1", "2")}}]
         ),
         "22": function("callback", span(7), [callback]),
-        "23": function("pointer", span(8), [POINTER]),
+        "23": function("pointer", span(8), [pointer()]),
         "24": function("later", span(9), is_async=True),
         "25": function("lines", span(10), (), generics(where=[lines_bound])),
         "26": function(
-            "unknown",
-            span(11),
-            [node(impl_trait=[bound("99", path="Mystery")])],
+            "unknown", span(11), [{"impl_trait": [bound("99", path="Mystery")]}]
         ),
         "27": function(
-            "odd", span(12), [node(impl_trait=[bound("9", path="Odd")])]
+            "odd", span(12), [{"impl_trait": [bound("9", path="Odd")]}]
         ),
-        "30": item("clock", 13, struct_field=POINTER),
+        "30": item("clock", 13, struct_field=pointer()),
         "31": item(
-            "Engine", 14, struct=node(generics=generics(param("S", bound("1"))))
+            "Engine", 14, struct={"generics": generics(param("S", bound("1")))}
         ),
-        "32": node(
-            crate_id=0,
-            name="Clock",
-            span=span(2, "core/src/types.rs"),
-            inner=node(type_alias=node(generics=generics(), type=POINTER)),
-        ),
+        "32": {
+            "crate_id": 0,
+            "name": "Clock",
+            "span": span(2, "core/src/types.rs"),
+            "inner": {
+                "type_alias": {"generics": generics(), "type": pointer()}
+            },
+        },
     }
     assert check(index) == (
         f"core/src/lib.rs:5: `port` is bounded by `demo::Store`{ONLY_DATA}",
@@ -215,10 +221,10 @@ def test_every_way_to_hand_the_core_an_effect() -> None:
 
 
 def test_impls() -> None:
-    boxed_fn = node(angle_bracketed=node(args=[node(type=dyn("3"))]))
+    boxed_fn = {"angle_bracketed": {"args": [{"type": dyn("3")}]}}
     index = {
-        "1": item("Store", 19, trait=node(generics=generics())),
-        "40": implementation(20, ("41",), trait=node(id="5", args=boxed_fn)),
+        "1": item("Store", 19, trait={"generics": generics()}),
+        "40": implementation(20, ("41",), trait={"id": "5", "args": boxed_fn}),
         "41": function("from", span(21), [dyn()]),
         "42": implementation(22, generics=generics(param("I", bound("4")))),
         "43": implementation(
@@ -227,20 +233,21 @@ def test_impls() -> None:
             is_synthetic=True,
             generics=generics(param("T", bound("4"))),
         ),
-        "44": function("synthetic_method", span(24), [POINTER]),
+        "44": function("synthetic_method", span(24), [pointer()]),
         "45": implementation(
             25,
             ("46",),
-            blanket_impl=node(generic="T"),
+            blanket_impl={"generic": "T"},
             generics=generics(param("T", bound("4"))),
         ),
-        "46": function("blanket_method", span(26), [POINTER]),
-        "47": implementation(27, ("48",), trait=node(id="1")),
-        "48": function("load", span(28), [POINTER]),
-        "50": node(
-            crate_id=1, inner=node(impl=node(trait=node(id="2"), items=["51"]))
-        ),
-        "51": function("not_foreign_impl_member", span(29), [POINTER]),
+        "46": function("blanket_method", span(26), [pointer()]),
+        "47": implementation(27, ("48",), trait={"id": "1"}),
+        "48": function("load", span(28), [pointer()]),
+        "50": {
+            "crate_id": 1,
+            "inner": {"impl": {"trait": {"id": "2"}, "items": ["51"]}},
+        },
+        "51": function("not_foreign_impl_member", span(29), [pointer()]),
     }
     assert check(index) == (
         f"core/src/lib.rs:20: `impl` takes a trait object `dyn core::ops::function::Fn`{ONLY_DATA}",
@@ -253,10 +260,10 @@ def test_impls() -> None:
 
 def test_findings_are_deduplicated_and_sorted() -> None:
     index = {
-        "60": function("z", span(1, "b.rs"), [POINTER, POINTER]),
-        "61": function("a", span(9), [POINTER]),
-        "62": function("b", span(3), [POINTER]),
-        "63": function("y", span(3), [POINTER]),
+        "60": function("z", span(1, "b.rs"), [pointer(), pointer()]),
+        "61": function("a", span(9), [pointer()]),
+        "62": function("b", span(3), [pointer()]),
+        "63": function("y", span(3), [pointer()]),
     }
     assert check(index)[:-1] == (
         f"b.rs:1: `z` takes a function pointer{ONLY_DATA}",
@@ -267,20 +274,20 @@ def test_findings_are_deduplicated_and_sorted() -> None:
 
 
 def test_missing_spans_and_names() -> None:
-    index = {
-        "70": node(crate_id=0, inner=node(struct_field=POINTER)),
-        "71": node(
-            crate_id=0,
-            name="x",
-            span=node(filename="a.rs", begin=["1"]),
-            inner=node(struct_field=POINTER),
-        ),
-        "72": node(
-            crate_id=0,
-            name="y",
-            span=node(filename="a.rs", begin=[]),
-            inner=node(struct_field=POINTER),
-        ),
+    index: Mapping[str, object] = {
+        "70": {"crate_id": 0, "inner": {"struct_field": pointer()}},
+        "71": {
+            "crate_id": 0,
+            "name": "x",
+            "span": {"filename": "a.rs", "begin": ["1"]},
+            "inner": {"struct_field": pointer()},
+        },
+        "72": {
+            "crate_id": 0,
+            "name": "y",
+            "span": {"filename": "a.rs", "begin": []},
+            "inner": {"struct_field": pointer()},
+        },
     }
     assert check(index)[:-1] == (
         f"?:0: `impl` takes a function pointer{ONLY_DATA}",
@@ -290,8 +297,8 @@ def test_missing_spans_and_names() -> None:
 
 
 EXCEPTED_INDEX = FrozenOrderedDict({
-    "80": function("a", span(1), [POINTER]),
-    "81": function("b", span(2, "core/src/other.rs"), [POINTER]),
+    "80": function("a", span(1), [pointer()]),
+    "81": function("b", span(2, "core/src/other.rs"), [pointer()]),
 })
 
 

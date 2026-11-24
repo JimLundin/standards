@@ -1,4 +1,5 @@
 import json
+lazy from collections.abc import Mapping
 
 from ordered import FrozenList, FrozenOrderedDict
 
@@ -14,7 +15,7 @@ def finding(
     path: str,
     line: int,
     rule: str = SENTINEL,
-    metadata: dict[str, object] | None = None,
+    metadata: Mapping[str, object] | None = None,
 ) -> str:
     return json.dumps({
         "file": path,
