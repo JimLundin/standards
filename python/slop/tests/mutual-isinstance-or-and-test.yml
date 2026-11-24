@@ -1,0 +1,13 @@
+id: mutual-isinstance-or-and
+valid:
+  - |
+    def f(left, right):
+        if isinstance(left, int):
+            return left == right
+        return False
+invalid:
+  - |
+    def f(left, right):
+        if isinstance(left, int) or isinstance(right, int):
+            return isinstance(left, int) and isinstance(right, int) and left == right
+        return False

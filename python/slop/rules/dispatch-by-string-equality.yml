@@ -1,0 +1,20 @@
+id: dispatch-by-string-equality
+language: python
+severity: info
+message: "Long `if op == \"X\":` / `elif op == \"Y\":` string-equality dispatch is open-coded command routing; use a `{name: handler}` table."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: if_statement
+  all:
+    - any:
+        - regex: '^if\s+\w+\s*==\s*"[A-Z_][A-Z0-9_]*"'
+        - regex: "^if\\s+\\w+\\s*==\\s*'[A-Z_][A-Z0-9_]*'"
+    - precedes:
+        stopBy: neighbor
+        kind: if_statement
+        any:
+          - regex: '^if\s+\w+\s*==\s*"[A-Z_][A-Z0-9_]*"'
+          - regex: "^if\\s+\\w+\\s*==\\s*'[A-Z_][A-Z0-9_]*'"

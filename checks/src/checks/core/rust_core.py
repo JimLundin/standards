@@ -67,19 +67,23 @@ class Library:
 
 
 def toml_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int | float):
-        return repr(value)
-    if is_table(value):
-        pairs = ", ".join(
-            f"{STRING.encode(key)} = {toml_value(item)}"
-            for key, item in value.items()
-        )
-        return f"{{ {pairs} }}"
-    if isinstance(value, Sequence) and not isinstance(value, str):
-        return f"[{', '.join(toml_value(item) for item in value)}]"
-    return STRING.encode(str(value))
+    match value:
+        case bool():
+            return "true" if value else "false"
+        case int() | float():
+            return repr(value)
+        case str():
+            return STRING.encode(value)
+        case _ if is_table(value):
+            pairs = ", ".join(
+                f"{STRING.encode(key)} = {toml_value(item)}"
+                for key, item in value.items()
+            )
+            return f"{{ {pairs} }}"
+        case Sequence():
+            return f"[{', '.join(toml_value(item) for item in value)}]"
+        case _:
+            return STRING.encode(str(value))
 
 
 def disallowed_path(item: object) -> str:

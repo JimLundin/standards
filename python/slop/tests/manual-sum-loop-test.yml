@@ -1,0 +1,12 @@
+id: manual-sum-loop
+valid:
+  - |
+    def f(items):
+        return sum(item.size for item in items)
+invalid:
+  - |
+    def f(items):
+        total = 0
+        for item in items:
+            total += item.size
+        return total

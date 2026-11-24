@@ -1,0 +1,76 @@
+id: nested-guard-invert
+language: python
+severity: info
+message: "Nested `if` early-exit guard with sibling code in outer `if` body - invert outer to early-exit (`if not outer: return/continue`) and flatten the nesting"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  # outer if must not have else/elif
+  - not:
+      any:
+      - has:
+          stopBy: neighbor
+          kind: else_clause
+      - has:
+          stopBy: neighbor
+          kind: elif_clause
+  # outer if body contains nested early-exit if plus sibling code
+  - has:
+      stopBy: neighbor
+      kind: block
+      all:
+      # contains a nested if without else/elif whose body has an early exit
+      - has:
+          stopBy: neighbor
+          kind: if_statement
+          all:
+          - not:
+              any:
+              - has:
+                  stopBy: neighbor
+                  kind: else_clause
+              - has:
+                  stopBy: neighbor
+                  kind: elif_clause
+          - has:
+              stopBy: neighbor
+              kind: block
+              has:
+                stopBy: neighbor
+                any:
+                - kind: return_statement
+                - kind: continue_statement
+                - kind: raise_statement
+                - kind: break_statement
+      # ...AND has at least one direct child that is not the nested if
+      # (this is what distinguishes from nested-if-no-else)
+      - has:
+          stopBy: neighbor
+          not:
+            kind: if_statement
+  # only suggest inversion when this if is tail-position in its parent block
+  - not:
+      precedes:
+        stopBy: neighbor
+        any:
+        - kind: expression_statement
+        - kind: return_statement
+        - kind: if_statement
+        - kind: for_statement
+        - kind: while_statement
+        - kind: try_statement
+        - kind: with_statement
+        - kind: raise_statement
+        - kind: assert_statement
+        - kind: import_statement
+        - kind: import_from_statement
+        - kind: global_statement
+        - kind: nonlocal_statement
+        - kind: delete_statement
+        - kind: pass_statement
+        - kind: break_statement
+        - kind: continue_statement
+        - kind: match_statement

@@ -105,12 +105,10 @@ def posix(path: str) -> str:
 def normalized(path: str) -> str:
     parts: FrozenList[str] = FrozenList()
     for part in posix(path).split("/"):
-        if part == "." or (not part and parts):
-            continue
         if part == ".." and parts and parts[-1] != "..":
             parts = parts if parts == ("",) else parts[:-1]
-            continue
-        parts = FrozenList((*parts, part))
+        elif part != "." and (part or not parts):
+            parts = FrozenList((*parts, part))
     return "/".join(parts)
 
 

@@ -1,0 +1,12 @@
+id: mutual-isinstance-or-and
+language: python
+severity: info
+message: "`isinstance(a, T) or isinstance(b, T): return isinstance(a, T) and isinstance(b, T) and ...` - lift `type(a) is type(b) is T` or an early-return guard"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  pattern: |
+    if isinstance($L, $T) or isinstance($R, $T):
+        return isinstance($L, $T) and isinstance($R, $T) and $BODY

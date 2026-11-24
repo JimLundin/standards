@@ -1,0 +1,17 @@
+id: dispatch-by-string-equality
+valid:
+  - |
+    def f(op):
+        if op == "add":
+            return 1
+        if op == "sub":
+            return 2
+        return 0
+invalid:
+  - |
+    def f(op):
+        if op == "ADD":
+            return 1
+        if op == "SUB":
+            return 2
+        return 0

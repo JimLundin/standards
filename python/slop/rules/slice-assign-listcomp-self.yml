@@ -1,0 +1,11 @@
+id: slice-assign-listcomp-self
+language: python
+severity: info
+message: "`lst[:] = [.. for .. in lst]` mutates a list while reading it - prefer assigning a new list unless in-place mutation is required"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  any:
+  - pattern: $LIST[:] = [$VAL for $ITEM in $LIST]
+  - pattern: $LIST[:] = [$VAL for $ITEM in $LIST if $COND]

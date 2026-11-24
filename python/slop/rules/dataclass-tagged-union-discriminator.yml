@@ -1,0 +1,38 @@
+id: dataclass-tagged-union-discriminator
+language: python
+severity: info
+message: "@dataclass with `kind: str` + multiple Optional fields - model as distinct types or a Literal discriminator"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  any:
+  - pattern: |
+      @dataclass
+      class $C:
+          $K: str
+          $N1: Optional[$$$T1] = $$$D1
+          $N2: Optional[$$$T2] = $$$D2
+  - pattern: |
+      @dataclass
+      class $C:
+          $K: str
+          $N1: Optional[$$$T1] = $$$D1
+          $N2: Optional[$$$T2] = $$$D2
+          $$$REST
+  - pattern: |
+      @dataclass($$$A)
+      class $C:
+          $K: str
+          $N1: Optional[$$$T1] = $$$D1
+          $N2: Optional[$$$T2] = $$$D2
+  - pattern: |
+      @dataclass($$$A)
+      class $C:
+          $K: str
+          $N1: Optional[$$$T1] = $$$D1
+          $N2: Optional[$$$T2] = $$$D2
+          $$$REST
+constraints:
+  K:
+    regex: "^(kind|type|tag)$"

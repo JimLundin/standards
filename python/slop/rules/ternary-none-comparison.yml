@@ -1,0 +1,10 @@
+id: ternary-none-comparison
+language: python
+severity: info
+message: "`v if x is None else o` - rewrite as `o if x is not None else v` for natural reading"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: conditional_expression
+  pattern: $VAL if $VAR is None else $OTHER

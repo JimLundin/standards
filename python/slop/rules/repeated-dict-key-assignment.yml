@@ -1,0 +1,17 @@
+id: repeated-dict-key-assignment
+language: python
+severity: info
+message: "Repeated `d[k] = f(...)` lines - use a loop or dict comprehension"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    kind: assignment
+    pattern: $DICT[$KEY] = $FUNC($$$)
+  follows:
+    kind: expression_statement
+    has:
+      kind: assignment
+      pattern: $DICT[$KEY2] = $FUNC($$$)

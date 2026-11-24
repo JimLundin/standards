@@ -1,0 +1,18 @@
+id: materialize-then-sort-return
+language: python
+severity: info
+message: "`tmp = [...]; return sorted(tmp)` - use `return sorted(x for ... in ...)`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: return_statement
+  pattern: return sorted($TMP)
+  follows:
+    kind: expression_statement
+    has:
+      kind: assignment
+      any:
+      - pattern: $TMP = [$X for $Y in $ITER]
+      - pattern: $TMP = [$X for $Y in $ITER if $COND]
+    stopBy: neighbor

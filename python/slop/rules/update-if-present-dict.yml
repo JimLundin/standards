@@ -1,0 +1,19 @@
+id: update-if-present-dict
+language: python
+severity: info
+message: "`if x is not None: updates[k] = x` for each arg - drop the optional defaulting or pass `**kwargs` through"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - pattern: |
+      if $A is not None:
+          $U[$K1] = $A
+  - precedes:
+      stopBy: neighbor
+      kind: if_statement
+      pattern: |
+        if $B is not None:
+            $U[$K2] = $B

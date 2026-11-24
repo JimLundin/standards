@@ -1,0 +1,13 @@
+id: isinstance-return-constructor
+valid:
+  - |
+    def f(x):
+        if isinstance(x, str):
+            return Path(x)
+        return None
+invalid:
+  - |
+    def f(x):
+        if isinstance(x, Path):
+            return Path(x)
+        return None

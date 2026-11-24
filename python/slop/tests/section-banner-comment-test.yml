@@ -1,0 +1,9 @@
+id: section-banner-comment
+valid:
+  - |
+    # Settings
+    X = 1
+invalid:
+  - |
+    # ==========
+    X = 1

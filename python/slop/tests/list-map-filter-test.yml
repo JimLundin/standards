@@ -1,0 +1,9 @@
+id: list-map-filter
+valid:
+  - |
+    def f(xs):
+        return [str(x) for x in xs]
+invalid:
+  - |
+    def f(xs):
+        return list(map(str, xs))

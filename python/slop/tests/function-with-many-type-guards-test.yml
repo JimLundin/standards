@@ -1,0 +1,15 @@
+id: function-with-many-type-guards
+valid:
+  - |
+    def f(a, b):
+        if not isinstance(a, int):
+            return 0
+        return a + b
+invalid:
+  - |
+    def f(a, b):
+        if not isinstance(a, int):
+            raise TypeError
+        if not isinstance(b, int):
+            raise TypeError
+        return a + b

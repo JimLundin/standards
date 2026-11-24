@@ -1,0 +1,15 @@
+id: predicate-isinstance-wrapper
+language: python
+severity: info
+message: "`def is_X(v) -> bool: return isinstance(v, T)` - inline the isinstance check; the wrapper adds no value"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  any:
+  - pattern: |
+      def $NAME($ARG) -> bool:
+          return isinstance($ARG, $T)
+  - pattern: |
+      def $NAME($ARG: $_) -> bool:
+          return isinstance($ARG, $T)

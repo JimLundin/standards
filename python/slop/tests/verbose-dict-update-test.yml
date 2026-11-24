@@ -1,0 +1,12 @@
+id: verbose-dict-update
+valid:
+  - |
+    def f(rows):
+        return {row.key: row.value for row in rows}
+invalid:
+  - |
+    def f(rows):
+        out = {}
+        for row in rows:
+            out[row.key] = row.value
+        return out

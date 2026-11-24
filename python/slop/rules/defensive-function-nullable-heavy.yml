@@ -1,0 +1,44 @@
+id: defensive-function-nullable-heavy
+language: python
+severity: info
+message: "Function has 2+ `if … is None: return/raise` guards threaded through its body; normalize nullability at the boundary, don't plumb `None`."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  has:
+    field: body
+    kind: block
+    all:
+      - has:
+          stopBy: end
+          kind: if_statement
+          any:
+            - pattern: |
+                if $V is None:
+                    return $$$A
+            - pattern: |
+                if $V is None:
+                    raise $$$A
+      - has:
+          stopBy: end
+          kind: if_statement
+          any:
+            - pattern: |
+                if $V2 is None:
+                    return $$$A
+            - pattern: |
+                if $V2 is None:
+                    raise $$$A
+          precedes:
+            stopBy: end
+            kind: if_statement
+            any:
+              - pattern: |
+                  if $V3 is None:
+                      return $$$A
+              - pattern: |
+                  if $V3 is None:
+                      raise $$$A

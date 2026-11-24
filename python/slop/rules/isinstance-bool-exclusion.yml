@@ -1,0 +1,10 @@
+id: isinstance-bool-exclusion
+language: python
+severity: info
+message: "`isinstance(x, bool)` - `bool` is an `int` subclass; reconsider whether you want type-specific handling"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: call
+  regex: isinstance\([^,]+,\s*bool\)

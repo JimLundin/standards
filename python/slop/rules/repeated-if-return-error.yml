@@ -1,0 +1,21 @@
+id: repeated-if-return-error
+language: python
+severity: info
+message: "Repeated `if: return error` checks - collect into one validator or raise"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  has:
+    kind: block
+    has:
+      kind: return_statement
+      regex: error|Error|ERROR
+  follows:
+    kind: if_statement
+    has:
+      kind: block
+      has:
+        kind: return_statement
+        regex: error|Error|ERROR

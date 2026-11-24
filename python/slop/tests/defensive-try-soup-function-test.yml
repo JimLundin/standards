@@ -1,0 +1,27 @@
+id: defensive-try-soup-function
+valid:
+  - |
+    def f(a, b):
+        try:
+            a()
+        except ValueError:
+            log()
+        try:
+            b()
+        except ValueError:
+            log()
+invalid:
+  - |
+    def f(a, b, c):
+        try:
+            a()
+        except ValueError:
+            log()
+        try:
+            b()
+        except ValueError:
+            log()
+        try:
+            c()
+        except ValueError:
+            log()

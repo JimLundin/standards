@@ -1,0 +1,21 @@
+id: verbose-dict-update
+language: python
+severity: info
+message: "Single-statement `d[k] = v` loop - use `{k: v for ... in ...}` comprehension"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  any:
+  - pattern: |
+      for $V in $IT:
+          $D[$K] = $EXPR
+  - pattern: |
+      for $V in $IT:
+          if $COND:
+              continue
+          $D[$K] = $EXPR
+  - pattern: |
+      for $V in $IT:
+          if $COND:
+              $D[$K] = $EXPR

@@ -1,0 +1,12 @@
+id: per-method-assert-not-none
+valid:
+  - |
+    class A:
+        def f(self):
+            return self.conn
+invalid:
+  - |
+    class A:
+        def f(self):
+            assert self.conn is not None
+            return self.conn

@@ -1,0 +1,12 @@
+id: manual-line-continuation-join
+valid:
+  - |
+    def f(parts):
+        return " ".join(parts)
+invalid:
+  - |
+    def f(parts):
+        line = ""
+        for part in parts:
+            line += " " + part
+        return line

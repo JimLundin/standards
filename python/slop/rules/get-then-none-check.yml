@@ -1,0 +1,18 @@
+id: get-then-none-check
+language: python
+severity: info
+message: "`v = d.get(k); if v is None:` - use `if k in d:` or try/except KeyError"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - pattern: |
+      if $V is None:
+          $$$BODY
+  - follows:
+      stopBy: neighbor
+      kind: expression_statement
+      has:
+        pattern: $V = $D.get($K)

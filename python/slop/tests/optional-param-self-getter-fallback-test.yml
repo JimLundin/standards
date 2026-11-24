@@ -1,0 +1,12 @@
+id: optional-param-self-getter-fallback
+valid:
+  - |
+    class A:
+        def f(self):
+            return self.default()
+invalid:
+  - |
+    class A:
+        def f(self, x=None):
+            x = x if x is not None else self.default()
+            return x

@@ -1,0 +1,9 @@
+id: verbose-none-default
+language: python
+severity: info
+message: "`if x is None: x = default` - use `x = x if x is not None else default`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  pattern: "if $VAR is None:\n    $VAR = $DEFAULT\n"

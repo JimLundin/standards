@@ -1,0 +1,23 @@
+id: defensive-except-exception-heavy
+valid:
+  - |
+    def f(a, b):
+        try:
+            a()
+        except Exception as error:
+            raise RuntimeError from error
+        try:
+            b()
+        except ValueError as error:
+            raise RuntimeError from error
+invalid:
+  - |
+    def f(a, b):
+        try:
+            a()
+        except Exception as error:
+            raise RuntimeError from error
+        try:
+            b()
+        except Exception as error:
+            raise RuntimeError from error

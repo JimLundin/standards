@@ -1,0 +1,20 @@
+id: oswalk-relpath-sep-replace
+language: python
+severity: info
+message: "`os.walk` + `os.path.relpath` + `.replace(os.sep, '/')` - use `Path(root).rglob('*')` and `.relative_to(root).as_posix()`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: for_statement
+  all:
+  - has:
+      kind: call
+      stopBy: end
+      regex: "os\\.walk"
+  - has:
+      stopBy: end
+      regex: "os\\.path\\.relpath"
+  - has:
+      stopBy: end
+      regex: "\\.replace\\(os\\.sep"

@@ -1,0 +1,20 @@
+id: dataclass-tagged-union-discriminator
+valid:
+  - |
+    from dataclasses import dataclass
+
+
+    @dataclass
+    class Circle:
+        radius: float
+invalid:
+  - |
+    from dataclasses import dataclass
+    from typing import Optional
+
+
+    @dataclass
+    class Shape:
+        kind: str
+        radius: Optional[float] = None
+        side: Optional[float] = None

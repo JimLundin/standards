@@ -1,0 +1,19 @@
+id: defensive-none-return-heavy
+valid:
+  - |
+    def f(a, b):
+        if a is None:
+            return None
+        if b is None:
+            return None
+        return a + b
+invalid:
+  - |
+    def f(a, b, c):
+        if a is None:
+            return None
+        if b is None:
+            return None
+        if c is None:
+            return None
+        return a + b + c

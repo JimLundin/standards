@@ -1,0 +1,11 @@
+id: verbose-and-return
+valid:
+  - |
+    def f(a):
+        return a.ok and a.ready()
+invalid:
+  - |
+    def f(a):
+        if not a.ok:
+            return False
+        return a.ready()

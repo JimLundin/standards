@@ -1,0 +1,9 @@
+id: slice-assign-listcomp-self
+valid:
+  - |
+    def f(xs):
+        return [x + 1 for x in xs]
+invalid:
+  - |
+    def f(xs):
+        xs[:] = [x + 1 for x in xs]

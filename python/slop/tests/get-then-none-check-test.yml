@@ -1,0 +1,14 @@
+id: get-then-none-check
+valid:
+  - |
+    def f(d):
+        if "k" not in d:
+            return 0
+        return d["k"]
+invalid:
+  - |
+    def f(d):
+        v = d.get("k")
+        if v is None:
+            return 0
+        return v

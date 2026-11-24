@@ -1,0 +1,17 @@
+id: defensive-isinstance-raise-heavy
+valid:
+  - |
+    def f(a, b):
+        if not isinstance(a, int):
+            raise TypeError
+        if not isinstance(b, int):
+            raise TypeError
+invalid:
+  - |
+    def f(a, b, c):
+        if not isinstance(a, int):
+            raise TypeError
+        if not isinstance(b, int):
+            raise TypeError
+        if not isinstance(c, int):
+            raise TypeError

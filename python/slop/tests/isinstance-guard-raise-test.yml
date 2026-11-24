@@ -1,0 +1,11 @@
+id: isinstance-guard-raise
+valid:
+  - |
+    def f(x):
+        return x
+invalid:
+  - |
+    def f(x):
+        if not isinstance(x, int):
+            raise TypeError
+        return x

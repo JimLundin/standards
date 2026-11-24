@@ -1,0 +1,17 @@
+id: chained-dict-get
+language: python
+severity: info
+message: "`.get().get()` chain - extract helper or use `operator.itemgetter` / try-except KeyError"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: call
+  has:
+    kind: attribute
+    has:
+      kind: call
+      has:
+        kind: attribute
+        regex: \.get$
+    regex: \.get$

@@ -1,0 +1,17 @@
+id: defensive-fstring-raise-heavy
+valid:
+  - |
+    def f(a, b):
+        if a:
+            raise ValueError(f"bad a {a}")
+        if b:
+            raise ValueError(f"bad b {b}")
+invalid:
+  - |
+    def f(a, b, c):
+        if a:
+            raise ValueError(f"bad a {a}")
+        if b:
+            raise ValueError(f"bad b {b}")
+        if c:
+            raise ValueError(f"bad c {c}")

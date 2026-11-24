@@ -1,0 +1,17 @@
+id: tail-predicate-chain
+language: python
+severity: info
+message: "Consecutive `if not x: return False` before a final return - collapse to `return x and y and ...`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - pattern: "if not $X:\n  return False\n"
+  - follows:
+      stopBy: neighbor
+      pattern: "if not $Y:\n  return False\n"
+  - precedes:
+      stopBy: neighbor
+      kind: return_statement

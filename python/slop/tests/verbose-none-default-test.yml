@@ -1,0 +1,11 @@
+id: verbose-none-default
+valid:
+  - |
+    def f(x=1):
+        return x
+invalid:
+  - |
+    def f(x=None):
+        if x is None:
+            x = 1
+        return x

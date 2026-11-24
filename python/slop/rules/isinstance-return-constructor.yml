@@ -1,0 +1,16 @@
+id: isinstance-return-constructor
+language: python
+severity: info
+message: "`if isinstance(x, T): return T(x)` re-wraps a value already of the target type; drop the guard and the wrap."
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  any:
+    - pattern: |
+        if isinstance($VALUE, $TYPE):
+            return $TYPE($VALUE)
+    - pattern: |
+        if isinstance($VALUE, $TYPE):
+            return $TYPE($$$ARGS)

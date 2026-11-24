@@ -1,0 +1,9 @@
+id: redundant-none-empty-check
+valid:
+  - |
+    def f(x):
+        return bool(x)
+invalid:
+  - |
+    def f(x):
+        return x is not None and len(x) > 0

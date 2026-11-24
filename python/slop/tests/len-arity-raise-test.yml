@@ -1,0 +1,13 @@
+id: len-arity-raise
+valid:
+  - |
+    def f(args):
+        if not args:
+            raise ValueError
+        return args
+invalid:
+  - |
+    def f(args):
+        if len(args) != ARITY:
+            raise ValueError
+        return args

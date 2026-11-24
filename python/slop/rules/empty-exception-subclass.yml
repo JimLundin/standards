@@ -1,0 +1,23 @@
+id: empty-exception-subclass
+language: python
+severity: info
+message: "Empty Error/Exception/Warning subclass - use one base error and pass context in the message"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: class_definition
+  all:
+  - has:
+      kind: argument_list
+      regex: "(Error|Exception|Warning)"
+  - not:
+      has:
+        kind: function_definition
+        stopBy: end
+  - not:
+      has:
+        kind: decorated_definition
+        stopBy: end
+        has:
+          kind: function_definition

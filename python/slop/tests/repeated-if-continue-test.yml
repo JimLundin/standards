@@ -1,0 +1,17 @@
+id: repeated-if-continue
+valid:
+  - |
+    def f(items):
+        for item in items:
+            if item.a or item.b:
+                continue
+            g(item)
+invalid:
+  - |
+    def f(items):
+        for item in items:
+            if item.a:
+                continue
+            if item.b:
+                continue
+            g(item)

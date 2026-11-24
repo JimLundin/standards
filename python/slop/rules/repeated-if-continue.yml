@@ -1,0 +1,23 @@
+id: repeated-if-continue
+language: python
+severity: info
+message: "Multiple `if: continue` guards - combine with `or` or filter via comprehension"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: for_statement
+  has:
+    kind: block
+    has:
+      kind: if_statement
+      has:
+        kind: block
+        has:
+          kind: continue_statement
+      follows:
+        kind: if_statement
+        has:
+          kind: block
+          has:
+            kind: continue_statement

@@ -1,0 +1,24 @@
+id: tuple-value-err-caller-unpack
+language: python
+severity: info
+message: "`v, err = f(...); if err: return err` - raise typed exceptions instead of Go-style `(value, err)` tuples"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    kind: assignment
+    all:
+    - has:
+        kind: pattern_list
+        field: left
+    - has:
+        kind: call
+        field: right
+  precedes:
+    stopBy: neighbor
+    kind: if_statement
+    pattern: |
+      if $E:
+          return $E

@@ -1,0 +1,9 @@
+id: redundant-coerce-to-str
+valid:
+  - |
+    def f(x):
+        return str(x)
+invalid:
+  - |
+    def f(x):
+        return str(x) if x is not None else ""

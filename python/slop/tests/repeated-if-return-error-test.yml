@@ -1,0 +1,17 @@
+id: repeated-if-return-error
+valid:
+  - |
+    def f(a, b):
+        if a:
+            return "error: a"
+        if b:
+            return "ok"
+        return ""
+invalid:
+  - |
+    def f(a, b):
+        if a:
+            return "error: a"
+        if b:
+            return "error: b"
+        return ""

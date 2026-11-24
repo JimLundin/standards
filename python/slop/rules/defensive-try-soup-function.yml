@@ -1,0 +1,11 @@
+id: defensive-try-soup-function
+language: python
+severity: info
+message: "Function body has 3+ `try/except` blocks — that is error-handling-as-control-flow. Rethink the contract or split the function."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  regex: '(try:[\s\S]*?except[\s\S]*?){3,}'

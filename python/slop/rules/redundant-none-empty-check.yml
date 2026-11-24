@@ -1,0 +1,10 @@
+id: redundant-none-empty-check
+language: python
+severity: info
+message: "`x is not None and x != ''` - use `if x:` (empty string is also falsy)"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: boolean_operator
+  regex: is not None.*(!=\s*""|len\(|==\s*""|!=\s*''|==\s*'')

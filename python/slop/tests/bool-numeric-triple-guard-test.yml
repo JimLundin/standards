@@ -1,0 +1,9 @@
+id: bool-numeric-triple-guard
+valid:
+  - |
+    def f(x):
+        return isinstance(x, int) and x > 0
+invalid:
+  - |
+    def f(x):
+        return not isinstance(x, bool) and isinstance(x, int)

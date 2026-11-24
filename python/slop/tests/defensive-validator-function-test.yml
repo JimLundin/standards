@@ -1,0 +1,13 @@
+id: defensive-validator-function
+valid:
+  - |
+    def f(x):
+        if not isinstance(x, int):
+            raise TypeError
+        return x
+invalid:
+  - |
+    def f(x):
+        if not isinstance(x, int):
+            raise TypeError(f"not an int: {x}")
+        return x

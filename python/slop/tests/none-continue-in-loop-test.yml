@@ -1,0 +1,13 @@
+id: none-continue-in-loop
+valid:
+  - |
+    def f(items):
+        for item in items:
+            g(item)
+invalid:
+  - |
+    def f(items):
+        for item in items:
+            if item is None:
+                continue
+            g(item)

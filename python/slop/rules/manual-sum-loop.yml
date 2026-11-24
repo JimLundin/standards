@@ -1,0 +1,16 @@
+id: manual-sum-loop
+language: python
+severity: info
+message: "`total = 0; for x in it: total += expr` - use `sum(expr for x in it)`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: for_statement
+  pattern: "for $ITEM in $ITER:\n    $TOTAL += $EXPR\n"
+  follows:
+    kind: expression_statement
+    has:
+      kind: assignment
+      pattern: $TOTAL = 0
+    stopBy: neighbor

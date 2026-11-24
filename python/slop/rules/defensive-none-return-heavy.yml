@@ -1,0 +1,11 @@
+id: defensive-none-return-heavy
+language: python
+severity: info
+message: "Function body has 3+ `if … is None: return None` / `if not …: return None` guards; plumbing `None` through helpers is defensive slop."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  regex: '(if\s+\w[\w.]*\s+is\s+None:\s*\n\s+return\s+None[\s\S]*){3,}'

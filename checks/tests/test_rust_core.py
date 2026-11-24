@@ -32,7 +32,9 @@ def package(
             {"kind": [kind], "src_path": f"{ROOT}\\{name}\\src\\lib.rs"},
             {"kind": ["test"], "src_path": f"{ROOT}\\{name}\\tests\\it.rs"},
         ],
-        "metadata": None if layer is None else {"standards": {"layer": layer}},
+        "metadata": {"standards": {"layer": layer}}
+        if layer is not None
+        else None,
     }
 
 
@@ -63,7 +65,7 @@ def diagnostic(
         "message": {
             "level": level,
             "message": message,
-            "code": None if code is None else {"code": code},
+            "code": {"code": code} if code is not None else None,
             "spans": [{"file_name": file, "line_start": 7, "is_primary": True}]
             if file is not None
             else [],

@@ -1,0 +1,19 @@
+id: type-probe-ladder
+language: python
+severity: info
+message: "Two `if isinstance(same_var, T): …` branches back-to-back are a type-probe ladder; use a dispatch table or polymorphism."
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+    - pattern: |
+        if isinstance($V, $T1):
+            $$$A
+    - precedes:
+        stopBy: neighbor
+        kind: if_statement
+        pattern: |
+          if isinstance($V, $T2):
+              $$$B

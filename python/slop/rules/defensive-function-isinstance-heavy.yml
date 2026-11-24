@@ -1,0 +1,50 @@
+id: defensive-function-isinstance-heavy
+language: python
+severity: info
+message: "Function has 2+ `isinstance` checks in its body; inline type-policing is defensive slop. Validate at the boundary, then trust the type."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  all:
+    - has:
+        field: body
+        kind: block
+        has:
+          stopBy: end
+          kind: call
+          regex: '^isinstance\('
+    - has:
+        field: body
+        kind: block
+        has:
+          stopBy: end
+          kind: if_statement
+          pattern: |
+            if not isinstance($V, $T):
+                $$$A
+    - has:
+        field: body
+        kind: block
+        has:
+          stopBy: end
+          kind: if_statement
+          any:
+            - pattern: |
+                if isinstance($V, $T):
+                    $$$A
+            - pattern: |
+                if not isinstance($V, $T):
+                    $$$A
+          precedes:
+            stopBy: end
+            kind: if_statement
+            any:
+              - pattern: |
+                  if isinstance($V2, $T2):
+                      $$$B
+              - pattern: |
+                  if not isinstance($V2, $T2):
+                      $$$B

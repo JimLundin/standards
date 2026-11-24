@@ -1,0 +1,11 @@
+id: triple-attr-none-default-chain
+valid:
+  - |
+    def f(data):
+        name = data.get("name", "anonymous")
+        g(name)
+invalid:
+  - |
+    def f(data):
+        name = data.get("name", "") or "anonymous"
+        g(name)

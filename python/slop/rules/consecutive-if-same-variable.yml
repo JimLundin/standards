@@ -1,0 +1,27 @@
+id: consecutive-if-same-variable
+language: python
+severity: info
+message: "Consecutive `if` on same variable - use `elif` (or return early after first branch)"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  has:
+    kind: comparison_operator
+    has:
+      kind: identifier
+      pattern: $VAR
+  follows:
+    kind: if_statement
+    all:
+    - has:
+        kind: comparison_operator
+        has:
+          kind: identifier
+          pattern: $VAR
+    - has:
+        kind: block
+        has:
+          kind: return_statement
+    stopBy: neighbor

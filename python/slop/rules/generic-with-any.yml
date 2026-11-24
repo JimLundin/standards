@@ -1,0 +1,28 @@
+id: generic-with-any
+language: python
+severity: info
+message: "`<Container>[..., Any, ...]` - specify concrete element types or use a `TypedDict`/`@dataclass`/`Protocol`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  any:
+  - pattern:
+      context: "x: $C[Any]"
+      selector: type
+  - pattern:
+      context: "x: $C[Any, $$$A]"
+      selector: type
+  - pattern:
+      context: "x: $C[$$$A, Any]"
+      selector: type
+  - pattern:
+      context: "x: $C[$$$A, Any, $$$B]"
+      selector: type
+constraints:
+  C:
+    not:
+      any:
+      - regex: "^Union$"
+      - regex: "^Optional$"
+      - regex: "^Callable$"

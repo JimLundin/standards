@@ -1,0 +1,53 @@
+id: init-populate-iterate-dict
+language: python
+severity: info
+message: "Create-populate-iterate `$DICT` - use `{k: v for ...}` or skip the intermediate dict"
+note: 'Consider refactoring to:
+
+  1. Dict comprehension: {key: val for item in items}
+
+  2. Helper function: def build_lookup(items) -> dict
+
+  3. Inline the logic if the intermediate dict isn''t needed elsewhere
+
+  '
+metadata:
+  weight: 1
+  category: slop
+rule:
+  pattern: "for $VARS in $DICT.$METHOD():\n    $$$BODY\n"
+  follows:
+    all:
+    - kind: for_statement
+    - has:
+        kind: subscript
+        all:
+        - has:
+            kind: identifier
+            field: value
+            pattern: $DICT
+        - inside:
+            kind: assignment
+            field: left
+        stopBy: end
+    - follows:
+        kind: expression_statement
+        has:
+          kind: assignment
+          all:
+          - has:
+              kind: identifier
+              field: left
+              pattern: $DICT
+          - has:
+              kind: dictionary
+              field: right
+              not:
+                has:
+                  kind: pair
+        stopBy:
+          kind: for_statement
+    stopBy: end
+constraints:
+  METHOD:
+    regex: ^(items|keys|values)$

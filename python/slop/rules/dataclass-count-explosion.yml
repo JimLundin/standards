@@ -1,0 +1,11 @@
+id: dataclass-count-explosion
+language: python
+severity: info
+message: "@dataclass decorator - 10+ in one file suggests TypedDict or consolidation target"
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 10
+rule:
+  kind: decorator
+  regex: "^@dataclass"

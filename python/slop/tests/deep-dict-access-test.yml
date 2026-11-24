@@ -1,0 +1,9 @@
+id: deep-dict-access
+valid:
+  - |
+    def f(d):
+        return d["a"]["b"]
+invalid:
+  - |
+    def f(d):
+        return d["a"]["b"]["c"]["d"]

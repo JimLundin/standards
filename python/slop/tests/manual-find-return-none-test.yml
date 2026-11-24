@@ -1,0 +1,15 @@
+id: manual-find-return-none
+valid:
+  - |
+    def f(items):
+        for item in items:
+            if item.ok:
+                return item
+        raise LookupError
+invalid:
+  - |
+    def f(items):
+        for item in items:
+            if item.ok:
+                return item
+        return None

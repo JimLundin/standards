@@ -1,0 +1,12 @@
+id: tokenizer-char-append-branch
+valid:
+  - |
+    class Lexer:
+        def step(self, token):
+            self.tokens.append(token)
+invalid:
+  - |
+    class Lexer:
+        def step(self, token):
+            self.tokens.append(token)
+            self.pos += 1

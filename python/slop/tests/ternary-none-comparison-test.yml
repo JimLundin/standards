@@ -1,0 +1,9 @@
+id: ternary-none-comparison
+valid:
+  - |
+    def f(x, y):
+        return x if x is not None else y
+invalid:
+  - |
+    def f(x, y):
+        return y if x is None else x

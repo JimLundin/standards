@@ -1,0 +1,13 @@
+id: dataclass-count-explosion
+valid:
+  - |
+    class A:
+        x: int
+invalid:
+  - |
+    from dataclasses import dataclass
+
+
+    @dataclass(frozen=True)
+    class A:
+        x: int

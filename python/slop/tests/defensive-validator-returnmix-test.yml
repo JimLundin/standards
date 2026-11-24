@@ -1,0 +1,15 @@
+id: defensive-validator-returnmix
+valid:
+  - |
+    def f(x, y):
+        if y is None:
+            return 1
+        return x
+invalid:
+  - |
+    def f(x, y):
+        if not isinstance(x, int):
+            return 0
+        if y is None:
+            return 1
+        return x
