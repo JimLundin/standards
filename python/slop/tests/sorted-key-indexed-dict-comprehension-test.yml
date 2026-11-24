@@ -1,0 +1,7 @@
+id: sorted-key-indexed-dict-comprehension
+valid:
+  - |
+    d2 = dict(sorted(d.items()))
+invalid:
+  - |
+    d2 = {k: d[k] for k in sorted(d.keys())}

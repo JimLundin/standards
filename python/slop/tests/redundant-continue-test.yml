@@ -1,0 +1,12 @@
+id: redundant-continue
+valid:
+  - |
+    for x in xs:
+        if x:
+            continue
+        f(x)
+invalid:
+  - |
+    for x in xs:
+        f(x)
+        continue

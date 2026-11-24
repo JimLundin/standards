@@ -1,0 +1,7 @@
+id: comprehension-used-but-ignored-result
+valid:
+  - |
+    names = [str(x) for x in xs]
+invalid:
+  - |
+    [print(x) for x in xs]

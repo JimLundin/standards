@@ -1,0 +1,7 @@
+id: sorted-dict-keys-wrap
+valid:
+  - |
+    ks = sorted(d)
+invalid:
+  - |
+    ks = sorted(d.keys())

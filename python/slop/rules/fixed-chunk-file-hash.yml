@@ -1,0 +1,15 @@
+id: fixed-chunk-file-hash
+language: python
+severity: warning
+message: "`while True: chunk = f.read(N); if not chunk: break; h.update(chunk)` - use `hashlib.file_digest(f, ALGO)`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: while_statement
+  pattern: |
+    while True:
+        $CHUNK = $F.read($N)
+        if not $CHUNK:
+            break
+        $H.update($CHUNK)

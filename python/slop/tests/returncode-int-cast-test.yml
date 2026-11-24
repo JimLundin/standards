@@ -1,0 +1,7 @@
+id: returncode-int-cast
+valid:
+  - |
+    code = proc.returncode
+invalid:
+  - |
+    code = int(proc.returncode)

@@ -1,0 +1,10 @@
+id: verbose-string-literal-plus-str
+language: python
+severity: warning
+message: "`'...' + str(x)` - use `f'...{x}'`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: binary_operator
+  regex: ^['"].*['"]\s*\+\s*str\(

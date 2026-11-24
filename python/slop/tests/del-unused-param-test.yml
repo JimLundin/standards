@@ -1,0 +1,9 @@
+id: del-unused-param
+valid:
+  - |
+    def drop(row):
+        del row[0]
+invalid:
+  - |
+    def drop(row):
+        del row

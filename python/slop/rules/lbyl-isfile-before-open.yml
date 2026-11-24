@@ -1,0 +1,18 @@
+id: lbyl-isfile-before-open
+language: python
+severity: warning
+message: os.path.isfile guard before open is redundant and race-prone; use try/except OSError
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - has:
+      kind: call
+      regex: "os\\.path\\.(isfile|exists)\\("
+  - has:
+      kind: block
+      has:
+        kind: with_statement
+        regex: "open\\("

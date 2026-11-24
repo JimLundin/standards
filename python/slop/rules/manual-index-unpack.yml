@@ -1,0 +1,18 @@
+id: manual-index-unpack
+language: python
+severity: warning
+message: "`a = pair[0]; b = pair[1]` - use tuple unpacking `a, b = pair`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    kind: assignment
+    pattern: $A = $PAIR[0]
+  precedes:
+    kind: expression_statement
+    has:
+      kind: assignment
+      pattern: $B = $PAIR[1]
+    stopBy: neighbor

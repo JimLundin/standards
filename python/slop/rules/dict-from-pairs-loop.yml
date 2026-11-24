@@ -1,0 +1,11 @@
+id: dict-from-pairs-loop
+language: python
+severity: warning
+message: "`for k, v in pairs: d[k] = v` - use `d = dict(pairs)` (or `d.update(pairs)` if merging)"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  pattern: |
+    for $K, $V in $PAIRS:
+        $D[$K] = $V

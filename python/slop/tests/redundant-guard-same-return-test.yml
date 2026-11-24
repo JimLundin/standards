@@ -1,0 +1,13 @@
+id: redundant-guard-same-return
+valid:
+  - |
+    def f(c, r):
+        if c:
+            return r
+        return 0
+invalid:
+  - |
+    def f(c, r):
+        if c:
+            return r
+        return r

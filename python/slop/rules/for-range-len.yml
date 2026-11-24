@@ -1,0 +1,9 @@
+id: for-range-len
+language: python
+severity: warning
+message: "`for i in range(len(x))` - use `enumerate(x)` or iterate `x` directly"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  pattern: "for $I in range(len($SEQ)):\n  $$$\n"

@@ -1,0 +1,7 @@
+id: json-dumps-then-loads
+valid:
+  - |
+    y = copy.deepcopy(x)
+invalid:
+  - |
+    y = json.loads(json.dumps(x))

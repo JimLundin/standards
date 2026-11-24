@@ -1,0 +1,14 @@
+id: unnecessary-list-call
+language: python
+severity: warning
+message: "`for x in list(iterable)` - drop `list()`, `for` iterates directly"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: for_statement
+  has:
+    kind: call
+    has:
+      kind: identifier
+      regex: ^list$

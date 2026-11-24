@@ -54,6 +54,10 @@ def entries(value: object) -> FrozenList[object]:
     return FrozenList(value) if is_list(value) else FrozenList()
 
 
+def number(value: object) -> int:
+    return value if isinstance(value, int) else 0
+
+
 def strings(value: object) -> FrozenList[str]:
     return FrozenList(item for item in entries(value) if isinstance(item, str))
 

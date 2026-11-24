@@ -1,0 +1,17 @@
+id: dict-get-default-inside-keyerror-try
+language: python
+severity: warning
+message: "`d.get(k, default)` inside `try/except KeyError` - the default is unreachable; drop it or drop the except"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: call
+  all:
+  - pattern: $D.get($K, $DEFAULT)
+  - inside:
+      stopBy: end
+      kind: try_statement
+      has:
+        kind: except_clause
+        regex: KeyError

@@ -1,0 +1,9 @@
+id: unnecessary-list-call
+valid:
+  - |
+    for x in xs:
+        f(x)
+invalid:
+  - |
+    for x in list(xs):
+        f(x)

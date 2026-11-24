@@ -1,0 +1,9 @@
+id: lambda-generator-throw
+language: python
+severity: warning
+message: "`(_ for _ in ()).throw(...)` - raise inside a lambda via generator hack; use `def helper(): raise ...`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  pattern: "(_ for _ in ()).throw($_)"

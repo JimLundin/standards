@@ -1,0 +1,9 @@
+id: json-dumps-then-loads
+language: python
+severity: warning
+message: "`json.loads(json.dumps(x))` - use `copy.deepcopy(x)`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  pattern: json.loads(json.dumps($X))

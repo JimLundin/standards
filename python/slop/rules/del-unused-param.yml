@@ -1,0 +1,18 @@
+id: del-unused-param
+language: python
+severity: warning
+message: del on a named parameter inside a function silences unused-param lint - drop from signature
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: delete_statement
+  not:
+    has:
+      any:
+      - kind: subscript
+      - kind: attribute
+      - kind: call
+  inside:
+    kind: function_definition
+    stopBy: end

@@ -1,0 +1,8 @@
+id: lambda-generator-throw
+valid:
+  - |
+    def fail():
+        raise ValueError
+invalid:
+  - |
+    fail = lambda: (_ for _ in ()).throw(ValueError())

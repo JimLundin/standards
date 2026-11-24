@@ -1,0 +1,7 @@
+id: sorted-list-comprehension-wrap
+valid:
+  - |
+    ys = sorted(f(x) for x in xs)
+invalid:
+  - |
+    ys = sorted([f(x) for x in xs])

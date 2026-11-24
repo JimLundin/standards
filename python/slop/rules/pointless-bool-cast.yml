@@ -1,0 +1,10 @@
+id: pointless-bool-cast
+language: python
+severity: warning
+message: "`if bool(x):` - drop `bool()`, `if` already tests truthiness"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: if_statement
+  pattern: "if bool($COND):\n  $$$\n"

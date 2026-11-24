@@ -1,0 +1,13 @@
+id: duplicated-if-condition
+valid:
+  - |
+    if a:
+        f()
+    elif b:
+        g()
+invalid:
+  - |
+    if a:
+        f()
+    elif a:
+        g()

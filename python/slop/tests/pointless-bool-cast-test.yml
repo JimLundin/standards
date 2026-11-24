@@ -1,0 +1,9 @@
+id: pointless-bool-cast
+valid:
+  - |
+    if x:
+        f()
+invalid:
+  - |
+    if bool(x):
+        f()

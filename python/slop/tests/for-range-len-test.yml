@@ -1,0 +1,9 @@
+id: for-range-len
+valid:
+  - |
+    for i, x in enumerate(xs):
+        f(i, x)
+invalid:
+  - |
+    for i in range(len(xs)):
+        f(i, xs[i])

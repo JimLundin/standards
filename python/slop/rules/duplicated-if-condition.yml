@@ -1,0 +1,10 @@
+id: duplicated-if-condition
+language: python
+severity: warning
+message: "Same condition in `if` and `elif` - elif branch is unreachable, remove it"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: if_statement
+  pattern: "if $COND:\n  $$$\nelif $COND:\n  $$$\n"

@@ -1,0 +1,11 @@
+id: sorted-list-comprehension-wrap
+language: python
+severity: warning
+message: "`sorted([x for ...])` - drop brackets for generator expression `sorted(x for ...)`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  any:
+  - pattern: sorted([$X for $Y in $ITER])
+  - pattern: sorted([$X for $Y in $ITER if $COND])

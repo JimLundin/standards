@@ -1,0 +1,7 @@
+id: is-true-false-strict
+valid:
+  - |
+    ok = x is None
+invalid:
+  - |
+    ok = x is True

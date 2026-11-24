@@ -1,0 +1,9 @@
+id: manual-index-unpack
+valid:
+  - |
+    a = pair[0]
+    b = other[1]
+invalid:
+  - |
+    a = pair[0]
+    b = pair[1]
