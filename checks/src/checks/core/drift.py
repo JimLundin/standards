@@ -38,8 +38,9 @@ RANKS = FrozenOrderedDict({
     "forbid": 3,
 })
 PROPTEST_CASES = 16
-NUM_RUNS = re.compile(r"numRuns:\s*(\d+)")
-PROFILES = FrozenList(("fast", "full", "mutation"))
+# A mode of vitest.config.ts and the runs of its property tests, as
+# `fast: { runs: 10 }`.
+MODE_RUNS = re.compile(r"\b(\w+):\s*\{[^{}]*?\bruns:\s*(\d+)")
 PROJECT_FILES = FrozenOrderedDict({
     "python": FrozenList(("pyproject.toml",)),
     "rust": FrozenList((
@@ -57,7 +58,7 @@ PROJECT_FILES = FrozenOrderedDict({
         "stryker.config.json",
         "knip.json",
         "knip.jsonc",
-        *(f"profiles/{name}.ts" for name in PROFILES),
+        "vitest.config.ts",
     )),
 })
 STANDARD_FILES = FrozenOrderedDict({
@@ -68,7 +69,7 @@ STANDARD_FILES = FrozenOrderedDict({
         "typescript/tsconfig.base.json",
         "typescript/stryker.config.json",
         "typescript/knip.json",
-        *(f"typescript/profiles/{name}.ts" for name in PROFILES),
+        "typescript/vitest.config.ts",
     )),
 })
 
@@ -484,9 +485,11 @@ def biome_drift(
     )
 
 
-def runs(text: str | None) -> int | None:
-    match = NUM_RUNS.search(text) if text is not None else None
-    return int(match[1]) if match else None
+def vitest_runs(text: str | None) -> FrozenOrderedDict[str, int]:
+    return FrozenOrderedDict(
+        (match[1], int(match[2]))
+        for match in MODE_RUNS.finditer(text if text is not None else "")
+    )
 
 
 def stryker_drift(
@@ -514,16 +517,6 @@ def stryker_drift(
             if glob.startswith("!")
         ),
         strings(standard.get("mutate")),
-    )
-
-
-def counts(
-    texts: Mapping[str, str], folder: str
-) -> FrozenOrderedDict[str, int]:
-    return FrozenOrderedDict(
-        (name, value)
-        for name in PROFILES
-        if (value := runs(texts.get(f"{folder}profiles/{name}.ts"))) is not None
     )
 
 
@@ -557,10 +550,10 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         snapshot.json("stryker.config.json"),
     )
     yield from intensity(
-        "profiles",
-        "fast-check",
-        counts(snapshot.standards, folder),
-        counts(snapshot.project, ""),
+        "vitest.config.ts",
+        "arbitrary",
+        vitest_runs(snapshot.standards.get(f"{folder}vitest.config.ts")),
+        vitest_runs(snapshot.project.get("vitest.config.ts")),
     )
     standard_knip = snapshot.standard_json(f"{folder}knip.json")
     knip = snapshot.json("knip.json") or snapshot.json("knip.jsonc")

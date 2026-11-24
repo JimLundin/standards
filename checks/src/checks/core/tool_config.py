@@ -1,10 +1,8 @@
 import json
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.drift import plugin_paths
 from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
@@ -20,7 +18,6 @@ from checks.core.values import (
     Request,
     absolute,
     listing,
-    normalized,
     parse_json,
     posix,
     strings,
@@ -62,8 +59,7 @@ OXLINT_CONFIG = "node_modules/.cache/standards/oxlint.config.mjs"
 
 def oxlint_override(root: str, entry: ExceptionEntry) -> str:
     found = OXLINT.fullmatch(entry.rule)
-    # lint/plugin/<name> names a GritQL plugin, which Biome still runs.
-    if not found or found[1] == "plugin":
+    if not found:
         return ""
     files = json.dumps([f"{root}/{entry.path}"])
     rule = json.dumps(f"{found[1]}/{found[2]}")
@@ -91,18 +87,6 @@ def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return Outcome(
         FrozenList((OXLINT_CONFIG,)),
         writes=FrozenOrderedDict({OXLINT_CONFIG: text}),
-    )
-
-
-def biome_plugins(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    folder = PurePosixPath(absolute(arguments[0], inputs.cwd)).parent
-    return listing(
-        FrozenList(
-            f"{PurePosixPath(plugin).stem}|{normalized(f'{folder}/{plugin}')}"
-            for plugin in plugin_paths(
-                parse_json(inputs.texts.get(arguments[0]))
-            )
-        )
     )
 
 
@@ -176,7 +160,6 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
         "oxlint-config": (exceptions_only, oxlint_config),
-        "biome-plugins": (with_named, biome_plugins),
         "filter-mutmut": (with_stdin, filter_mutmut),
         "stryker-mutate": (with_named, stryker_mutate),
         "nextest-config": (exceptions_only, nextest_config),

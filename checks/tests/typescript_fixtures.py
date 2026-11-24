@@ -25,14 +25,15 @@ COMPLIANT = "compliant"
 # The standard's config files that a project copies to its root. Biome reads
 # a workspace's package.json files only from a config at the project root,
 # and Oxlint's type-aware rules read the tsconfig.json there, which extends
-# the standard's.
+# the standard's. Oxlint runs on the standard's config, as in a project
+# without its own.
 COPIED = FrozenList((
     "biome.json",
-    "biome-plugins",
     "knip.json",
-    "oxlint.config.ts",
-    "profiles",
+    "stryker.config.json",
     "tsconfig.base.json",
+    "vitest.config.ts",
+    "vitest.setup.ts",
 ))
 OUTCOMES = FrozenOrderedSet(("ok", "flaky", "skip", "FAIL"))
 NO_FILES: FrozenOrderedDict[str, str] = FrozenOrderedDict()
@@ -237,6 +238,144 @@ def test_a_break_of_each_kind_of_rule_fails_lint_naming_the_rule(
         assert path in findings, path
 
 
+STATEFUL = """let count = 0;
+
+export const bump = (): number => {
+	count += 1;
+	return count;
+};
+"""
+TIMED = """export const now = (): number => Date.now();
+"""
+COUNTED = """export class Counter {
+	count = 0;
+}
+"""
+LISTED = """export const first = (names: string[]): string | undefined => names[0];
+"""
+
+
+def test_a_break_of_each_standards_rule_fails_lint_naming_the_rule(
+    fixtures: Fixtures,
+) -> None:
+    breaks = FrozenList((
+        (
+            "packages/core/src/stateful.ts",
+            "standards(no-module-state)",
+            STATEFUL,
+        ),
+        (
+            "packages/core/src/counted.ts",
+            "standards(readonly-members)",
+            COUNTED,
+        ),
+        ("packages/core/src/listed.ts", "standards(readonly-types)", LISTED),
+        ("packages/core/src/timed.ts", "eslint(no-restricted-globals)", TIMED),
+    ))
+    run = fixtures.check(
+        "commit", files={path: text for path, _, text in breaks}
+    )
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    for path, rule, _ in breaks:
+        assert findings.count(rule) == 1, rule
+        assert path in findings, path
+
+
+HOOKED = """import type { ReactElement } from "react";
+import { useState } from "react";
+
+interface Shown {
+	readonly shown: boolean;
+}
+
+export const Hooked = (props: Shown): ReactElement | undefined => {
+	if (props.shown) {
+		const [label] = useState("shown");
+		return <p>{label}</p>;
+	}
+	return undefined;
+};
+"""
+PICTURED = """import type { ReactElement } from "react";
+
+const source = "ada.png";
+
+export const Pictured = (): ReactElement => <img src={source} />;
+"""
+INDEXED = """import type { ReactElement } from "react";
+
+interface Names {
+	readonly names: ReadonlyArray<string>;
+}
+
+export const Indexed = (props: Names): ReactElement => (
+	<ul>
+		{props.names.map((name, index) => (
+			<li key={index}>{name}</li>
+		))}
+	</ul>
+);
+"""
+PRESSED = """import type { ReactElement } from "react";
+
+interface Presses {
+	readonly onPress: () => void;
+}
+
+export const Pressed = (props: Presses): ReactElement => {
+	const press = (): void => {
+		props.onPress();
+	};
+	return <button onClick={press} type="button" />;
+};
+"""
+
+
+def test_a_break_of_each_react_and_jsx_plugin_fails_lint_naming_the_rule(
+    fixtures: Fixtures,
+) -> None:
+    # Rules-of-hooks prints under react-hooks, though configured under react.
+    # No-array-index-key is a perf rule of react that cloudflare doesn't enable.
+    breaks = FrozenList((
+        ("packages/core/src/hooked.tsx", "react-hooks(rules-of-hooks)", HOOKED),
+        ("packages/core/src/pictured.tsx", "jsx-a11y(alt-text)", PICTURED),
+        ("packages/core/src/indexed.tsx", "react(no-array-index-key)", INDEXED),
+        (
+            "packages/core/src/pressed.tsx",
+            "react-perf(jsx-no-new-function-as-prop)",
+            PRESSED,
+        ),
+    ))
+    run = fixtures.check(
+        "commit", files={path: text for path, _, text in breaks}
+    )
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    for path, rule, _ in breaks:
+        assert findings.count(rule) == 1, rule
+        assert path in findings, path
+
+
+# Typescript/promise-function-async makes a function returning a promise
+# async, and typescript/require-await accepts an async function that returns
+# a promise without awaiting it. Eslint's require-await, which doesn't, is off.
+RETURNED = """export const returned = async (
+	load: () => Promise<number>,
+): Promise<number> => load();
+"""
+
+
+def test_an_async_function_returning_a_promise_unawaited_passes_lint(
+    fixtures: Fixtures,
+) -> None:
+    returned = "packages/core/src/returned.ts"
+    run = fixtures.check("commit", files={returned: RETURNED})
+    lint = run.units["lint"]
+    assert lint.outcome == "ok", lint.findings
+    assert returned not in lint.findings
+
+
 def test_an_exception_clears_its_rule_in_its_file_alone(
     fixtures: Fixtures,
 ) -> None:
@@ -261,3 +400,139 @@ def test_an_exception_clears_its_rule_in_its_file_alone(
     assert findings.count("eslint(no-bitwise)") == 1
     assert unexcepted in findings
     assert excepted not in findings
+
+
+# A property test's runs in the mode the run is in: Arbitrary takes them
+# from vitest.config.ts through vitest.setup.ts.
+RUNS = """import { expect, it } from "@effect/vitest";
+import { Arbitrary, Effect, Schema } from "effect";
+
+const runs = Effect.map(
+	Arbitrary.checkEffect(Arbitrary.schema(Schema.Number), () => true),
+	(result) => (result._tag === "Passed" ? result.runs : 0),
+);
+
+it.effect("checks {fast} cases", () =>
+	Effect.map(runs, (count) => {
+		expect(count).toBe({fast});
+	}),
+);
+
+it.effect(
+	"checks {slow} cases when slow",
+	() =>
+		Effect.map(runs, (count) => {
+			expect(count).toBe({slow});
+		}),
+	{ tags: ["slow"] },
+);
+"""
+
+
+def test_step_runs_the_tests_fast_and_skips_the_slow_ones(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check(
+        "step",
+        files={
+            "packages/core/src/runs.test.ts": RUNS.replace(
+                "{fast}", "10"
+            ).replace("{slow}", "1000")
+        },
+    )
+    test = run.units["test"]
+    assert test.outcome == "ok", test.findings
+    assert "checks 10 cases" in test.findings
+    assert "1 skipped" in test.summary
+    assert "Coverage report" not in test.findings
+
+
+def test_release_runs_the_tests_in_full_with_coverage_and_mutation(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check(
+        "release",
+        files={
+            "packages/core/src/runs.test.ts": RUNS.replace(
+                "{fast}", "1000"
+            ).replace("{slow}", "1000")
+        },
+    )
+    test = run.units["test-release"]
+    assert test.outcome == "ok", test.findings
+    assert "checks 1000 cases when slow" in test.findings
+    assert "skipped" not in test.summary
+    assert "Coverage report from v8" in test.findings
+    mutation = run.units["mutation"]
+    assert mutation.outcome == "ok", mutation.findings
+    assert "vitest test runner" in mutation.findings
+
+
+TESTED = """import { greet } from "./index.ts";
+import { expect, {name} } from "{module}";
+
+{name}("greets", () => {
+	expect(greet({ name: "Ada" })).toBe("Hello, Ada");
+});
+"""
+
+
+@pytest.mark.parametrize(
+    ("name", "module", "rule"),
+    [
+        ("test", "@effect/vitest", "vitest(consistent-test-it)"),
+        ("it", "node:test", "vitest(no-import-node-test)"),
+    ],
+    ids=["test", "node:test"],
+)
+def test_a_test_not_on_it_of_effect_vitest_fails_lint(
+    fixtures: Fixtures, name: str, module: str, rule: str
+) -> None:
+    tested = "packages/core/src/tested.test.ts"
+    run = fixtures.check(
+        "commit",
+        files={
+            tested: TESTED.replace("{name}", name).replace("{module}", module)
+        },
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    assert rule in lint.findings
+    assert tested in lint.findings
+
+
+def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
+    standard = (TYPESCRIPT / "vitest.config.ts").read_text()
+    lowered = re.sub(r"(fast: \{[^}]*runs: )10", r"\g<1>5", standard)
+    assert lowered != standard
+    run = fixtures.check("commit", files={"vitest.config.ts": lowered})
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "FAIL"
+    assert "drift:arbitrary.fast" in exceptions.findings
+
+
+NODE_IMPORTS = FrozenOrderedDict({
+    "packages/core/src/read.ts": (
+        'import { readFileSync } from "node:fs";\n\n'
+        "export const read = (path: string): string =>"
+        ' readFileSync(path, "utf8");\n'
+    ),
+    "paths.config.ts": (
+        'import { join } from "node:path";\n\n'
+        'export default join("packages", "core");\n'
+    ),
+    "packages/core/src/tested.test.ts": TESTED.replace("{name}", "it").replace(
+        "{module}", "node:test"
+    ),
+})
+
+
+def test_a_node_import_fails_lint_in_source_config_and_test_files(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=NODE_IMPORTS)
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("import(no-nodejs-modules)") == len(NODE_IMPORTS)
+    for path in NODE_IMPORTS:
+        assert path in findings, path

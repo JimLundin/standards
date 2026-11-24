@@ -11,9 +11,9 @@ from checks.core.drift import (
     level,
     proptest_cases,
     python_drift,
-    runs,
     rust_drift,
     typescript_drift,
+    vitest_runs,
 )
 from checks.core.exceptions import Issue
 from checks.core.values import parse_toml
@@ -496,10 +496,19 @@ TYPESCRIPT_STANDARDS = FrozenOrderedDict({
         "ignore": ["dist/**"],
         "ignoreBinaries": ["tsc"],
     }),
-    "typescript/profiles/fast.ts": "export default { numRuns: 10 };",
-    "typescript/profiles/full.ts": "export default { numRuns:1000 };",
-    "typescript/profiles/mutation.ts": "export default {};",
+    "typescript/vitest.config.ts": (
+        "const modes = {\n"
+        "\tfast: { runs: 10 },\n"
+        "\tfull: {runs:1000},\n"
+        "\tmutation: { runs: 10, seed: 42 },\n"
+        "} as const;\n"
+    ),
 })
+
+
+KEPT_RUNS = (
+    "fast: { runs: 10 }, full: { runs: 1000 }, mutation: { runs: 10, seed: 42 }"
+)
 
 
 def test_typescript_project_matching_the_standard_has_no_drift() -> None:
@@ -510,8 +519,7 @@ def test_typescript_project_matching_the_standard_has_no_drift() -> None:
         }),
         "stryker.config.json": STANDARD_STRYKER,
         "knip.json": json.dumps({"ignore": ["dist/**"]}),
-        "profiles/fast.ts": "{ numRuns: 10 }",
-        "profiles/full.ts": "{ numRuns: 1000 }",
+        "vitest.config.ts": KEPT_RUNS,
     }
     assert (
         tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS))) == ()
@@ -522,14 +530,19 @@ def test_typescript_project_without_config() -> None:
     found = tuple(typescript_drift(snapshot({}, TYPESCRIPT_STANDARDS)))
     assert found == issues(
         (
-            "profiles",
-            "fast-check.fast",
-            "fast-check `fast` runs fewer than 10 cases",
+            "vitest.config.ts",
+            "arbitrary.fast",
+            "arbitrary `fast` runs fewer than 10 cases",
         ),
         (
-            "profiles",
-            "fast-check.full",
-            "fast-check `full` runs fewer than 1000 cases",
+            "vitest.config.ts",
+            "arbitrary.full",
+            "arbitrary `full` runs fewer than 1000 cases",
+        ),
+        (
+            "vitest.config.ts",
+            "arbitrary.mutation",
+            "arbitrary `mutation` runs fewer than 10 cases",
         ),
     )
 
@@ -584,8 +597,9 @@ def test_typescript_project_that_weakens_every_check() -> None:
             "ignoreDependencies": "lodash",
             "other": ["x"],
         }),
-        "profiles/fast.ts": "{ numRuns: 9 }",
-        "profiles/full.ts": "{ numRuns: 5000 }",
+        "vitest.config.ts": (
+            "fast: { runs: 9 }, full: { runs: 5000 }, mutation: { runs: 10 }"
+        ),
     }
     rules = "linter.rules"
     found = tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS)))
@@ -640,9 +654,9 @@ def test_typescript_project_that_weakens_every_check() -> None:
             "mutate adds `!src/skip.ts`",
         ),
         (
-            "profiles",
-            "fast-check.fast",
-            "fast-check `fast` runs fewer than 10 cases",
+            "vitest.config.ts",
+            "arbitrary.fast",
+            "arbitrary `fast` runs fewer than 10 cases",
         ),
         ("knip.json", "ignore:gen/**", "ignore adds `gen/**`"),
         (
@@ -659,8 +673,7 @@ def test_typescript_strict_off_without_a_standard_flag() -> None:
     }
     project = {
         "tsconfig.json": json.dumps({"compilerOptions": {"strict": False}}),
-        "profiles/fast.ts": "{ numRuns: 10 }",
-        "profiles/full.ts": "{ numRuns: 1000 }",
+        "vitest.config.ts": KEPT_RUNS,
     }
     assert tuple(typescript_drift(snapshot(project, standards))) == issues((
         "tsconfig.json",
@@ -670,10 +683,7 @@ def test_typescript_strict_off_without_a_standard_flag() -> None:
 
 
 def test_stryker_threshold_missing_or_not_a_number() -> None:
-    standards = dict(TYPESCRIPT_STANDARDS) | {
-        "typescript/profiles/fast.ts": "",
-        "typescript/profiles/full.ts": "",
-    }
+    standards = dict(TYPESCRIPT_STANDARDS) | {"typescript/vitest.config.ts": ""}
     for thresholds in ('{"mutate": []}', '{"thresholds": {"break": "100"}}'):
         project = {"stryker.config.json": thresholds}
         assert tuple(typescript_drift(snapshot(project, standards))) == issues((
@@ -693,14 +703,17 @@ def test_stryker_threshold_missing_or_not_a_number() -> None:
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("{ numRuns: 12 }", 12),
-        ("{numRuns:3}", 3),
-        ("{ runs: 4 }", None),
-        (None, None),
+        (
+            "fast: { runs: 12 }, full: {runs:3, seed: 1}",
+            {"fast": 12, "full": 3},
+        ),
+        ("mutation: { seed: 42, runs: 4 }", {"mutation": 4}),
+        ("fast: { seed: 4 }, full: 3", {}),
+        (None, {}),
     ],
 )
-def test_runs(text: str | None, expected: int | None) -> None:
-    assert runs(text) == expected
+def test_vitest_runs(text: str | None, expected: Mapping[str, int]) -> None:
+    assert vitest_runs(text) == expected
 
 
 def test_rust_lint_missing_from_the_project() -> None:
@@ -741,8 +754,7 @@ def test_typescript_biome_json_and_knip_json_are_checked() -> None:
             "plugins": ["a.grit", "b.grit"],
         }),
         "knip.json": json.dumps({"ignore": ["gen/**"]}),
-        "profiles/fast.ts": "{ numRuns: 10 }",
-        "profiles/full.ts": "{ numRuns: 1000 }",
+        "vitest.config.ts": KEPT_RUNS,
     }
     standards = TYPESCRIPT_STANDARDS | {
         "typescript/biome.json": json.dumps({

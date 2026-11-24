@@ -1,18 +1,8 @@
 {
 	"$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-	"testRunner": "tap",
-	"tap": {
-		"nodeArgs": [
-			"--test-reporter=tap",
-			"--test-skip-pattern=@slow",
-			"--import",
-			"./profiles/mutation.ts",
-			"-r",
-			"{{hookFile}}",
-			"{{testFile}}"
-		]
-	},
-	"mutate": ["src/**/*.ts", "!src/**/*.test.ts"],
+	"testRunner": "vitest",
+	"coverageAnalysis": "perTest",
+	"mutate": ["**/src/**/*.ts", "!**/src/**/*.test.ts"],
 	"tsconfigFile": "",
 	"incremental": true,
 	"thresholds": {
