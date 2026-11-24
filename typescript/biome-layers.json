@@ -31,7 +31,12 @@
 						"options": {
 							"paths": {
 								"effect": {
-									"importNames": ["HashMap", "HashSet", "MutableHashMap", "MutableHashSet"],
+									"importNames": [
+										"HashMap",
+										"HashSet",
+										"MutableHashMap",
+										"MutableHashSet"
+									],
 									"message": "core values iterate in insertion order: use ReadonlyMap or ReadonlySet"
 								},
 								"effect/HashMap": "core values iterate in insertion order: use ReadonlyMap",
