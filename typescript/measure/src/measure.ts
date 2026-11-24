@@ -5,6 +5,7 @@ import { API } from "typescript/unstable/sync";
 import type { Placement } from "@standards/measure-core";
 import type { PlatformError } from "effect/PlatformError";
 import type { Scope } from "effect";
+import { api } from "./api.ts";
 import { syntaxOf } from "./syntax.ts";
 
 const ABSENT = "not in the project";
@@ -36,10 +37,14 @@ const measured = (
   file: string,
   placement: Placement,
 ): ReadonlyArray<string> => {
-  const source = snapshot.getDefaultProjectForFile(file)?.program.getSourceFile(file);
-  return source === undefined
+  const project = snapshot.getDefaultProjectForFile(file);
+  const source = project?.program.getSourceFile(file);
+  return project === undefined || source === undefined
     ? [failure(placement, ABSENT)]
-    : functions(syntaxOf(source)).map((found) => record(placement, found));
+    : [
+        ...functions(syntaxOf(source)).map((found) => record(placement, found)),
+        ...api(project, source, placement),
+      ];
 };
 
 // The record lines of each file of the layer map at `layers`, whose paths are relative to `project`.

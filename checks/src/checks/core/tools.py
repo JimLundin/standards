@@ -13,6 +13,7 @@ from checks.core import (
     rust_layers,
     rust_shell,
     tool_config,
+    typescript_api,
     typescript_layers,
     units,
 )
@@ -32,6 +33,7 @@ TOOLS = FrozenOrderedDict({
     "rust-roots": (rust_shell.roots_request, rust_shell.roots),
     "rust-shell": (rust_shell.request, rust_shell.run),
     "rust-shell-share": (rust_shell.request, rust_shell.share_run),
+    "typescript-api": (typescript_api.request, typescript_api.run),
     "typescript-layers": (typescript_layers.request, typescript_layers.run),
     "units": (units.request, units.run),
     **tool_config.COMMANDS,

@@ -1,3 +1,5 @@
+import type { Export } from "./api.ts";
+import { problems } from "./api.ts";
 import type { Measured } from "./decisions.ts";
 import { Schema } from "effect";
 
@@ -25,8 +27,14 @@ const fields = (text: string): ReadonlyArray<Readonly<Record<string, string | un
 const record = ({ layer, path, root }: Placement, { decisions, line, name }: Measured): string =>
   JSON.stringify({ decisions, function: name, layer, line, path, root });
 
+// The records of what a core export reaches that isn't data, at the line of its export.
+const apiRecords = ({ layer, path, root }: Placement, found: Export): ReadonlyArray<string> =>
+  problems(found).map((api) =>
+    JSON.stringify({ api, export: found.name, layer, line: found.line, path, root }),
+  );
+
 // The record of a file that couldn't be measured.
 const failure = ({ layer, path, root }: Placement, error: string): string =>
   JSON.stringify({ error, layer, path, root });
 
-export { LayerMap, Placement, failure, fields, record };
+export { LayerMap, Placement, apiRecords, failure, fields, record };
