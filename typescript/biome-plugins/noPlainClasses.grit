@@ -1,0 +1,13 @@
+language js(typescript)
+
+or {
+    JsClassDeclaration(),
+    JsClassExpression(),
+    JsClassExportDefaultDeclaration()
+} as $class where {
+    not $class <: r"(?s)[^{]*\bextends\s+(?:Schema|Data)\.(?:Class|TaggedClass|Error|TaggedError)\b.*",
+    register_diagnostic(
+        span = $class,
+        message = "Plain class in the core: use a readonly record, or a Schema.Class, Data.Class or Data.TaggedError."
+    )
+}

@@ -1,10 +1,8 @@
 import json
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.drift import plugin_paths
 from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
@@ -17,10 +15,8 @@ from checks.core.values import (
     Inputs,
     Outcome,
     Request,
-    absolute,
     listing,
     matches,
-    normalized,
     parse_json,
     strings,
 )
@@ -83,18 +79,6 @@ def biome_groups(files: Sequence[str], inputs: Inputs) -> Outcome:
         FrozenList(
             "|".join((" ".join(skips), *members))
             for skips, members in groups.items()
-        )
-    )
-
-
-def biome_plugins(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    folder = PurePosixPath(absolute(arguments[0], inputs.cwd)).parent
-    return listing(
-        FrozenList(
-            f"{PurePosixPath(plugin).stem}|{normalized(f'{folder}/{plugin}')}"
-            for plugin in plugin_paths(
-                parse_json(inputs.texts.get(arguments[0]))
-            )
         )
     )
 
@@ -169,7 +153,6 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
         "biome-groups": (exceptions_only, biome_groups),
-        "biome-plugins": (with_named, biome_plugins),
         "filter-mutmut": (with_stdin, filter_mutmut),
         "stryker-mutate": (with_named, stryker_mutate),
         "nextest-config": (exceptions_only, nextest_config),

@@ -227,3 +227,132 @@ def test_a_project_biome_config_still_lints_core_by_its_layer(
     assert run.units["exceptions"].outcome == "ok"
     assert run.units["lint"].outcome == "FAIL"
     assert f"{core}:1:" in run.units["lint"].findings
+
+
+def findings_of(log: str, file: str) -> FrozenList[str]:
+    """The lines of a lint log from the diagnostic headers of a file to the
+    next header."""
+    kept: FrozenList[str] = FrozenList()
+    inside = False
+    for line in log.splitlines():
+        if re.match(r"^\S+:\d+:\d+ ", line):
+            inside = line.startswith(f"{file}:")
+        if inside:
+            kept = FrozenList((*kept, line))
+    return kept
+
+
+CORE = "packages/core/src"
+AMBIENT = FrozenOrderedDict({
+    "Date": "export const now = (): number => new Date(0).getTime();\n",
+    "Math.random": "export const roll = (): number => Math.random();\n",
+    "console": 'export const say = (): void => console.info("hi");\n',
+    "fetch": 'export const get = (): unknown => fetch("https://a.b");\n',
+})
+# How a finding names each global, apart from the source it quotes.
+NAMED = FrozenOrderedDict({
+    "Date": "global variable {}",
+    "Math.random": "{} is nondeterministic",
+    "console": "global variable {}",
+    "fetch": "global variable {}",
+})
+IMPURE = FrozenOrderedDict({
+    "class": "export class Counter {\n\treadonly count = 0;\n}\n",
+    "HashMap": (
+        'import { HashMap } from "effect";\n'
+        "\n"
+        "export const empty = HashMap.empty<string, number>();\n"
+    ),
+    "HashSet": (
+        'import * as HashSet from "effect/HashSet";\n'
+        "\n"
+        "export const empty = HashSet.empty<string>();\n"
+    ),
+    "mutable array": "export const total = (xs: number[]): number => xs.length;\n",
+    "mutable property": "export interface Box {\n\tsize: number;\n}\n",
+})
+PLAIN = FrozenOrderedDict({
+    "person": (
+        'import { Schema } from "effect";\n'
+        "\n"
+        'export class Person extends Schema.Class<Person>("Person")({\n'
+        "\tname: Schema.String,\n"
+        "}) {}\n"
+    ),
+    "missing": (
+        'import { Data } from "effect";\n'
+        "\n"
+        'export class Missing extends Data.TaggedError("Missing")<{\n'
+        "\treadonly name: string;\n"
+        "}> {}\n"
+    ),
+    "ages": (
+        "export const ages = (): ReadonlyMap<string, number> =>\n"
+        '\tnew Map([["a", 1]]);\n'
+    ),
+})
+
+
+def test_core_files_fail_lint_on_ambient_globals_and_impure_values(
+    fixtures: Fixtures,
+) -> None:
+    files = {
+        **{
+            f"{CORE}/{name.replace('.', '-').replace(' ', '-')}.ts": text
+            for name, text in (AMBIENT | IMPURE).items()
+        },
+        **{f"{CORE}/{name}.ts": text for name, text in PLAIN.items()},
+        "packages/shell/src/service.ts": IMPURE["class"],
+        f"{CORE}/counter.test.ts": IMPURE["class"],
+    }
+    lint = fixtures.check("commit", files=files).units["lint"]
+    assert lint.outcome == "FAIL"
+    for name in AMBIENT:
+        found = "\n".join(
+            findings_of(lint.findings, f"{CORE}/{name.replace('.', '-')}.ts")
+        )
+        assert NAMED[name].format(name) in found
+    for name in IMPURE:
+        file = f"{CORE}/{name.replace(' ', '-')}.ts"
+        assert findings_of(lint.findings, file), name
+    for passing in (
+        *(f"{CORE}/{name}.ts" for name in PLAIN),
+        "packages/shell/src/service.ts",
+        f"{CORE}/counter.test.ts",
+    ):
+        assert findings_of(lint.findings, passing) == (), passing
+
+
+def test_a_lint_exception_clears_its_rule_on_its_file_alone(
+    fixtures: Fixtures,
+) -> None:
+    both = (
+        "export const now = (): number => new Date(0).getTime();\n"
+        "\n"
+        "export class Counter {\n"
+        "\treadonly count = 0;\n"
+        "}\n"
+    )
+    globals_excepted, plugin_excepted = f"{CORE}/a.ts", f"{CORE}/b.ts"
+    files = {
+        globals_excepted: both,
+        plugin_excepted: both,
+        "exceptions.toml": (
+            "[[exception]]\n"
+            f'path = "{globals_excepted}"\n'
+            'rule = "lint/style/noRestrictedGlobals"\n'
+            'reason = "a fixture"\n'
+            "\n"
+            "[[exception]]\n"
+            f'path = "{plugin_excepted}"\n'
+            'rule = "lint/plugin/noPlainClasses"\n'
+            'reason = "a fixture"\n'
+        ),
+    }
+    lint = fixtures.check("commit", files=files).units["lint"]
+    first = "\n".join(findings_of(lint.findings, globals_excepted))
+    second = "\n".join(findings_of(lint.findings, plugin_excepted))
+    assert "noRestrictedGlobals" not in first
+    assert "plugin" in first
+    assert "noRestrictedGlobals" in second
+    assert "plugin" not in second

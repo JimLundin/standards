@@ -1,15 +1,22 @@
 language js(typescript)
 
 or {
-    `Date.now()`,
-    `new Date()`,
-    `Math.random()`,
-    `performance.now()`,
-    `crypto.randomUUID()`,
-    `crypto.getRandomValues($_)`
-} as $call where {
-    register_diagnostic(
-        span = $call,
-        message = "Nondeterministic: pass the value in from the boundary."
-    )
+    `Date.now` as $use where {
+        register_diagnostic(span = $use, message = "Date.now is nondeterministic: take the time from Effect's Clock in the shell, and pass it in.")
+    },
+    `new Date()` as $use where {
+        register_diagnostic(span = $use, message = "new Date() is nondeterministic: take the time from Effect's Clock in the shell, and pass it in.")
+    },
+    `Math.random` as $use where {
+        register_diagnostic(span = $use, message = "Math.random is nondeterministic: take it from Effect's Random in the shell, and pass it in.")
+    },
+    `performance.now` as $use where {
+        register_diagnostic(span = $use, message = "performance.now is nondeterministic: take the time from Effect's Clock in the shell, and pass it in.")
+    },
+    `crypto.randomUUID` as $use where {
+        register_diagnostic(span = $use, message = "crypto.randomUUID is nondeterministic: take it from Effect's Random in the shell, and pass it in.")
+    },
+    `crypto.getRandomValues` as $use where {
+        register_diagnostic(span = $use, message = "crypto.getRandomValues is nondeterministic: take it from Effect's Random in the shell, and pass it in.")
+    }
 }

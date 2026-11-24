@@ -16,10 +16,9 @@ def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
         assert request((command, "mutation", "a.py"), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
-    for command in ("stryker-mutate", "biome-plugins"):
-        assert request((command, "x.json"), Inputs()) == Request(
-            FrozenList(("exceptions.toml", "x.json"))
-        )
+    assert request(("stryker-mutate", "x.json"), Inputs()) == Request(
+        FrozenList(("exceptions.toml", "x.json"))
+    )
     assert request(("filter-mutmut",), Inputs()) == Request(
         FrozenList(("exceptions.toml",)), stdin=True
     )
@@ -82,24 +81,6 @@ def test_biome_groups_by_shared_skips() -> None:
         "style/useConst|b.ts|d.ts",
         "|c.js",
     )
-
-
-def test_biome_plugins_resolve_against_the_config() -> None:
-    config = json.dumps({"plugins": ["./p/a.grit", {"path": "../b.grit"}, {}]})
-    outcome = run(
-        ("biome-plugins", "conf/biome.json"),
-        inputs({"conf/biome.json": config}, cwd="C:\\work"),
-    )
-    assert lines(outcome) == (
-        "a|C:/work/conf/p/a.grit",
-        "b|C:/work/b.grit",
-        "|C:/work/conf",
-    )
-    absolute = run(
-        ("biome-plugins", "/std/biome.json"),
-        inputs({"/std/biome.json": config}, cwd="/home"),
-    )
-    assert lines(absolute)[0] == "a|/std/p/a.grit"
 
 
 def test_filter_mutmut_drops_excepted_modules() -> None:

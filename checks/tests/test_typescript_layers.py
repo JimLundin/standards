@@ -4,8 +4,8 @@ lazy from collections.abc import Mapping
 from ordered import FrozenList
 
 from checks.core.tools import request, run
-from checks.core.values import Inputs, Outcome, Request
-from tests.helpers import inputs
+from checks.core.values import Inputs, Outcome, Request, parse_json, table
+from tests.helpers import entry, inputs
 
 USE = 'use "core", "shell" or "ui"'
 
@@ -20,12 +20,14 @@ def test_layers_read_the_manifest_of_every_folder_above_a_file() -> None:
         ("typescript-layers", "packages/a/src/x.ts", "packages/a/b.ts", "y.ts"),
         Inputs(),
     ) == Request(
-        FrozenList((
-            "packages/a/src/package.json",
-            "packages/a/package.json",
-            "packages/package.json",
-            "package.json",
-        ))
+        FrozenList(
+            (
+                "packages/a/src/package.json",
+                "packages/a/package.json",
+                "packages/package.json",
+                "package.json",
+            )
+        )
     )
 
 
@@ -50,14 +52,16 @@ def test_each_file_takes_the_layer_of_its_nearest_package() -> None:
         inputs(texts),
     )
     assert outcome == Outcome(
-        FrozenList((
-            "core\t.\tscripts/build.ts",
-            "shell\tpackages/io\tpackages/io/src/core/read.ts",
-            "core\tpackages/io/plugins/pure\tpackages/io/plugins/pure/src/a.ts",
-            "shell\tpackages/io\tpackages/io/plugins/b.ts",
-            "ui\tpackages/app\tpackages/app/src/main.tsx",
-            "core\tpackages/model\tpackages/model/lib/deep/x.ts",
-        ))
+        FrozenList(
+            (
+                "core\t.\tscripts/build.ts",
+                "shell\tpackages/io\tpackages/io/src/core/read.ts",
+                "core\tpackages/io/plugins/pure\tpackages/io/plugins/pure/src/a.ts",
+                "shell\tpackages/io\tpackages/io/plugins/b.ts",
+                "ui\tpackages/app\tpackages/app/src/main.tsx",
+                "core\tpackages/model\tpackages/model/lib/deep/x.ts",
+            )
+        )
     )
 
 
@@ -78,25 +82,27 @@ def test_an_unknown_layer_fails_naming_its_manifest() -> None:
         inputs(texts),
     )
     assert outcome == Outcome(
-        FrozenList((
-            f'a/package.json: standards.layer is "Shell"; {USE}',
-            f'b/package.json: standards.layer is ["ui"]; {USE}',
-        )),
+        FrozenList(
+            (
+                f'a/package.json: standards.layer is "Shell"; {USE}',
+                f'b/package.json: standards.layer is ["ui"]; {USE}',
+            )
+        ),
         1,
     )
 
 
-LAYER_RULES = {
-    "core": {
-        "includes": ["!**/*.test.ts"],
-        "linter": {"rules": {"style": {"noVar": "error"}}},
+LAYER_RULES = json.dumps(
+    {
+        "core": {
+            "includes": ["!**/*.test.ts"],
+            "linter": {"rules": {"style": {"noVar": "error"}}},
+        }
     }
-}
+)
 
 
-def generated(
-    texts: Mapping[str, str], *files: str, cwd: str = "/work"
-) -> Outcome:
+def generated(texts: Mapping[str, str], *files: str, cwd: str = "/work") -> Outcome:
     return run(
         (
             "biome-layers",
@@ -106,7 +112,7 @@ def generated(
             *files,
         ),
         inputs(
-            {"/std/biome-layers.json": json.dumps(LAYER_RULES), **texts},
+            {"/std/biome-layers.json": LAYER_RULES, **texts},
             cwd=cwd,
         ),
     )
@@ -115,9 +121,7 @@ def generated(
 def test_biome_layers_read_the_configs_and_the_manifests() -> None:
     assert request(
         ("biome-layers", "b.json", "l.json", "out.json", "p/x.ts"), Inputs()
-    ) == Request(
-        FrozenList(("b.json", "l.json", "p/package.json", "package.json"))
-    )
+    ) == Request(FrozenList(("b.json", "l.json", "p/package.json", "package.json")))
 
 
 def test_biome_layers_add_each_packages_layer_rules_as_an_override() -> None:
@@ -139,7 +143,7 @@ def test_biome_layers_add_each_packages_layer_rules_as_an_override() -> None:
         "packages/io/pure/b.ts",
         "packages/io/pure/c.ts",
     )
-    core = LAYER_RULES["core"]
+    core = table(parse_json(LAYER_RULES)["core"])
     assert outcome.lines == ()
     assert outcome.status == 0
     assert json.loads(outcome.writes["out/biome.json"]) == {
@@ -172,4 +176,95 @@ def test_biome_layers_fail_on_a_config_that_is_not_json() -> None:
     texts = {"conf/biome.json": "{ // a comment\n}"}
     assert generated(texts, "x.ts") == Outcome(
         FrozenList(("conf/biome.json: not a JSON object",)), 1
+    )
+
+
+def test_biome_layers_resolve_layer_plugins_by_the_layer_rules() -> None:
+    rules = {"core": {"plugins": ["./p/pure.grit", {"path": "/abs/b.grit"}]}}
+    texts = {
+        "conf/biome.json": "{}",
+        "/std/biome-layers.json": json.dumps(rules),
+    }
+    outcome = generated(texts, "x.ts")
+    assert json.loads(outcome.writes["out/biome.json"])["overrides"] == [
+        {
+            "plugins": ["/std/p/pure.grit", {"path": "/abs/b.grit"}],
+            "includes": ["**"],
+        }
+    ]
+
+
+PLUGIN_LAYERS = json.dumps(
+    {
+        "core": {"includes": ["!**/*.test.ts"], "plugins": ["./p/pure.grit"]},
+        "ui": {"plugins": ["./p/view.grit", "./p/pure.grit"]},
+    }
+)
+
+
+def plugins(texts: Mapping[str, str], *files: str) -> Outcome:
+    return run(
+        ("biome-plugins", "conf/biome.json", "/std/layers.json", *files),
+        inputs(
+            {
+                "conf/biome.json": json.dumps({"plugins": ["./p/all.grit"]}),
+                "/std/layers.json": PLUGIN_LAYERS,
+                **texts,
+            },
+            cwd="C:\\work",
+        ),
+    )
+
+
+def test_biome_plugins_read_both_configs_the_manifests_and_exceptions() -> None:
+    assert request(
+        ("biome-plugins", "b.json", "l.json", "p/x.ts"), Inputs()
+    ) == Request(
+        FrozenList(
+            (
+                "exceptions.toml",
+                "b.json",
+                "l.json",
+                "p/package.json",
+                "package.json",
+            )
+        )
+    )
+
+
+def test_each_plugin_covers_the_files_of_its_layers() -> None:
+    texts = {"shell/package.json": manifest("shell")}
+    outcome = plugins(texts, "a.ts", "a.test.ts", "shell/b.ts")
+    assert outcome == Outcome(
+        FrozenList(
+            (
+                "all|C:/work/conf/p/all.grit|a.ts|a.test.ts|shell/b.ts",
+                "pure|/std/p/pure.grit|a.ts",
+            )
+        )
+    )
+
+
+def test_a_plugin_named_in_two_layers_covers_the_files_of_both() -> None:
+    texts = {"app/package.json": manifest("ui")}
+    outcome = plugins(texts, "a.ts", "app/v.tsx")
+    assert outcome.lines[1:] == (
+        "pure|/std/p/pure.grit|a.ts|app/v.tsx",
+        "view|/std/p/view.grit|app/v.tsx",
+    )
+
+
+def test_a_plugin_exception_drops_its_file_from_that_plugin_alone() -> None:
+    texts = {"exceptions.toml": entry("a.ts", "lint/plugin/pure")}
+    outcome = plugins(texts, "a.ts", "b.ts")
+    assert outcome.lines == (
+        "all|C:/work/conf/p/all.grit|a.ts|b.ts",
+        "pure|/std/p/pure.grit|b.ts",
+    )
+
+
+def test_biome_plugins_fail_on_an_unknown_layer() -> None:
+    texts = {"package.json": manifest("domain")}
+    assert plugins(texts, "x.ts") == Outcome(
+        FrozenList((f'package.json: standards.layer is "domain"; {USE}',)), 1
     )

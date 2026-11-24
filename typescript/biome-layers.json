@@ -1,12 +1,44 @@
 {
 	"core": {
 		"includes": ["!**/*.test.ts"],
+		"plugins": ["./biome-plugins/noPlainClasses.grit"],
 		"linter": {
 			"rules": {
 				"style": {
+					"noRestrictedGlobals": {
+						"level": "error",
+						"options": {
+							"deniedGlobals": {
+								"console": "core is pure: log in the shell",
+								"globalThis": "core is pure: take what it needs as arguments",
+								"process": "core is pure: pass values in from the shell",
+								"Date": "core is pure: pass the time in from the shell",
+								"crypto": "core is pure: pass random values in from the shell",
+								"performance": "core is pure: pass the time in from the shell",
+								"fetch": "core is pure: keep I/O in the shell",
+								"setTimeout": "core is pure: keep timers in the shell",
+								"setInterval": "core is pure: keep timers in the shell",
+								"setImmediate": "core is pure: keep timers in the shell",
+								"clearTimeout": "core is pure: keep timers in the shell",
+								"clearInterval": "core is pure: keep timers in the shell",
+								"clearImmediate": "core is pure: keep timers in the shell",
+								"queueMicrotask": "core is pure: keep timers in the shell"
+							}
+						}
+					},
 					"noRestrictedImports": {
 						"level": "error",
 						"options": {
+							"paths": {
+								"effect": {
+									"importNames": ["HashMap", "HashSet", "MutableHashMap", "MutableHashSet"],
+									"message": "core values iterate in insertion order: use ReadonlyMap or ReadonlySet"
+								},
+								"effect/HashMap": "core values iterate in insertion order: use ReadonlyMap",
+								"effect/HashSet": "core values iterate in insertion order: use ReadonlySet",
+								"effect/MutableHashMap": "core values iterate in insertion order: use ReadonlyMap",
+								"effect/MutableHashSet": "core values iterate in insertion order: use ReadonlySet"
+							},
 							"patterns": [
 								{
 									"group": ["node:*"],

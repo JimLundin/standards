@@ -25,6 +25,10 @@ TOOLS = FrozenOrderedDict({
         typescript_layers.config_request,
         typescript_layers.config_run,
     ),
+    "biome-plugins": (
+        typescript_layers.plugins_request,
+        typescript_layers.plugins_run,
+    ),
     "core-clippy": (rust_core.clippy_request, rust_core.clippy_run),
     "core-libraries": (rust_layers.request, rust_layers.run),
     "immutability": (immutability.request, immutability.run),

@@ -48,10 +48,12 @@ mapfile -t sources < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.
 # package's layer rules from biome-layers.json added as overrides, is written
 # under node_modules, which git ignores and Biome doesn't scan.
 # Biome can only skip all plugins at once, so built-in rules run first with
-# plugins skipped, then each plugin runs alone on the files it still covers.
+# plugins skipped, then each plugin runs alone on the files it covers: all of
+# them for the config's plugins, and a layer's for the plugins its entry in
+# biome-layers.json lists, less the files excepted from that plugin.
 biome_lint() {
-	local status=0 skips name path rule layered=node_modules/.cache/standards/biome.json
-	local -a fields files skip covered
+	local status=0 skips name path covered rule layered=node_modules/.cache/standards/biome.json
+	local -a fields files skip
 	mkdir -p "${layered%/*}"
 	checks biome-layers "$(native "$biome_config")" "$(native "$standards/biome-layers.json")" 		"$layered" "${sources[@]}" || return 1
 	while IFS='|' read -r -a fields; do
@@ -63,14 +65,14 @@ biome_lint() {
 		done
 		npx -y "@biomejs/biome@${pins[BIOME]}" lint --config-path="$layered" "${skip[@]}" "${files[@]}" || status=1
 	done < <(checks biome-groups "${sources[@]}")
-	while IFS='|' read -r name path; do
-		mapfile -t covered < <(checks without "lint/plugin/$name" "${sources[@]}")
-		((${#covered[@]} > 0)) || continue
+	while IFS='|' read -r name path covered; do
+		IFS='|' read -r -a files <<<"$covered"
 		mkdir -p "$logs/plugins/$name"
 		printf '{"plugins": ["%s"]}\n' "$path" >"$logs/plugins/$name/biome.json"
 		npx -y "@biomejs/biome@${pins[BIOME]}" lint --only=plugin \
-			--config-path="$(native "$logs/plugins/$name/biome.json")" "${covered[@]}" || status=1
-	done < <(checks biome-plugins "$(native "$biome_config")")
+			--config-path="$(native "$logs/plugins/$name/biome.json")" "${files[@]}" || status=1
+	done < <(checks biome-plugins "$(native "$biome_config")" "$(native "$standards/biome-layers.json")" \
+		"${sources[@]}")
 	return "$status"
 }
 

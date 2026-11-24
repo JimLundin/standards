@@ -55,6 +55,16 @@
 	},
 	"overrides": [
 		{
+			"includes": ["**"],
+			"linter": {
+				"rules": {
+					"nursery": {
+						"useCapitalizedConstructors": "off"
+					}
+				}
+			}
+		},
+		{
 			"includes": ["**/*.test.ts", "**/test/**"],
 			"linter": {
 				"rules": {
