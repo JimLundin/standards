@@ -1,0 +1,9 @@
+[[exception]]
+path = "profiles/*.ts"
+rule = "lint/correctness/noUndeclaredDependencies"
+reason = "the profiles are copied into a project, whose package.json declares fast-check from package.fragment.json; the standard itself has no package.json"
+
+[[exception]]
+path = "profiles/*.ts"
+rule = "lint/correctness/noUnresolvedImports"
+reason = "the profiles are copied into a project, which installs fast-check from package.fragment.json; the standard itself installs no packages"

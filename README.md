@@ -24,6 +24,17 @@ A unit that can't run, such as one whose tool isn't installed, is skipped; in CI
 
 The scripts' own tools live in `checks`, a uv project that depends on `ordered` and passes the Python standard itself, so every language's checks need uv.
 
+The repository as a whole is no one language's project. Its own gate is each check run on its own part, from the repository's root:
+
+```bash
+python/check.sh commit checks
+python/check.sh commit python/ordered
+rust/check.sh commit rust/measure
+typescript/check.sh commit typescript
+```
+
+The trees under `typescript/fixtures/` are the inputs of the `typescript-fixtures` suite, which checks each as a project of its own; the TypeScript part's checks leave them out.
+
 ## Tool versions
 
 `tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version. Python is the one uv resolves: `check.sh` sets `UV_PYTHON` to the `PYTHON` pin, so the standards' checks, a Python project's checks and its key use that interpreter whatever `python3` is on `PATH`, and a suite runs with it first on `PATH`.

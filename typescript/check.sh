@@ -6,6 +6,14 @@ source "$standards/../lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin typescript
+# The standard's own part holds the fixture trees of its S1 harness, which
+# typescript_fixtures.py checks as projects of their own and whose breaking
+# trees break rules on purpose, so its checks leave them out.
+foreign=()
+if [ "$(pwd -P)" = "$(cd "$standards" && pwd -P)" ]; then
+	foreign=(':!fixtures/')
+	mapfile -t tracked < <(git ls-files -- . "${foreign[@]}")
+fi
 pinned NODE node "nvm install {}, or another way to put Node {} on PATH" node --version
 # A check's key holds the pinned version of the tool it runs.
 versions=(
@@ -32,7 +40,7 @@ if ! biome_config=$(existing biome.json biome.jsonc); then
 	biome=(--config-path="$(native "$biome_config")")
 fi
 
-mapfile -t sources < <(git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' |
+mapfile -t sources < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' "${foreign[@]}" |
 	grep -vE '(^|/)(package-lock|tsconfig)\.json$')
 
 # Biome can only skip all plugins at once, so built-in rules run first with
