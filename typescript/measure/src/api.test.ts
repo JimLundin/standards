@@ -34,11 +34,12 @@ const judged = (written: ReadonlyArray<Written>): Effect.Effect<ReadonlyArray<st
       path.join(project, "tsconfig.json"),
       '{ "compilerOptions": { "module": "nodenext", "noEmit": true } }\n',
     );
-    yield* Effect.forEach(written, (file) =>
-      fileSystem
-        .makeDirectory(path.dirname(path.join(project, file.path)), { recursive: true })
-        .pipe(Effect.andThen(fileSystem.writeFileString(path.join(project, file.path), file.source))),
-    );
+    yield* Effect.forEach(written, (file) => {
+      const target = path.join(project, file.path);
+      return fileSystem
+        .makeDirectory(path.dirname(target), { recursive: true })
+        .pipe(Effect.andThen(fileSystem.writeFileString(target, file.source)));
+    });
     const map = path.join(project, "layers.tsv");
     yield* fileSystem.writeFileString(
       map,
@@ -48,16 +49,16 @@ const judged = (written: ReadonlyArray<Written>): Effect.Effect<ReadonlyArray<st
     return lines.filter((line) => line.startsWith('{"api":'));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
+// That the project of the one file `written` reports what each export of `reported` reaches.
 const reports = (
-  written: ReadonlyArray<Written>,
-  reported: ReadonlyArray<readonly [Written, ReadonlyArray<Reported>]>,
+  written: Written,
+  reported: ReadonlyArray<Reported>,
 ): Effect.Effect<void, unknown> =>
-  Effect.map(judged(written), (lines) => {
+  Effect.map(judged([written]), (lines) => {
+    const { layer, path, root } = written;
     expect(lines).toStrictEqual(
-      reported.flatMap(([{ layer, path, root }, found]) =>
-        found.map(([name, line, api]) =>
-          JSON.stringify({ api, export: name, layer, line, path, root }),
-        ),
+      reported.map(([name, line, api]) =>
+        JSON.stringify({ api, export: name, layer, line, path, root }),
       ),
     );
   });
@@ -93,6 +94,13 @@ export const generic = (box: Box<() => void>): number => 1;
 export type Wrapped = Box<Promise<number>>;
 export const listed: ReadonlyArray<Effect.Effect<number>> = [];
 export { nested as again };
+class Runner {
+  run(): number {
+    return 1;
+  }
+}
+type Ran = Runner;
+export const ran = (runner: Ran): number => runner.run();
 `,
 );
 
@@ -110,7 +118,7 @@ const data = inCore(
   "data",
   `import { Data, Option, Schema } from "effect";
 export class Person extends Schema.Class<Person>("Person")({ name: Schema.String }) {
-  get greeting(): string {
+  greet(): string {
     return this.name;
   }
 }
@@ -122,77 +130,65 @@ export type Greeting = typeof Greeting.Type;
 export const pair: readonly [number, string] = [1, "a"];
 export const named: Readonly<Record<string, number>> = {};
 export const identity = <A>(a: A): A => a;
+export const greeted = (person: Person, missing: Missing): string => person.greet() + missing.id;
+export type Shade = "light" | "dark";
 export enum Colour {
   Red,
+}
+export interface Tree {
+  readonly children: ReadonlyArray<Tree>;
+  readonly parent: Tree | undefined;
+}
+export class Chain {
+  readonly next: Chain | undefined = undefined;
 }
 `,
 );
 
-describe("the api of a core file", () => {
+describe("what a core export reaches that isn't data", () => {
   it.effect(
     "reports an export that takes a callback, returns a Promise or an Effect, takes an Iterable or is a class with methods",
     () =>
-      reports(
-        [effectful],
-        [
-          [
-            effectful,
-            [
-              ["callback", 2, "reaches a function type, `(n: number) => number`"],
-              ["promised", 3, "reaches `Promise`"],
-              ["effect", 4, "reaches `Effect.Effect`"],
-              ["iterated", 5, "reaches `Iterable`"],
-              ["Runner", 6, "is a class with methods, `run`"],
-            ],
-          ],
-        ],
-      ),
+      reports(effectful, [
+        ["callback", 2, "reaches a function type, `(n: number) => number`"],
+        ["promised", 3, "reaches `Promise`"],
+        ["effect", 4, "reaches `Effect.Effect`"],
+        ["iterated", 5, "reaches `Iterable`"],
+        ["Runner", 6, "is a class with methods, `run`"],
+      ]),
   );
 
   it.effect(
     "reports at the export a function or an Effect reached through an alias, an interface or a generic argument",
     () =>
-      reports(
-        [hidden],
-        [
-          [
-            hidden,
-            [
-              ["aliased", 9, "reaches a function type, `Later`"],
-              ["nested", 10, "reaches `Effect.Effect`"],
-              ["generic", 11, "reaches a function type, `() => void`"],
-              ["Wrapped", 12, "reaches `Promise`"],
-              ["listed", 13, "reaches `Effect.Effect`"],
-              ["again", 14, "reaches `Effect.Effect`"],
-            ],
-          ],
-        ],
-      ),
+      reports(hidden, [
+        ["aliased", 9, "reaches a function type, `Later`"],
+        ["nested", 10, "reaches `Effect.Effect`"],
+        ["generic", 11, "reaches a function type, `() => void`"],
+        ["Wrapped", 12, "reaches `Promise`"],
+        ["listed", 13, "reaches `Effect.Effect`"],
+        ["again", 14, "reaches `Effect.Effect`"],
+        ["ran", 21, "reaches a class with methods, `run`"],
+      ]),
   );
 
   it.effect("reports a Stream, a Layer, a Context service and an async iterable", () =>
-    reports(
-      [services],
-      [
-        [
-          services,
-          [
-            ["stream", 2, "reaches `Stream.Stream`"],
-            ["layer", 3, "reaches `Layer.Layer`"],
-            ["Clock", 4, "reaches `Context.ServiceClass`"],
-            ["pulled", 5, "reaches `AsyncIterable`"],
-          ],
-        ],
-      ],
-    ),
+    reports(services, [
+      ["stream", 2, "reaches `Stream.Stream`"],
+      ["layer", 3, "reaches `Layer.Layer`"],
+      ["Clock", 4, "reaches `Context.ServiceClass`"],
+      ["pulled", 5, "reaches `AsyncIterable`"],
+    ]),
   );
+});
 
+describe("what a core export may reach", () => {
   it.effect(
-    "passes Schema and Data classes, Option, ReadonlyMap, Schemas, tuples, records and generics",
-    () => reports([data], []),
+    "passes Schema and Data classes, Option, ReadonlyMap, Schemas, tuples, records, generics and recursive data",
+    () => reports(data, []),
   );
 
   it.effect("judges only the core's files", () =>
-    reports([{ ...effectful, layer: "shell", path: "packages/shell/src/effectful.ts" }], []),
+    reports({ ...effectful, layer: "shell", path: "packages/shell/src/effectful.ts" }, []),
   );
 });

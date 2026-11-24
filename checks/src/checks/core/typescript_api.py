@@ -1,16 +1,13 @@
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList
 
 from checks.core.exceptions import API, EXCEPTIONS, exceptions_in
-from checks.core.typescript_layers import TOOLING
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
-    matches,
     parse_json,
     summarized,
     text,
@@ -20,7 +17,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 CORE = "core"
-BRACES = re.compile(r"\{([^{}]*)\}")
 ONLY_DATA = "; the core's API takes only data"
 
 
@@ -48,29 +44,9 @@ class Unread:
         return f"{self.path}: cannot be judged: {self.error}"
 
 
-def expanded(glob: str) -> FrozenList[str]:
-    """A glob of Oxlint's, whose `{a,b}` groups pathlib doesn't match, as
-    the globs it stands for."""
-    group = BRACES.search(glob)
-    if group is None:
-        return FrozenList((glob,))
-    return FrozenList(
-        each
-        for choice in group[1].split(",")
-        for each in expanded(
-            f"{glob[: group.start()]}{choice}{glob[group.end() :]}"
-        )
-    )
-
-
-TOOLS = FrozenList(each for glob in TOOLING for each in expanded(glob))
-
-
 def judged(record: Mapping[str, object]) -> Reached | Unread | None:
     path = str(record.get("path"))
-    if record.get("layer") != CORE or any(
-        matches(path, glob) for glob in TOOLS
-    ):
+    if record.get("layer") != CORE:
         return None
     if "api" in record:
         return Reached(

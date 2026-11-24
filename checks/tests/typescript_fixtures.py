@@ -168,6 +168,7 @@ COMMIT_UNITS = FrozenList((
     "lint",
     "types",
     "unused",
+    "api",
     "shell",
     "shell-share",
 ))
@@ -1119,3 +1120,56 @@ def test_a_shell_and_ui_over_a_quarter_of_the_decisions_fail_shell_share(
     assert (
         "shell makes 6 of 20 decisions" in excepted.units["shell-share"].summary
     )
+
+
+# Each kind of export the core's API may not have, the class's through an alias.
+UNDATA = FrozenOrderedDict({
+    "packages/core/src/callback.ts": (
+        "export const applied = (f: (n: number) => number): number => f(1);\n"
+    ),
+    "packages/core/src/promised.ts": (
+        "export const promised = (): Promise<number> => Promise.resolve(1);\n"
+    ),
+    "packages/core/src/effect.ts": (
+        'import { Effect } from "effect";\n\n'
+        "export const one = (): Effect.Effect<number> => Effect.succeed(1);\n"
+    ),
+    "packages/core/src/iterated.ts": (
+        "export const counted = (values: Iterable<number>): number =>\n"
+        "\t[...values].length;\n"
+    ),
+    "packages/core/src/runner.ts": (
+        "class Runner {\n"
+        "\trun(): number {\n"
+        "\t\treturn 1;\n"
+        "\t}\n"
+        "}\n\n"
+        "type Ran = Runner;\n\n"
+        "export const runner = (ran: Ran): Ran => ran;\n"
+    ),
+})
+
+
+def api_exceptions(*paths: str) -> str:
+    return "".join(
+        f'[[exception]]\npath = "{path}"\nrule = "api"\nreason = "a fixture"\n'
+        for path in paths
+    )
+
+
+def test_a_core_export_that_takes_more_than_data_fails_api_unless_excepted(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=UNDATA)
+    api = run.units["api"]
+    assert api.outcome == "FAIL"
+    assert "Found 5 issues" in api.summary
+    for path in UNDATA:
+        assert path in api.findings, path
+    assert "`promised` reaches `Promise`" in api.findings
+    assert "`one` reaches `Effect.Effect`" in api.findings
+    excepted = fixtures.check(
+        "commit", files={**UNDATA, "exceptions.toml": api_exceptions(*UNDATA)}
+    )
+    assert excepted.units["exceptions"].outcome == "ok"
+    assert excepted.units["api"].outcome == "ok"

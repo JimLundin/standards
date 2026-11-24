@@ -51,7 +51,12 @@ def test_each_thing_a_core_export_reaches_that_isnt_data_is_a_finding() -> None:
     records = "\n".join((
         reached("packages/core/src/b.ts", 3, "promised", "reaches `Promise`"),
         counted("packages/core/src/b.ts"),
-        reached("packages/core/src/a.ts", 2, "Runner", "is a class with methods, `run`"),
+        reached(
+            "packages/core/src/a.ts",
+            2,
+            "Runner",
+            "is a class with methods, `run`",
+        ),
     ))
     outcome = run([RECORDS], inputs({RECORDS: records}))
     assert outcome.lines == FrozenList((
@@ -77,17 +82,9 @@ def test_an_api_exception_clears_its_files_findings() -> None:
     ))
 
 
-def test_a_test_or_a_config_beside_the_core_isnt_its_api() -> None:
-    records = "\n".join((
-        reached("packages/core/src/a.test.ts", 2, "f", "reaches `Promise`"),
-        reached("packages/core/vitest.config.ts", 3, "default", "reaches `Promise`"),
-    ))
-    outcome = run([RECORDS], inputs({RECORDS: records}))
-    assert outcome.lines == FrozenList(("All checks passed",))
-    assert outcome.status == 0
-
-
-def test_a_core_file_that_cant_be_read_fails_and_another_layers_doesnt() -> None:
+def test_a_core_file_that_cant_be_read_fails_and_another_layers_doesnt() -> (
+    None
+):
     records = "\n".join((
         unread("packages/core/src/gone.ts", "core"),
         unread("packages/shell/src/gone.ts", "shell"),

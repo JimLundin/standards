@@ -27,6 +27,7 @@ versions=(
 	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]},${pins[EFFECT_TSGO]}"
 	"--tool=unused=${pins[KNIP]}"
+	"--tool=api=${pins[TS_MEASURE]}"
 	"--tool=shell=${pins[TS_MEASURE]}"
 	"--tool=shell-share=${pins[TS_MEASURE]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
@@ -51,7 +52,7 @@ if full; then
 fi
 release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
-	--project=exceptions,format,lint,types,unused,shell,shell-share,test,test-release,mutation,duplication,volume
+	--project=exceptions,format,lint,types,unused,api,shell,shell-share,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
 # oxfmt finds a project's own config itself, and is given the standard's
@@ -172,6 +173,12 @@ measured() {
 	typescript-measure . "$(native "$logs/layers.tsv")" >"$1"
 }
 
+# The core's exports, read by the type checker, take and return only data.
+api() {
+	measured "$logs/api.jsonl" || return
+	checks typescript-api "$(native "$logs/api.jsonl")"
+}
+
 shell() {
 	measured "$logs/decisions.jsonl" || return
 	checks typescript-shell "$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
@@ -204,8 +211,10 @@ if [ -f package.json ]; then
 	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress
 fi
+tools_of[api]=typescript-measure
 tools_of[shell]=typescript-measure
 tools_of[shell-share]=typescript-measure
+unit api "last 'Found [0-9]+ issues|All checks passed'" api
 unit shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
 unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
 # Vitest runs in the mode of vitest.config.ts that the tier names: fast at

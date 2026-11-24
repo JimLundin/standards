@@ -16,6 +16,7 @@ from checks.core.rust_shell import (
     run,
     share_run,
     targets,
+    typescript_records,
 )
 from checks.core.tools import request as tool_request
 from checks.core.tools import run as tool_run
@@ -313,6 +314,23 @@ def test_typescript_measure_records_are_read() -> None:
     assert records(lines, metadata) == (
         Function("packages/ui/src/view.tsx", 2, "View", 3, in_shell=True),
         Failure("packages/shell/src/gone.ts", "not in the project"),
+    )
+
+
+def test_a_typescript_api_record_is_not_a_function() -> None:
+    lines = (
+        compact({
+            "api": "reaches `Promise`",
+            "export": "promised",
+            "layer": "core",
+            "line": 3,
+            "path": "packages/core/src/a.ts",
+            "root": "packages/core",
+        }),
+        typescript("core", "packages/core/src/a.ts", 3, 0),
+    )
+    assert typescript_records(lines) == (
+        Function("packages/core/src/a.ts", 3, "f3", 0, in_shell=False),
     )
 
 

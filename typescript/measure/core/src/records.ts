@@ -1,7 +1,7 @@
 import type { Export } from "./api.ts";
-import { problems } from "./api.ts";
 import type { Measured } from "./decisions.ts";
 import { Schema } from "effect";
+import { problems } from "./api.ts";
 
 // A line of the layer map of `checks typescript-layers`: a file's layer, its package's folder and its path.
 const Placement = Schema.Struct({

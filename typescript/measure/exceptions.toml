@@ -12,3 +12,8 @@ reason = "the TypeScript 7 API's snapshot is a class with methods, which no read
 path = "src/syntax.ts"
 rule = "lint/standards/readonly-types"
 reason = "the TypeScript 7 API hands a node's children one at a time to forEachChild's callback, so they are collected into an array"
+
+[[exception]]
+path = "src/api.ts"
+rule = "lint/typescript/prefer-readonly-parameter-types"
+reason = "the TypeScript 7 API's checker, types, symbols and nodes are classes with methods, which no readonly type can narrow"

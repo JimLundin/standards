@@ -98,8 +98,12 @@ def measured(
 def read(
     lines: Sequence[str], roots: Mapping[str, bool], root: str
 ) -> FrozenList[Function | Failure]:
+    # typescript-measure's api records, of the core's exports, are not
+    # functions.
     found = (
-        measured(line, roots, root) for line in lines if line.startswith("{")
+        measured(line, roots, root)
+        for line in lines
+        if line.startswith("{") and "api" not in parse_json(line)
     )
     return FrozenList(dict.fromkeys(found))
 
