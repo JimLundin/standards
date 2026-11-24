@@ -7,3 +7,13 @@ reason = "Oxlint loads a JS plugin from its module's default export"
 path = "rules/*.ts"
 rule = "lint/typescript/prefer-readonly-parameter-types"
 reason = "a rule's context and AST nodes are @oxlint/plugins' mutable types, which a rule can't narrow to readonly"
+
+[[exception]]
+path = "index.ts"
+rule = "purity:@oxlint/plugins"
+reason = "the plugin is typed by @oxlint/plugins, whose type imports carry no effects"
+
+[[exception]]
+path = "rules/*.ts"
+rule = "purity:@oxlint/plugins"
+reason = "a rule is typed by @oxlint/plugins' AST and context, whose type imports carry no effects"

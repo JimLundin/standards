@@ -28,6 +28,7 @@ IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
 OXLINT = re.compile(r"lint/([\w-]+)/([\w-]+)")
+TYPESCRIPT_PURITY = re.compile(r"purity:((?:@[\w.-]+/)?[\w.-]+(?:/[\w.-]+)*)")
 
 
 def rule_covers(excepted: str, found: str) -> bool:
@@ -122,9 +123,15 @@ def kind(language: str, rule: str) -> str:
         return python_kind(rule)
     if language == "rust" and RUST_LINT.fullmatch(rule):
         return "attribute"
-    if language == "typescript" and OXLINT.fullmatch(rule):
-        return "oxlint"
+    if language == "typescript":
+        return typescript_kind(rule)
     return ""
+
+
+def typescript_kind(rule: str) -> str:
+    if OXLINT.fullmatch(rule):
+        return "oxlint"
+    return "purity" if TYPESCRIPT_PURITY.fullmatch(rule) else ""
 
 
 def python_kind(rule: str) -> str:

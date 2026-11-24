@@ -149,6 +149,10 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
         ("typescript", "lint/standards/no-module-state", "oxlint"),
         ("typescript", "lint/no-bitwise", ""),
         ("typescript", "typescript/no-floating-promises", ""),
+        ("typescript", "purity:lodash", "purity"),
+        ("typescript", "purity:@effect/platform-node/NodeRuntime", "purity"),
+        ("typescript", "purity:", ""),
+        ("python", "purity:lodash", "ruff"),
         ("go", "lint/eslint/no-bitwise", ""),
     ],
 )

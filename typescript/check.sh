@@ -120,10 +120,14 @@ oxlint_lint() {
 		typed=$oxlint_config
 		oxlint_config=$run/untyped.mjs
 	fi
-	# The exceptions turn their rules off for their paths, as overrides of a
-	# config that extends this one.
+	# Each package's layer restricts its imports, and the exceptions turn
+	# their rules off for their paths, as overrides of a config that extends
+	# this one. A package of an unknown layer fails it, naming its manifest.
 	mkdir -p node_modules/.cache/standards
-	oxlint_config=$(checks oxlint-config "$(native "$oxlint_config")") || return 1
+	if ! oxlint_config=$(checks oxlint-config "$(native "$oxlint_config")" "${scripts[@]}"); then
+		printf '%s\n' "$oxlint_config"
+		return 1
+	fi
 	OXLINT_CONFIG=${typed:+$(native "$typed")} OXLINT_TSGOLINT_PATH=$tsgolint \
 		oxlint --config="$(native "$oxlint_config")" "${scripts[@]}"
 	status=$?

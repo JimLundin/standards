@@ -640,3 +640,73 @@ def test_a_node_import_fails_lint_in_source_config_and_test_files(
     assert findings.count("import(no-nodejs-modules)") == len(NODE_IMPORTS)
     for path in NODE_IMPORTS:
         assert path in findings, path
+
+
+def importing(module: str) -> str:
+    return f'import {{ greet }} from "{module}";\n\nexport const greeting = greet;\n'
+
+
+CROSSINGS = FrozenOrderedDict({
+    "packages/core/src/crossing.ts": "@fixture/shell",
+    "packages/ui/src/crossing.ts": "@fixture/shell",
+    "packages/shell/src/crossing.ts": "@fixture/ui",
+})
+
+
+def test_a_layer_crossing_fails_lint_naming_the_import(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check(
+        "commit",
+        files={path: importing(module) for path, module in CROSSINGS.items()},
+    )
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("'@fixture/shell' import is restricted") == 2
+    assert findings.count("'@fixture/ui' import is restricted") == 1
+    for path in CROSSINGS:
+        assert path in findings, path
+
+
+EFFECTFUL = """import { succeed } from "effect/Effect";
+
+export const one = succeed(1);
+"""
+HASHED = """import { empty } from "effect/HashMap";
+
+export const none = empty<string, number>();
+"""
+REACTED = """import { version } from "react";
+
+export const reactVersion: string = version;
+"""
+
+
+def test_a_core_import_beyond_its_allowlist_fails_lint_unless_excepted(
+    fixtures: Fixtures,
+) -> None:
+    excepted = "packages/core/src/excepted.ts"
+    unexcepted = "packages/core/src/unexcepted.ts"
+    run = fixtures.check(
+        "commit",
+        files={
+            "exceptions.toml": (
+                "[[exception]]\n"
+                f'path = "{excepted}"\n'
+                'rule = "purity:react"\n'
+                'reason = "a fixture"\n'
+            ),
+            "packages/core/src/effectful.ts": EFFECTFUL,
+            "packages/core/src/hashed.ts": HASHED,
+            excepted: REACTED,
+            unexcepted: REACTED,
+        },
+    )
+    findings = run.units["lint"].findings
+    assert run.units["exceptions"].outcome == "ok", run.units["exceptions"]
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("'effect/Effect' import is restricted") == 1
+    assert findings.count("'effect/HashMap' import is restricted") == 1
+    assert findings.count("'react' import is restricted") == 1
+    assert unexcepted in findings
+    assert excepted not in findings

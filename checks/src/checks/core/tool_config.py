@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks.core import typescript_layers
 from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
@@ -68,13 +69,19 @@ def oxlint_override(root: str, entry: ExceptionEntry) -> str:
 
 # Oxlint resolves an override's globs against its config's folder, which
 # here is not the project root, and matches a file outside that folder by
-# its absolute path, so each glob is anchored at the project root.
+# its absolute path, so each glob is anchored at the project root. The
+# exceptions come last, so that one turning a rule off wins.
 def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    base, *files = arguments
     root = posix(inputs.cwd)
-    config = json.dumps(absolute(arguments[0], inputs.cwd))
-    overrides = "".join(
-        oxlint_override(root, entry) for entry in exceptions_in(inputs).entries
-    )
+    config = json.dumps(absolute(base, inputs.cwd))
+    exceptions = exceptions_in(inputs)
+    placed = typescript_layers.placements(files, inputs.texts)
+    if issues := typescript_layers.layer_issues(placed):
+        return Outcome(issues, 1)
+    overrides = typescript_layers.import_overrides(
+        root, placed, exceptions
+    ) + "".join(oxlint_override(root, entry) for entry in exceptions.entries)
     text = (
         'import { pathToFileURL } from "node:url";\n\n'
         "const { default: config } = await import("
@@ -144,6 +151,12 @@ def exceptions_only(_: Sequence[str], _inputs: Inputs) -> Request:
     return Request(FrozenList((EXCEPTIONS,)))
 
 
+def with_manifests(arguments: Sequence[str], _inputs: Inputs) -> Request:
+    return Request(
+        FrozenList((EXCEPTIONS, *typescript_layers.manifests(arguments[1:])))
+    )
+
+
 def with_named(arguments: Sequence[str], _inputs: Inputs) -> Request:
     return Request(FrozenList((EXCEPTIONS, arguments[0])))
 
@@ -159,7 +172,7 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "ruff-config": (exceptions_only, ruff_config),
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
-        "oxlint-config": (exceptions_only, oxlint_config),
+        "oxlint-config": (with_manifests, oxlint_config),
         "filter-mutmut": (with_stdin, filter_mutmut),
         "stryker-mutate": (with_named, stryker_mutate),
         "nextest-config": (exceptions_only, nextest_config),
