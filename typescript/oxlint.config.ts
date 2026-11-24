@@ -134,6 +134,8 @@ export default defineConfig({
 			"error",
 			{ additionalTestBlockFunctions: ["it.effect", "it.prop"] },
 		],
+		// Contradicts vitest/prefer-strict-boolean-matchers, which asks for toBe(true).
+		"vitest/prefer-to-be-truthy": "off",
 		// Outside test files a top-level call is an entry point, such as NodeRuntime.runMain; test files turn it on.
 		"vitest/require-hook": "off",
 		// Vitest's testTimeout bounds every test; a test sets its own only to need another.
