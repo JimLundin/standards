@@ -296,9 +296,9 @@ def cognitive(node: ast.AST, nesting: int) -> int:
         case _:
             score = flow_break(node, nesting)
             return (
-                scored(FrozenList(ast.iter_child_nodes(node)), nesting)
-                if score is None
-                else score
+                score
+                if score is not None
+                else scored(FrozenList(ast.iter_child_nodes(node)), nesting)
             )
 
 

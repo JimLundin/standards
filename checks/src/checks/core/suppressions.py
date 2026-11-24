@@ -112,22 +112,25 @@ def rust_issues(
             yield Issue(where, f"#[{name}{arguments}]{INSTEAD}")
 
 
+def file_issues(
+    language: str, file: str, text: str, exceptions: Exceptions
+) -> Iterator[Issue]:
+    if language == "rust":
+        yield from rust_issues(file, text, exceptions)
+        return
+    scan = python_markers if language == "python" else typescript_markers
+    yield from (
+        Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
+        for line, marker in scan(text)
+    )
+
+
 def suppressions(
     language: str, texts: Mapping[str, str], exceptions: Exceptions
 ) -> Iterator[Issue]:
     for file, text in texts.items():
-        if not is_source(language, file):
-            continue
-        if language == "rust":
-            yield from rust_issues(file, text, exceptions)
-        else:
-            scan = (
-                python_markers if language == "python" else typescript_markers
-            )
-            yield from (
-                Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
-                for line, marker in scan(text)
-            )
+        if is_source(language, file):
+            yield from file_issues(language, file, text, exceptions)
 
 
 def used_attributes(

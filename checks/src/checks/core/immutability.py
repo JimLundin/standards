@@ -227,17 +227,17 @@ def membership_sets(tree: ast.Module) -> FrozenOrderedSet[int]:
 
 
 def built_set(node: ast.expr) -> str:
-    if isinstance(node, ast.Set):
-        return "a set literal"
-    if isinstance(node, ast.SetComp):
-        return "a set comprehension"
-    if (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in SET_CONSTRUCTORS
-    ):
-        return f"`{name_of(node.func)}()`"
-    return ""
+    match node:
+        case ast.Set():
+            return "a set literal"
+        case ast.SetComp():
+            return "a set comprehension"
+        case ast.Call(func=ast.Name(id=name) as func) if (
+            name in SET_CONSTRUCTORS
+        ):
+            return f"`{name_of(func)}()`"
+        case _:
+            return ""
 
 
 def hash_ordered_sets(tree: ast.Module) -> Iterator[Finding]:
