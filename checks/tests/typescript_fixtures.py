@@ -282,6 +282,108 @@ def test_a_break_of_each_standards_rule_fails_lint_naming_the_rule(
         assert path in findings, path
 
 
+HOOKED = """import type { ReactElement } from "react";
+import { useState } from "react";
+
+interface Shown {
+	readonly shown: boolean;
+}
+
+export const Hooked = (props: Shown): ReactElement | undefined => {
+	if (props.shown) {
+		const [label] = useState("shown");
+		return <p>{label}</p>;
+	}
+	return undefined;
+};
+"""
+PICTURED = """import type { ReactElement } from "react";
+
+const source = "ada.png";
+
+export const Pictured = (): ReactElement => <img src={source} />;
+"""
+INDEXED = """import type { ReactElement } from "react";
+
+interface Names {
+	readonly names: ReadonlyArray<string>;
+}
+
+export const Indexed = (props: Names): ReactElement => (
+	<ul>
+		{props.names.map((name, index) => (
+			<li key={index}>{name}</li>
+		))}
+	</ul>
+);
+"""
+PRESSED = """import type { ReactElement } from "react";
+
+interface Presses {
+	readonly onPress: () => void;
+}
+
+export const Pressed = (props: Presses): ReactElement => {
+	const press = (): void => {
+		props.onPress();
+	};
+	return <button onClick={press} type="button" />;
+};
+"""
+
+
+def test_a_break_of_each_react_and_jsx_plugin_fails_lint_naming_the_rule(
+    fixtures: Fixtures,
+) -> None:
+    # Rules-of-hooks prints under react-hooks, though configured under react.
+    # No-array-index-key is a perf rule of react that cloudflare doesn't enable.
+    breaks = FrozenList((
+        (
+            "packages/core/src/hooked.tsx",
+            "react-hooks(rules-of-hooks)",
+            HOOKED,
+        ),
+        ("packages/core/src/pictured.tsx", "jsx-a11y(alt-text)", PICTURED),
+        (
+            "packages/core/src/indexed.tsx",
+            "react(no-array-index-key)",
+            INDEXED,
+        ),
+        (
+            "packages/core/src/pressed.tsx",
+            "react-perf(jsx-no-new-function-as-prop)",
+            PRESSED,
+        ),
+    ))
+    run = fixtures.check(
+        "commit", files={path: text for path, _, text in breaks}
+    )
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    for path, rule, _ in breaks:
+        assert findings.count(rule) == 1, rule
+        assert path in findings, path
+
+
+# Typescript/promise-function-async makes a function returning a promise
+# async, and typescript/require-await accepts an async function that returns
+# a promise without awaiting it. Eslint's require-await, which doesn't, is off.
+RETURNED = """export const returned = async (
+	load: () => Promise<number>,
+): Promise<number> => load();
+"""
+
+
+def test_an_async_function_returning_a_promise_unawaited_passes_lint(
+    fixtures: Fixtures,
+) -> None:
+    returned = "packages/core/src/returned.ts"
+    run = fixtures.check("commit", files={returned: RETURNED})
+    lint = run.units["lint"]
+    assert lint.outcome == "ok", lint.findings
+    assert returned not in lint.findings
+
+
 def test_an_exception_clears_its_rule_in_its_file_alone(
     fixtures: Fixtures,
 ) -> None:

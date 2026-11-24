@@ -7,7 +7,7 @@ const ambient =
 const boundary = "side effect: keep I/O at the boundary";
 const nondeterministic =
 	"nondeterministic: pass the value in from the boundary";
-const tests = ["**/*.test.ts", "**/test/**"] as const;
+const tests = ["**/*.test.{ts,tsx}", "**/test/**"] as const;
 
 export default defineConfig({
 	categories: {
@@ -18,15 +18,7 @@ export default defineConfig({
 		style: "error",
 		suspicious: "error",
 	},
-	extends: [
-		{
-			...cloudflare,
-			// Framework domains stay off, as React and JSX a11y, which cloudflare's base enables.
-			plugins: cloudflare.plugins?.filter(
-				(plugin) => plugin !== "jsx-a11y" && plugin !== "react",
-			),
-		},
-	],
+	extends: [cloudflare],
 	// The standards plugin sits beside this file, wherever a run copies it.
 	jsPlugins: [import.meta.resolve("./oxlint-plugins/index.ts")],
 	options: { typeAware: true },
@@ -38,7 +30,7 @@ export default defineConfig({
 			},
 		},
 		{
-			files: ["**/*.config.{ts,mts,js,mjs}"],
+			files: ["**/*.config.{ts,tsx,mts,js,mjs}"],
 			rules: {
 				// A tool reads its config file's default export.
 				"import/no-default-export": "off",
@@ -52,7 +44,17 @@ export default defineConfig({
 			},
 		},
 	],
-	plugins: ["typescript", "unicorn", "import", "promise", "oxc", "vitest"],
+	plugins: [
+		"typescript",
+		"unicorn",
+		"import",
+		"promise",
+		"oxc",
+		"vitest",
+		"react",
+		"react-perf",
+		"jsx-a11y",
+	],
 	rules: {
 		...Object.fromEntries(
 			Object.keys(standards.rules).map((rule) => [
@@ -92,6 +94,15 @@ export default defineConfig({
 		"oxc/no-async-await": "off",
 		"oxc/no-optional-chaining": "off",
 		"oxc/no-rest-spread-properties": "off",
+		// Its default, a function declaration, contradicts func-style.
+		"react/function-component-definition": [
+			"error",
+			{ namedComponents: "arrow-function", unnamedComponents: "arrow-function" },
+		],
+		// Its default allows JSX only in .jsx files; the standard's JSX is in .tsx files.
+		"react/jsx-filename-extension": ["error", { extensions: [".tsx"] }],
+		// The automatic JSX runtime imports what JSX compiles to, so React needn't be in scope.
+		"react/react-in-jsx-scope": "off",
 		// Contradicts typescript/promise-function-async; typescript/require-await knows a returned promise.
 		"require-await": "off",
 		// Contradicts typescript/no-non-null-assertion.
