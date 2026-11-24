@@ -59,18 +59,21 @@ def package(directory: PurePosixPath, paths: Container[str]) -> FrozenList[str]:
 def imported(
     statement: ast.stmt, parts: Sequence[str]
 ) -> Iterator[tuple[str, str]]:
-    if isinstance(statement, ast.Import):
-        for alias in statement.names:
-            root = alias.name.split(".", 1)[0]
-            yield (alias.asname, alias.name) if alias.asname else (root, root)
-    if isinstance(statement, ast.ImportFrom):
-        base = (
-            parts[: len(parts) + 1 - statement.level] if statement.level else ()
-        )
-        origin = ".".join((*base, *filter(None, (statement.module,))))
-        for alias in statement.names:
-            name = f"{origin}.{alias.name}" if origin else alias.name
-            yield alias.asname or alias.name, name
+    match statement:
+        case ast.Import(names=names):
+            for alias in names:
+                root = alias.name.split(".", 1)[0]
+                yield (
+                    (alias.asname, alias.name) if alias.asname else (root, root)
+                )
+        case ast.ImportFrom(module=module, names=names, level=level):
+            base = parts[: len(parts) + 1 - level] if level else ()
+            origin = ".".join((*base, *filter(None, (module,))))
+            for alias in names:
+                name = f"{origin}.{alias.name}" if origin else alias.name
+                yield alias.asname or alias.name, name
+        case _:
+            pass
 
 
 def definitions(
@@ -112,21 +115,23 @@ def parsed(path: str, text: str, paths: Container[str]) -> Module:
 
 
 def dotted(node: ast.expr) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        base = dotted(node.value)
-        return None if base is None else f"{base}.{node.attr}"
-    return None
+    match node:
+        case ast.Name(id=name):
+            return name
+        case ast.Attribute(value=value, attr=attribute):
+            base = dotted(value)
+            return f"{base}.{attribute}" if base is not None else None
+        case _:
+            return None
 
 
 def candidates(name: str, module: Module) -> Iterator[str]:
     root, _, rest = name.partition(".")
-    origin = module.imports.get(root)
-    if origin is None:
-        yield name
-    else:
+    if root in module.imports:
+        origin = module.imports[root]
         yield f"{origin}.{rest}" if rest else origin
+    else:
+        yield name
     if not rest:
         yield f"{module.name}.{name}"
 
@@ -164,9 +169,9 @@ def calls_through(
 ) -> bool:
     name = dotted(value.func)
     target = (
-        None
-        if name is None
-        else next((c for c in candidates(name, module) if c in symbols), None)
+        next((c for c in candidates(name, module) if c in symbols), None)
+        if name is not None
+        else None
     )
     return target is not None and target != definition.name
 
