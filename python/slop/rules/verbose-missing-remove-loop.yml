@@ -1,9 +1,8 @@
 id: verbose-missing-remove-loop
 language: python
-severity: info
+severity: warning
 message: "Copy-list-then-remove to find missing items - select them in one expression, `FrozenList(x for x in required if x not in present)`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: for_statement

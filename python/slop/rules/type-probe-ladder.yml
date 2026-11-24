@@ -1,9 +1,8 @@
 id: type-probe-ladder
 language: python
-severity: info
+severity: warning
 message: "Two `if isinstance(same_var, T): …` branches back-to-back are a type-probe ladder; use a dispatch table or polymorphism."
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

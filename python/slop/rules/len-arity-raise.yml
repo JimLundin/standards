@@ -1,9 +1,8 @@
 id: len-arity-raise
 language: python
-severity: info
+severity: warning
 message: "`if len(args) != N: raise …` open-codes arity checks; bind via parameters or `*args` unpacking so the error is structural."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

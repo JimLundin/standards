@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`json.loads(f.read())` - use `json.load(f)`"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: call

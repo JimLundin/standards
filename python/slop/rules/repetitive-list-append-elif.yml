@@ -1,9 +1,8 @@
 id: repetitive-list-append-elif
 language: python
-severity: info
+severity: warning
 message: "`.append()` in each elif branch - map each item to its value in one expression, such as `FrozenList(LABELS[x] for x in xs)` over a `FrozenOrderedDict`"
 metadata:
-  weight: 1
   category: slop
 rule:
   pattern: "if $C1:\n  $L.append($A)\nelif $C2:\n  $L.append($B)\nelif $C3:\n  $L.append($C)\n"

@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: s.replace(p, '') if s.startswith(p) else s - use str.removeprefix
 metadata:
-  weight: 5
   category: slop
 rule:
   pattern: "$S.replace($P, $EMPTY) if $S.startswith($P) else $S"

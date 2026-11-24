@@ -1,9 +1,8 @@
 id: raise-guard-ladder
 language: python
-severity: info
+severity: warning
 message: "Back-to-back `if <cond>: raise ...` guard clauses that raise different error messages are defensive input policing; push validation to the boundary."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

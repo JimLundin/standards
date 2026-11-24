@@ -1,9 +1,8 @@
 id: verbose-dict-key-access
 language: python
-severity: info
+severity: warning
 message: "`if k in d: v = d[k]` - use `v = d.get(k)` (or `d.get(k, default)`)"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

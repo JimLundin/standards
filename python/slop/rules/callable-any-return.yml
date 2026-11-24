@@ -1,9 +1,8 @@
 id: callable-any-return
 language: python
-severity: info
+severity: warning
 message: "`Callable[..., Any]` - specify the return type; `...` already erases the parameter signature"
 metadata:
-  weight: 1
   category: slop
 rule:
   any:

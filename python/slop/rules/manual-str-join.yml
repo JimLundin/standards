@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "building a string with `+=` in a loop - build it in one expression, `''.join(...)` over a generator"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: augmented_assignment

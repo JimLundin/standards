@@ -1,9 +1,8 @@
 id: update-if-present-dict
 language: python
-severity: info
+severity: warning
 message: "`if x is not None: updates[k] = x` for each arg - drop the optional defaulting or pass `**kwargs` through"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

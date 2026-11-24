@@ -2,7 +2,7 @@ id: init-populate-iterate-dict
 valid:
   - |
     def f(rows):
-        totals = {row.key: row.value for row in rows}
+        totals = FrozenOrderedDict((row.key, row.value) for row in rows)
         for key, value in totals.items():
             g(key, value)
 invalid:

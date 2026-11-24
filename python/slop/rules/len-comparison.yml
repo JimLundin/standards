@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`len(x) > 0` / `len(x) != 0` - use `if x:`"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: comparison_operator

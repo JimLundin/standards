@@ -1,9 +1,8 @@
 id: defensive-function-isinstance-heavy
 language: python
-severity: info
+severity: warning
 message: "Function has 2+ `isinstance` checks in its body; inline type-policing is defensive slop. Validate at the boundary, then trust the type."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

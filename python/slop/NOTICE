@@ -6,8 +6,15 @@ src/scb_check/resources/slop_rules/. Upstream is not tracked.
 Changes from the release: each rule is in a file of its own, named for its
 id, and the rule tests in tests/ are the standards' own. So are the messages
 of conditional-same-target-subscript-assign, manual-str-join,
-consecutive-append-calls, repetitive-list-append-elif,
-manual-dict-counter-if-else, set-add-loop, manual-set-union-loop and
-verbose-missing-remove-loop, rewritten to advice the standard allows, and the
+repetitive-list-append-elif, manual-dict-counter-if-else,
+manual-set-union-loop, verbose-missing-remove-loop and
+init-populate-iterate-dict, rewritten to advice the standard allows, and the
 rule body of dict-get-empty-string-default, which matches an assignment
-statement where the release's never matched.
+statement where the release's never matched. Every rule has severity warning
+and no metadata.weight, since neither decides whether a rule gates.
+
+Dropped since they were copied: consecutive-append-calls,
+set-add-loop and dict-from-pairs-loop, which Ruff reads as FURB113, FURB142
+and PERF403; wrap-raise-fstring, which Ruff reads as EM102; and
+is-true-false-strict and isinstance-bool-exclusion, whose advice is wrong
+for strictly typed parsed data.

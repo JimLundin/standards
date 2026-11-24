@@ -1,9 +1,8 @@
 id: long-tuple-unpacking
 language: python
-severity: info
+severity: warning
 message: "Unpacking 5+ values from a tuple - use a `NamedTuple` or `@dataclass`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: assignment

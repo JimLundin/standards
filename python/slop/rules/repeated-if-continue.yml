@@ -1,9 +1,8 @@
 id: repeated-if-continue
 language: python
-severity: info
+severity: warning
 message: "Multiple `if: continue` guards - combine with `or` or filter via comprehension"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: for_statement

@@ -1,9 +1,8 @@
 id: repeated-function-or-chain
 language: python
-severity: info
+severity: warning
 message: "`f(a) or f(b) or f(c) or f(d)` - use `any(f(x) for x in (a,b,c,d))`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: boolean_operator

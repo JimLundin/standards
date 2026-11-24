@@ -1,9 +1,8 @@
 id: repeated-dict-key-assignment
 language: python
-severity: info
+severity: warning
 message: "Repeated `d[k] = f(...)` lines - use a loop or dict comprehension"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: expression_statement

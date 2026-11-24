@@ -1,9 +1,8 @@
 id: tail-predicate-chain
 language: python
-severity: info
+severity: warning
 message: "Consecutive `if not x: return False` before a final return - collapse to `return x and y and ...`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

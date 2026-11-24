@@ -1,9 +1,8 @@
 id: consecutive-if-same-variable
 language: python
-severity: info
+severity: warning
 message: "Consecutive `if` on same variable - use `elif` (or return early after first branch)"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

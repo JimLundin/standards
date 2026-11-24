@@ -1,9 +1,8 @@
 id: tuple-value-err-caller-unpack
 language: python
-severity: info
+severity: warning
 message: "`v, err = f(...); if err: return err` - raise typed exceptions instead of Go-style `(value, err)` tuples"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: expression_statement

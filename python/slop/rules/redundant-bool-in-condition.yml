@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`bool(x)` inside `if`/`and`/`or` - drop it, these already test truthiness"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: if_statement

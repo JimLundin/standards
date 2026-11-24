@@ -1,9 +1,8 @@
 id: repeated-if-return-error
 language: python
-severity: info
+severity: warning
 message: "Repeated `if: return error` checks - collect into one validator or raise"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

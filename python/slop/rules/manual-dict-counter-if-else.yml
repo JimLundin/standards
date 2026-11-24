@@ -1,9 +1,8 @@
 id: manual-dict-counter-if-else
 language: python
-severity: info
+severity: warning
 message: "Manual dict counter - count in one expression, `FrozenOrderedDict(Counter(iterable))`"
 metadata:
-  weight: 1
   category: slop
 rule:
   any:

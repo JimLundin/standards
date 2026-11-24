@@ -1,18 +1,8 @@
 id: init-populate-iterate-dict
 language: python
-severity: info
-message: "Create-populate-iterate `$DICT` - use `{k: v for ...}` or skip the intermediate dict"
-note: 'Consider refactoring to:
-
-  1. Dict comprehension: {key: val for item in items}
-
-  2. Helper function: def build_lookup(items) -> dict
-
-  3. Inline the logic if the intermediate dict isn''t needed elsewhere
-
-  '
+severity: warning
+message: "`$DICT = {}`, filled in a loop, then iterated - build it in one expression, `FrozenOrderedDict((k, v) for ...)`"
 metadata:
-  weight: 1
   category: slop
 rule:
   pattern: "for $VARS in $DICT.$METHOD():\n    $$$BODY\n"

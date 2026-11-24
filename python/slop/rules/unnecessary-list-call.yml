@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`for x in list(iterable)` - drop `list()`, `for` iterates directly"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: for_statement

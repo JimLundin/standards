@@ -1,9 +1,8 @@
 id: empty-exception-subclass
 language: python
-severity: info
+severity: warning
 message: "Empty Error/Exception/Warning subclass - use one base error and pass context in the message"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: class_definition

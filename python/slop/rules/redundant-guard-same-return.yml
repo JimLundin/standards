@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`if c: return r; return r` - drop the guard, both paths return the same value"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: if_statement

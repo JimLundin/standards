@@ -1,9 +1,8 @@
 id: oswalk-relpath-sep-replace
 language: python
-severity: info
+severity: warning
 message: "`os.walk` + `os.path.relpath` + `.replace(os.sep, '/')` - use `Path(root).rglob('*')` and `.relative_to(root).as_posix()`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: for_statement

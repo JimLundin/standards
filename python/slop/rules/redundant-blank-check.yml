@@ -1,9 +1,8 @@
 id: redundant-blank-check
 language: python
-severity: info
+severity: warning
 message: "`line.isspace() or not line` then `line.strip()` `if not text` - one `if not line.strip(): continue` is enough"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

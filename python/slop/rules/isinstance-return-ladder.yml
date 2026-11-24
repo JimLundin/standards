@@ -1,9 +1,8 @@
 id: isinstance-return-ladder
 language: python
-severity: info
+severity: warning
 message: "`isinstance` ladder returning literals - use dispatch dict `{Type: value}[type(x)]` or polymorphism"
 metadata:
-  weight: 1
   category: slop
 rule:
   any:

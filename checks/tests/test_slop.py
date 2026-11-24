@@ -79,12 +79,7 @@ def test_the_file_count_is_per_file_and_per_rule() -> None:
     assert outcome.lines == ("All checks passed",)
 
 
-def test_an_info_rule_below_its_file_count_passes() -> None:
-    outcome = scanned(finding("src/a.py", 2, GUARD, severity="info"))
-    assert outcome.lines == ("All checks passed",)
-
-
-def test_an_info_rule_at_its_file_count_gates_like_a_warning() -> None:
+def test_a_rule_gates_whatever_its_severity() -> None:
     outcome = scanned(
         finding("src/a.py", 2, GUARD, severity="info"),
         finding("src/a.py", 9, GUARD, severity="info"),
@@ -108,7 +103,9 @@ def test_a_rule_without_a_file_count_reports_its_first_finding() -> None:
 def test_a_rule_with_metadata_but_no_file_count_reports_its_first_finding() -> (
     None
 ):
-    outcome = scanned(finding("src/a.py", 0, "for-range-len", {"weight": 5}))
+    outcome = scanned(
+        finding("src/a.py", 0, "for-range-len", {"category": "slop"})
+    )
     assert outcome.lines == (
         f"src/a.py:1:5: for-range-len {MESSAGE}",
         "Found 1 issues",

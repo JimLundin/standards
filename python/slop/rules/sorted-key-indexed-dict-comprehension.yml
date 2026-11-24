@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`{k: d[k] for k in sorted(d.keys())}` - use `dict(sorted(d.items()))`"
 metadata:
-  weight: 5
   category: slop
 rule:
   any:

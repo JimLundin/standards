@@ -1,9 +1,8 @@
 id: dict-get-empty-string-default
 language: python
-severity: info
+severity: warning
 message: "`x = d.get(k, ''); if x:` - conflates missing key with empty value; use `.get(k)` and `is not None`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: expression_statement

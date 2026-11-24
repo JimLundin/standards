@@ -1,9 +1,8 @@
 id: if-pass-else-action
 language: python
-severity: info
+severity: warning
 message: "`if c: pass else: ...` - invert to `if not c: ...`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

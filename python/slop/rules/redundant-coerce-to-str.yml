@@ -1,9 +1,8 @@
 id: redundant-coerce-to-str
 language: python
-severity: info
+severity: warning
 message: "`str(x) if x is not None else ''` coerces a typed value; trust the annotation."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

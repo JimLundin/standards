@@ -1,9 +1,8 @@
 id: deep-dict-access
 language: python
-severity: info
+severity: warning
 message: "4+ levels of `d[a][b][c][d]` - use a dataclass or `operator.itemgetter`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: subscript

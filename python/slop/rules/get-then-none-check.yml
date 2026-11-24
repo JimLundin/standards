@@ -1,9 +1,8 @@
 id: get-then-none-check
 language: python
-severity: info
+severity: warning
 message: "`v = d.get(k); if v is None:` - use `if k in d:` or try/except KeyError"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

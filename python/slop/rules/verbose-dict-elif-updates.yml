@@ -1,9 +1,8 @@
 id: verbose-dict-elif-updates
 language: python
-severity: info
+severity: warning
 message: "`d[k] = v` in each if/elif branch - use a dispatch `{cond: (k, v)}` or helper"
 metadata:
-  weight: 1
   category: slop
 rule:
   pattern: "if $COND1:\n  $$$PRE1\n  $D[$KEY1] = $VAL1\n  $$$POST1\nelif $COND2:\n\

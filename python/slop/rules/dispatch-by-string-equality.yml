@@ -1,9 +1,8 @@
 id: dispatch-by-string-equality
 language: python
-severity: info
+severity: warning
 message: "Long `if op == \"X\":` / `elif op == \"Y\":` string-equality dispatch is open-coded command routing; use a `{name: handler}` table."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

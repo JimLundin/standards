@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "Multiple `re.search` returning same value - combine patterns with `|` or loop over a list"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: if_statement

@@ -1,9 +1,8 @@
 id: defensive-isinstance-raise-heavy
 language: python
-severity: info
+severity: warning
 message: "Function body runs 3+ `if not isinstance(...): raise` checks; these are boundary validations leaking into core logic."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

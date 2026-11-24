@@ -1,9 +1,8 @@
 id: manual-quote-strip
 language: python
-severity: info
+severity: warning
 message: "`if s.startswith(q) and s.endswith(q): s[1:-1]` - use `ast.literal_eval(s)` or `s.strip(q)`"
 metadata:
-  weight: 1
   category: slop
 rule:
   pattern: "if $VAL.startswith($Q1) and $VAL.endswith($Q1):\n  $OUT = $VAL[1:-1]\n"

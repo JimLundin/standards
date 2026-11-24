@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "(x or '') if x else '' - the 'or' branch already handles None"
 metadata:
-  weight: 5
   category: slop
 rule:
   pattern: "($X or $EMPTY) if $X else $EMPTY"

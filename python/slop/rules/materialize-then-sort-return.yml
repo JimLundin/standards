@@ -1,9 +1,8 @@
 id: materialize-then-sort-return
 language: python
-severity: info
+severity: warning
 message: "`tmp = [...]; return sorted(tmp)` - use `return sorted(x for ... in ...)`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: return_statement

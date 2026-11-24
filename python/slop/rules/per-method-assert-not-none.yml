@@ -1,9 +1,8 @@
 id: per-method-assert-not-none
 language: python
-severity: info
+severity: warning
 message: assert self.X is not None at method entry - enforce in __init__ once
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: assert_statement

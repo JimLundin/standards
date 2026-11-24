@@ -1,9 +1,8 @@
 id: split-magic-index
 language: python
-severity: info
+severity: warning
 message: "`s.split()[N]` with magic index - unpack into named vars (`a, b, c = s.split()`)"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: subscript

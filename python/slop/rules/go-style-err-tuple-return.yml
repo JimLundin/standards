@@ -1,9 +1,8 @@
 id: go-style-err-tuple-return
 language: python
-severity: info
+severity: warning
 message: "`return None, error_msg` / `return None, None` Go-style dual-return open-codes an ad-hoc result type; raise exceptions or use a real result object."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

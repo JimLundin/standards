@@ -1,9 +1,8 @@
 id: verbose-or-return
 language: python
-severity: info
+severity: warning
 message: "`if x: return True` - combine with later condition or `return x or ...`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

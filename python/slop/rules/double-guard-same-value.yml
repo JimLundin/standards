@@ -1,9 +1,8 @@
 id: double-guard-same-value
 language: python
-severity: info
+severity: warning
 message: "`if not isinstance(x, T): raise` + `if not x: raise` - collapse to one guard (`or` the conditions or narrow via schema)"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

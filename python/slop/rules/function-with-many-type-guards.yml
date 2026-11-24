@@ -1,9 +1,8 @@
 id: function-with-many-type-guards
 language: python
-severity: info
+severity: warning
 message: "Function has 3+ `if not isinstance / if x is None: raise` guard clauses before doing work; validate at the boundary and trust the type downstream."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

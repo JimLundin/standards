@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`continue` at end of loop body - delete it, the loop iterates anyway"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: block

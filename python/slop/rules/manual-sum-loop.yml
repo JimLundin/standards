@@ -1,9 +1,8 @@
 id: manual-sum-loop
 language: python
-severity: info
+severity: warning
 message: "`total = 0; for x in it: total += expr` - use `sum(expr for x in it)`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: for_statement

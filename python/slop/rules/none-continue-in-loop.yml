@@ -1,9 +1,8 @@
 id: none-continue-in-loop
 language: python
-severity: info
+severity: warning
 message: "`if x is None: continue` inside a loop is defensive null-skipping; filter at the source or raise on contract violation."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

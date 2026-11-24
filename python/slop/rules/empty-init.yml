@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "Empty `__init__` - delete it, Python provides a default constructor"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: function_definition

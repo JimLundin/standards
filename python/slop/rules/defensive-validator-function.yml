@@ -1,9 +1,8 @@
 id: defensive-validator-function
 language: python
-severity: info
+severity: warning
 message: "Function body runs `if not isinstance(...): raise …` plus returns; this is a boundary validator living inside core logic. Validate once at the entrypoint, not per helper."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

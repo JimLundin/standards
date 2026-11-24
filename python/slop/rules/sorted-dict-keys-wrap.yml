@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`sorted(d.keys())` - use `sorted(d)`"
 metadata:
-  weight: 5
   category: slop
 rule:
   pattern: sorted($DICT.keys())

@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`a = pair[0]; b = pair[1]` - use tuple unpacking `a, b = pair`"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: expression_statement

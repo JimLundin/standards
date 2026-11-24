@@ -1,9 +1,8 @@
 id: manual-set-union-loop
 language: python
-severity: info
+severity: warning
 message: "`s = set(); for r in it: s.update(r.X())` - build the set in one expression, `FrozenOrderedSet(x for r in it for x in r.X())`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: expression_statement

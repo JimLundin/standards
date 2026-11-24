@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`str(x) + str(y)` - use `f'{x}{y}'`"
 metadata:
-  weight: 5
   category: slop
 rule:
   pattern: str($X) + str($Y)

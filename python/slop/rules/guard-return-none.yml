@@ -1,9 +1,8 @@
 id: guard-return-none
 language: python
-severity: info
+severity: warning
 message: "`if x is None: return None` followed by another `return` - drop guard, `None` flows naturally"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

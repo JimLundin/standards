@@ -1,9 +1,8 @@
 id: dataclass-tagged-union-discriminator
 language: python
-severity: info
+severity: warning
 message: "@dataclass with `kind: str` + multiple Optional fields - model as distinct types or a Literal discriminator"
 metadata:
-  weight: 1
   category: slop
 rule:
   any:

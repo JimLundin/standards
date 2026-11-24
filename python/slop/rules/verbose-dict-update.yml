@@ -1,9 +1,8 @@
 id: verbose-dict-update
 language: python
-severity: info
+severity: warning
 message: "Single-statement `d[k] = v` loop - use `{k: v for ... in ...}` comprehension"
 metadata:
-  weight: 1
   category: slop
 rule:
   any:

@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`int(float(x))` - parse directly or validate input (mis-handles `'1e2'`, `'1.5'`)"
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: call

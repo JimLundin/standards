@@ -1,9 +1,8 @@
 id: section-banner-comment
 language: python
-severity: info
+severity: warning
 message: Decorative section banner comment - delete, let structure speak for itself
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: comment

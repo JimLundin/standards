@@ -1,9 +1,8 @@
 id: verbose-and-return
 language: python
-severity: info
+severity: warning
 message: "`if not x: return False` - combine with later condition or `return x and ...`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

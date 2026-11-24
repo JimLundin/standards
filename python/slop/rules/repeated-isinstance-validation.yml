@@ -1,9 +1,8 @@
 id: repeated-isinstance-validation
 language: python
-severity: info
+severity: warning
 message: "Repeated `if not isinstance(x, T): raise` - use type hints or a schema validator"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

@@ -1,9 +1,8 @@
 id: predicate-isinstance-wrapper
 language: python
-severity: info
+severity: warning
 message: "`def is_X(v) -> bool: return isinstance(v, T)` - inline the isinstance check; the wrapper adds no value"
 metadata:
-  weight: 1
   category: slop
 rule:
   any:

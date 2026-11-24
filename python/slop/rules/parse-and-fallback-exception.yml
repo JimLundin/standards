@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`try: return int/float/json.loads(x) except Exception: return <default>` parse-with-silent-fallback swallows format errors."
 metadata:
-  weight: 6
   category: slop
   min_file_count: 2
 rule:

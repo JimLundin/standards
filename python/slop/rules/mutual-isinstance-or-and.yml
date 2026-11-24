@@ -1,9 +1,8 @@
 id: mutual-isinstance-or-and
 language: python
-severity: info
+severity: warning
 message: "`isinstance(a, T) or isinstance(b, T): return isinstance(a, T) and isinstance(b, T) and ...` - lift `type(a) is type(b) is T` or an early-return guard"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

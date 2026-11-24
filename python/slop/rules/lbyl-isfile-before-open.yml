@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: os.path.isfile guard before open is redundant and race-prone; use try/except OSError
 metadata:
-  weight: 5
   category: slop
 rule:
   kind: if_statement

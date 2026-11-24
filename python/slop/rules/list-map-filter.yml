@@ -1,9 +1,8 @@
 id: list-map-filter
 language: python
-severity: info
+severity: warning
 message: "`list(map(f, xs))` / `list(filter(p, xs))` - use a list comprehension"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: call

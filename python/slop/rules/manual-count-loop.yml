@@ -1,9 +1,8 @@
 id: manual-count-loop
 language: python
-severity: info
+severity: warning
 message: "`count = 0; for x in it: count += 1` - use `sum(1 for x in it if cond)`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: for_statement

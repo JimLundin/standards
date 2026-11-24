@@ -1,9 +1,8 @@
 id: nested-guard-invert
 language: python
-severity: info
+severity: warning
 message: "Nested `if` early-exit guard with sibling code in outer `if` body - invert outer to early-exit (`if not outer: return/continue`) and flatten the nesting"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

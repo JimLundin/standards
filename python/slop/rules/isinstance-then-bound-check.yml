@@ -1,9 +1,8 @@
 id: isinstance-then-bound-check
 language: python
-severity: info
+severity: warning
 message: "`if not isinstance(x, int): raise` + `if x < N: raise` - one validator (`ensure_positive_int`) or `Annotated[int, Ge(N)]`"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

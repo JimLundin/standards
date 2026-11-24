@@ -1,9 +1,8 @@
 id: bool-numeric-triple-guard
 language: python
-severity: info
+severity: warning
 message: isinstance bool guard combined with numeric isinstance - wrap in helper rather than inlining
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: boolean_operator

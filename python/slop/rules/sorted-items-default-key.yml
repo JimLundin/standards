@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "sorted(..., key=lambda i: i[0]) / `(i[0], i[1])` - default sort already matches; drop the key"
 metadata:
-  weight: 5
   category: slop
 rule:
   any:

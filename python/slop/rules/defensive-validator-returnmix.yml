@@ -1,9 +1,8 @@
 id: defensive-validator-returnmix
 language: python
-severity: info
+severity: warning
 message: "Function combines `isinstance` guards with `is None` guards and returns; stop per-field validation — assert the contract at the boundary."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

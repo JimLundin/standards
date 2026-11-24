@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "Whole-function `try: <work>; except Exception: return None/False/[]/{}` swallows every error and returns a sentinel; catch specifically or let it propagate."
 metadata:
-  weight: 6
   category: slop
   min_file_count: 2
 rule:

@@ -1,9 +1,8 @@
 id: fetchone-none-check
 language: python
-severity: info
+severity: warning
 message: "`row = cursor.fetchone(); if row is None:` - extract to `fetch_one_or_none()` helper"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

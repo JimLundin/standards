@@ -1,9 +1,8 @@
 id: return-none-guard-ladder
 language: python
-severity: info
+severity: warning
 message: "Back-to-back `if …: return None` guard clauses treat Optional as a pervasive escape hatch; normalize nullability at the boundary."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

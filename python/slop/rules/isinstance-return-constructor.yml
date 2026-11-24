@@ -1,9 +1,8 @@
 id: isinstance-return-constructor
 language: python
-severity: info
+severity: warning
 message: "`if isinstance(x, T): return T(x)` re-wraps a value already of the target type; drop the guard and the wrap."
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: if_statement

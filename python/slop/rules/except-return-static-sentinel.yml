@@ -3,7 +3,6 @@ language: python
 severity: warning
 message: "`except Exception: return None/False/[]/{}` is bare-exception-to-sentinel; catch something specific or let it propagate."
 metadata:
-  weight: 6
   category: slop
   min_file_count: 2
 rule:

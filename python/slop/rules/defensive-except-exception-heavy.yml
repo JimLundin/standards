@@ -1,9 +1,8 @@
 id: defensive-except-exception-heavy
 language: python
-severity: info
+severity: warning
 message: "Function body has 2+ `except Exception:` / bare `except:` clauses; catching-everything multiple times in one function is a paranoia smell."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

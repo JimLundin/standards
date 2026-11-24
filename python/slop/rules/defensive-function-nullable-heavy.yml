@@ -1,9 +1,8 @@
 id: defensive-function-nullable-heavy
 language: python
-severity: info
+severity: warning
 message: "Function has 2+ `if … is None: return/raise` guards threaded through its body; normalize nullability at the boundary, don't plumb `None`."
 metadata:
-  weight: 1
   category: slop
   min_file_count: 2
 rule:

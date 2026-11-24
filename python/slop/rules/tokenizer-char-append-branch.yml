@@ -1,9 +1,8 @@
 id: tokenizer-char-append-branch
 language: python
-severity: info
+severity: warning
 message: "Per-char tokenizer branches with `append` + `pos += 1` - use `{char: TokenType}` lookup table"
 metadata:
-  weight: 1
   category: slop
 rule:
   kind: expression_statement
