@@ -33,7 +33,7 @@ def test_clean_sources_pass() -> None:
     assert outcome.status == 0
 
 
-WRAPPERS = [
+WRAPPERS = (
     (f"{TARGET}def f(x):\n    return g(x)\n", "4:1"),
     ("def f(x):\n    return x\n", "1:1"),
     (f"{TARGET}async def f(x, y):\n    return g(y, x)\n", "4:1"),
@@ -42,7 +42,7 @@ WRAPPERS = [
     (f"{TARGET}class A:\n    def f(self, x):\n        return g(x)\n", "5:5"),
     ("class A:\n    pass\n\ndef f(x):\n    return A(x)\n", "4:1"),
     (f"{TARGET}def h():\n    def f(x):\n        return g(x)\n", "5:5"),
-]
+)
 
 
 @pytest.mark.parametrize(("source", "expected"), WRAPPERS)
@@ -52,17 +52,17 @@ def test_a_trivial_wrapper_is_reported(source: str, expected: str) -> None:
     assert outcome.status == 1
 
 
-PACKAGE = {
+PACKAGE = FrozenOrderedDict({
     "pkg/__init__.py": "",
     "pkg/a.py": TARGET,
     "pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
     "pkg/c.py": "from . import a\n\ndef f(x):\n    return a.g(x)\n",
-}
-NAMESPACE_PACKAGE = {
+})
+NAMESPACE_PACKAGE = FrozenOrderedDict({
     "src/pkg/a.py": TARGET,
     "src/pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
     "src/pkg/c.py": "from .a import g\n\ndef f(x):\n    return g(x)\n",
-}
+})
 
 
 def test_a_wrapper_of_a_function_imported_from_the_scanned_sources() -> None:
@@ -79,7 +79,7 @@ def test_a_wrapper_of_a_function_in_a_namespace_package_under_src() -> None:
     )
 
 
-KEPT_WRAPPERS = [
+KEPT_WRAPPERS = (
     "from ext import g\n\ndef f(x):\n    return g(x)\n",
     "def f(x):\n    return g(x)\n",
     f"{TARGET}@cache\ndef f(x):\n    return g(x)\n",
@@ -99,7 +99,7 @@ KEPT_WRAPPERS = [
     f"{TARGET}class A:\n    def f(self):\n        return self\n",
     f"{TARGET}class A:\n    def f(self, x):\n        return self.g(x)\n",
     f"{TARGET}if x:\n    def f(x):\n        return g(x)\n",
-]
+)
 
 
 @pytest.mark.parametrize("source", KEPT_WRAPPERS)
@@ -189,19 +189,19 @@ def complex_function(score: int) -> str:
     return f"STR002 `f` has cognitive complexity {score}, above 10; flatten it"
 
 
-ABOVE_THE_LIMIT = [
+ABOVE_THE_LIMIT = (
     (ELIF_CHAIN.format("break  # 1"), 11),
     (BOOLEAN_RUN.format("a or b or c"), 11),
     (NESTED_FUNCTION.format("x if x else None  # 1"), 11),
     (CLAUSES, 11),
     (ELIF_CHAIN.format("pass").replace("x == 3:  #", "x and y:  # 1,"), 11),
     (ELSE_IF, 11),
-]
-AT_THE_LIMIT = [
+)
+AT_THE_LIMIT = (
     ELIF_CHAIN.format("pass"),
     BOOLEAN_RUN.format("a or b"),
     NESTED_FUNCTION.format("None"),
-]
+)
 
 
 @pytest.mark.parametrize(("source", "score"), ABOVE_THE_LIMIT)
@@ -239,4 +239,4 @@ def test_an_exception_drops_the_cognitive_findings_in_its_paths() -> None:
     ]),
 )
 def test_every_fixture_is_valid_python(source: str) -> None:
-    compile(source, "m.py", "exec", dont_inherit=True)
+    _ = compile(source, "m.py", "exec", dont_inherit=True)
