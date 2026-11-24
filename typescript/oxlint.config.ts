@@ -4,30 +4,7 @@ import { defineConfig } from "oxlint";
 const ambient =
 	"ambient input and side effects: pass values in from the boundary";
 const boundary = "side effect: keep I/O at the boundary";
-const shared = "shared mutable state: return new values instead";
 const tests = ["**/*.test.ts", "**/test/**"] as const;
-
-const restrictedImports = {
-	paths: [
-		{ message: boundary, name: "node:fs" },
-		{ message: boundary, name: "node:fs/promises" },
-		{ message: boundary, name: "node:child_process" },
-		{ message: boundary, name: "node:net" },
-		{ message: boundary, name: "node:dgram" },
-		{ message: boundary, name: "node:dns" },
-		{ message: boundary, name: "node:http" },
-		{ message: boundary, name: "node:https" },
-		{ message: boundary, name: "node:http2" },
-		{ message: boundary, name: "node:tls" },
-		{ message: shared, name: "node:worker_threads" },
-		{ message: shared, name: "node:cluster" },
-		{ message: ambient, name: "node:process" },
-		{
-			message: "ambient input: pass values in from the boundary",
-			name: "node:os",
-		},
-	],
-} as const;
 
 export default defineConfig({
 	categories: {
@@ -50,24 +27,6 @@ export default defineConfig({
 	options: { typeAware: true },
 	overrides: [
 		{
-			excludeFiles: [...tests],
-			files: ["**/src/core/**"],
-			rules: {
-				"no-restricted-imports": [
-					"error",
-					{
-						...restrictedImports,
-						patterns: [
-							{
-								group: ["node:*"],
-								message: "core is pure: keep Node APIs in the shell",
-							},
-						],
-					},
-				],
-			},
-		},
-		{
 			files: [...tests],
 			rules: {
 				"no-magic-numbers": "off",
@@ -88,20 +47,10 @@ export default defineConfig({
 			},
 		},
 	],
-	plugins: [
-		"typescript",
-		"unicorn",
-		"import",
-		"promise",
-		"node",
-		"oxc",
-		"vitest",
-	],
+	plugins: ["typescript", "unicorn", "import", "promise", "oxc", "vitest"],
 	rules: {
 		// Contradicts import/no-default-export.
 		"import/no-named-export": "off",
-		// The standard runs on Node and confines Node APIs by no-restricted-imports.
-		"import/no-nodejs-modules": "off",
 		// Contradicts import/no-default-export.
 		"import/prefer-default-export": "off",
 		// Cloudflare's import/consistent-type-specifier-style puts type imports in their own declaration.
@@ -115,13 +64,10 @@ export default defineConfig({
 			{ message: boundary, name: "setImmediate" },
 			{ message: boundary, name: "queueMicrotask" },
 		],
-		"no-restricted-imports": ["error", restrictedImports],
 		// Contradicts unicorn/prefer-ternary.
 		"no-ternary": "off",
 		// With unicorn/no-typeof-undefined and eqeqeq, it leaves no way to test for undefined.
 		"no-undefined": "off",
-		// Contradicts unicorn/prefer-top-level-await.
-		"node/no-top-level-await": "off",
 		// Its default, "always", merges every declaration of a scope into one; each stands alone.
 		"one-var": ["error", "never"],
 		// These forbid syntax for older engines than the standard's target, esnext.
