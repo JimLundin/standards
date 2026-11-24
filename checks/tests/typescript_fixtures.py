@@ -181,16 +181,18 @@ def test_the_compliant_tree_passes_every_unit(
     assert run.status == 0
 
 
-def test_a_suppression_comment_fails_exceptions(fixtures: Fixtures) -> None:
+@pytest.mark.parametrize(
+    "comment",
+    ["// oxlint-disable-next-line no-magic-numbers", "/* eslint-disable */"],
+    ids=["oxlint-disable-next-line", "eslint-disable"],
+)
+def test_a_lint_disable_comment_fails_exceptions(
+    fixtures: Fixtures, comment: str
+) -> None:
     suppressed = "packages/core/src/suppressed.ts"
     run = fixtures.check(
         "commit",
-        files={
-            suppressed: (
-                "// biome-ignore lint/style/useConst: a fixture\n"
-                "export const suppressed = 1;\n"
-            )
-        },
+        files={suppressed: f"{comment}\nexport const suppressed = 1;\n"},
     )
     assert run.units["exceptions"].outcome == "FAIL"
     assert suppressed in run.units["exceptions"].findings
@@ -509,6 +511,73 @@ def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
     exceptions = run.units["exceptions"]
     assert exceptions.outcome == "FAIL"
     assert "drift:arbitrary.fast" in exceptions.findings
+
+
+# A project's own oxlint.config.ts, which extends the standard's.
+EXTENDING = """import standard from "#standards/oxlint";
+
+const config = {
+	extends: [standard],
+	rules: {rules},
+} as const;
+
+export default config;
+"""
+
+
+@pytest.mark.parametrize(
+    ("config", "rule"),
+    [
+        (
+            EXTENDING.replace("{rules}", '{ "no-bitwise": "off" }'),
+            "drift:rules.eslint/no-bitwise",
+        ),
+        (
+            'export default { rules: { "no-bitwise": "error" } };\n',
+            "drift:extends",
+        ),
+    ],
+    ids=["rule-off", "not-extending"],
+)
+def test_a_weaker_oxlint_config_drifts(
+    fixtures: Fixtures, config: str, rule: str
+) -> None:
+    run = fixtures.check("commit", files={"oxlint.config.ts": config})
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "FAIL"
+    assert rule in exceptions.findings
+
+
+def test_an_oxlint_config_turning_an_extra_rule_on_passes(
+    fixtures: Fixtures,
+) -> None:
+    extra = EXTENDING.replace("{rules}", '{ "no-unreachable-loop": "error" }')
+    run = fixtures.check("commit", files={"oxlint.config.ts": extra})
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "ok", exceptions.findings
+    assert run.units["lint"].outcome == "ok", run.units["lint"].findings
+
+
+def test_an_exception_named_as_oxlint_prints_the_rule_clears_it(
+    fixtures: Fixtures,
+) -> None:
+    hooked = "packages/core/src/hooked.tsx"
+    run = fixtures.check(
+        "commit",
+        files={
+            "exceptions.toml": (
+                "[[exception]]\n"
+                f'path = "{hooked}"\n'
+                'rule = "lint/react-hooks/rules-of-hooks"\n'
+                'reason = "a fixture"\n'
+            ),
+            hooked: HOOKED,
+        },
+    )
+    # The break also breaks react's own hooks rules, which stay.
+    assert run.units["exceptions"].outcome == "ok"
+    assert hooked in run.units["lint"].findings
+    assert "react-hooks(rules-of-hooks)" not in run.units["lint"].findings
 
 
 NODE_IMPORTS = FrozenOrderedDict({

@@ -60,33 +60,54 @@ mapfile -t sources < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.
 mapfile -t scripts < <(printf '%s\n' "${sources[@]}" | grep -E '\.(ts|tsx|js|mjs|jsx)$')
 
 # Oxlint, its type-aware backend and cloudflare's config are installed at
-# their pins once, into the cache. A project's oxlint.config.ts runs in
-# place. The standard's imports cloudflare's config, so it runs from a copy
-# beside that install, outside node_modules, where Node won't strip types,
-# with the standards plugin it loads from beside it.
-oxlint_lint() {
-	local install run tsgolint typed= status
-	((${#scripts[@]} > 0)) || return 0
+# their pins once, into the cache, and run by oxlint.
+oxlint_install() {
+	local fresh
 	install="$(cache_root)/oxlint/${pins[OXLINT]}-${pins[OXLINT_TSGOLINT]}-${pins[CLOUDFLARE_OXLINT_CONFIG]}"
-	if [ ! -e "$install/node_modules/oxlint/package.json" ]; then
-		mkdir -p "${install%/*}"
-		run=$(mktemp -d "$install.XXXXXX")
-		printf '{"private": true, "type": "module"}\n' >"$run/package.json"
-		npm install --prefix "$(native "$run")" --no-audit --no-fund --loglevel=error \
-			"oxlint@${pins[OXLINT]}" "oxlint-tsgolint@${pins[OXLINT_TSGOLINT]}" \
-			"@cloudflare/oxlint-config@${pins[CLOUDFLARE_OXLINT_CONFIG]}" || return 1
-		if [ -e "$install" ]; then rm -rf "$run"; else mv "$run" "$install"; fi
+	[ ! -e "$install/node_modules/oxlint/package.json" ] || return 0
+	mkdir -p "${install%/*}"
+	fresh=$(mktemp -d "$install.XXXXXX")
+	printf '{"private": true, "type": "module"}\n' >"$fresh/package.json"
+	npm install --prefix "$(native "$fresh")" --no-audit --no-fund --loglevel=error \
+		"oxlint@${pins[OXLINT]}" "oxlint-tsgolint@${pins[OXLINT_TSGOLINT]}" \
+		"@cloudflare/oxlint-config@${pins[CLOUDFLARE_OXLINT_CONFIG]}" || return 1
+	if [ -e "$install" ]; then rm -rf "$fresh"; else mv "$fresh" "$install"; fi
+}
+
+oxlint() {
+	node "$(native "$install/node_modules/oxlint/bin/oxlint")" "$@"
+}
+
+# The standard's config imports cloudflare's, so it runs from a copy in a run
+# folder beside the install, outside node_modules, where Node won't strip
+# types, with the standards plugin it loads from beside it. A project's own
+# oxlint.config.ts runs from a copy in the run folder's project/, where it
+# imports the standard's copy as `#standards/oxlint`, which the run folder's
+# package.json maps, and extends it. Sets `run`, the run folder, and
+# `oxlint_config`, the config that applies: the project's, or the standard's.
+oxlint_run() {
+	oxlint_install || return 1
+	run=$(mktemp -d "$install/run.XXXXXX")
+	printf '{"type": "module", "imports": {"#standards/oxlint": "./oxlint.config.ts"}}\n' \
+		>"$run/package.json"
+	cp "$standards/oxlint.config.ts" "$run/oxlint.config.ts"
+	mkdir "$run/oxlint-plugins"
+	cp -r "$standards/oxlint-plugins/index.ts" "$standards/oxlint-plugins/rules" "$run/oxlint-plugins/"
+	oxlint_config=$run/oxlint.config.ts
+	if [ -z "$own" ] && [ -e oxlint.config.ts ]; then
+		mkdir "$run/project"
+		cp oxlint.config.ts "$run/project/oxlint.config.ts"
+		oxlint_config=$run/project/oxlint.config.ts
 	fi
+}
+
+oxlint_lint() {
+	local install run oxlint_config tsgolint typed= status
+	((${#scripts[@]} > 0)) || return 0
+	oxlint_run || return 1
 	tsgolint=$(cd "$install" && node -p \
 		'require.resolve(`@oxlint-tsgolint/${process.platform}-${process.arch}/tsgolint${process.platform === "win32" ? ".exe" : ""}`)') ||
 		return 1
-	run=$(mktemp -d "$install/run.XXXXXX")
-	if [ -n "$own" ] || ! oxlint_config=$(existing oxlint.config.ts); then
-		cp "$standards/oxlint.config.ts" "$run/oxlint.config.ts"
-		mkdir "$run/oxlint-plugins"
-		cp -r "$standards/oxlint-plugins/index.ts" "$standards/oxlint-plugins/rules" "$run/oxlint-plugins/"
-		oxlint_config=$run/oxlint.config.ts
-	fi
 	# Without a tsconfig.json there are no types to check, as for the types
 	# unit, so the type-aware rules are off.
 	if [ ! -f tsconfig.json ]; then
@@ -103,13 +124,32 @@ oxlint_lint() {
 	mkdir -p node_modules/.cache/standards
 	oxlint_config=$(checks oxlint-config "$(native "$oxlint_config")") || return 1
 	OXLINT_CONFIG=${typed:+$(native "$typed")} OXLINT_TSGOLINT_PATH=$tsgolint \
-		node "$(native "$install/node_modules/oxlint/bin/oxlint")" --config="$(native "$oxlint_config")" "${scripts[@]}"
+		oxlint --config="$(native "$oxlint_config")" "${scripts[@]}"
 	status=$?
 	rm -rf "$run"
 	return "$status"
 }
 
-exceptions_unit
+# Drift compares a project's own oxlint.config.ts with the standard's, each
+# as Oxlint resolves it, with extends flattened, into the logs.
+oxlint_policy() {
+	local install run oxlint_config status
+	local standard=$logs/oxlint.standard.json own_config=$logs/oxlint.project.json
+	if [ -n "$own" ] || [ ! -e oxlint.config.ts ]; then
+		policy
+		return
+	fi
+	oxlint_run || return 1
+	oxlint --print-config -c "$(native "$run/oxlint.config.ts")" >"$standard" &&
+		oxlint --print-config -c "$(native "$oxlint_config")" >"$own_config"
+	status=$?
+	rm -rf "$run"
+	((status == 0)) || return "$status"
+	policy "--resolved=oxlint.config.ts=$(native "$own_config")" \
+		"--resolved=typescript/oxlint.config.ts=$(native "$standard")"
+}
+
+exceptions_unit oxlint_policy
 unit format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y "@biomejs/biome@${pins[BIOME]}" format "${biome[@]}" "${sources[@]}"
 unit lint "joined 'Found [0-9]+ (warnings? and [0-9]+ )?(error|warning|info)s?'" \

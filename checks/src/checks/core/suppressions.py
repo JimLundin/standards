@@ -20,11 +20,10 @@ PYTHON_MARKERS = FrozenList((
     r"isort\s*:\s*skip",
 ))
 TYPESCRIPT_MARKERS = FrozenList((
-    r"biome-ignore",
     r"@ts-(?:ignore|expect-error|nocheck)",
     r"Stryker\s+(?:disable|restore)",
     r"(?:c8|istanbul|node:coverage)\s+ignore",
-    r"eslint-disable",
+    r"(?:es|ox)lint-(?:disable|enable)",
     r"prettier-ignore",
 ))
 PYTHON_MARKER = re.compile(
