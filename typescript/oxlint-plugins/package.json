@@ -1,20 +1,20 @@
 {
-	"name": "@standards/oxlint-plugins",
-	"private": true,
-	"type": "module",
-	"engines": {
-		"node": ">=26"
-	},
-	"exports": "./index.ts",
-	"scripts": {
-		"test": "vitest run --mode fast"
-	},
-	"devDependencies": {
-		"@effect/platform-node": "4.1.5",
-		"@effect/vitest": "4.1.5",
-		"@oxlint/plugins": "1.95.0",
-		"effect": "4.1.5",
-		"oxlint": "1.95.0",
-		"vitest": "5.1.1"
-	}
+  "name": "@standards/oxlint-plugins",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "scripts": {
+    "test": "vitest run --mode fast"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "4.1.5",
+    "@effect/vitest": "4.1.5",
+    "@oxlint/plugins": "1.95.0",
+    "effect": "4.1.5",
+    "oxlint": "1.95.0",
+    "vitest": "5.1.1"
+  },
+  "engines": {
+    "node": ">=26"
+  }
 }

@@ -181,6 +181,41 @@ def test_the_compliant_tree_passes_every_unit(
     assert run.status == 0
 
 
+# Indented by tabs, as Biome formats it; oxfmt indents by two spaces.
+TABBED = """export const double = (value: number): number => {
+\treturn value * 2;
+};
+"""
+
+
+def unsorted_package() -> str:
+    """The compliant core package.json, with `name` moved below `private`."""
+    path = FIXTURES / COMPLIANT / "packages/core/package.json"
+    lines = path.read_text().splitlines(keepends=True)
+    named = next(index for index, line in enumerate(lines) if '"name"' in line)
+    private = lines.pop(named + 1)
+    assert '"private"' in private
+    lines.insert(named, private)
+    return "".join(lines)
+
+
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        ("packages/core/src/tabbed.ts", TABBED),
+        ("packages/core/package.json", unsorted_package()),
+    ],
+    ids=["misformatted-ts", "unsorted-package-json"],
+)
+def test_a_misformatted_file_fails_format_naming_it(
+    fixtures: Fixtures, path: str, text: str
+) -> None:
+    run = fixtures.check("commit", files={path: text})
+    format_ = run.units["format"]
+    assert format_.outcome == "FAIL"
+    assert path in format_.findings
+
+
 @pytest.mark.parametrize(
     "comment",
     ["// oxlint-disable-next-line no-magic-numbers", "/* eslint-disable */"],

@@ -39,38 +39,33 @@ export class Logger extends Effect.Service<Logger>()("Logger", {}) {}
 `;
 
 describe("no-plain-class", () => {
-	it.effect("reports a plain class and a class extending a local class", () =>
-		Effect.map(findings(rules, plain), (found) => {
-			expect(found).toStrictEqual([
-				`1 ${finding}`,
-				`2 ${finding}`,
-				`3 ${finding}`,
-				`4 ${finding}`,
-			]);
-		}),
-	);
+  it.effect("reports a plain class and a class extending a local class", () =>
+    Effect.map(findings(rules, plain), (found) => {
+      expect(found).toStrictEqual([`1 ${finding}`, `2 ${finding}`, `3 ${finding}`, `4 ${finding}`]);
+    }),
+  );
 
-	it.effect("reports a class extending a lookalike not imported from effect", () =>
-		Effect.map(findings(rules, lookalike), (found) => {
-			expect(found).toStrictEqual([`3 ${finding}`, `4 ${finding}`]);
-		}),
-	);
+  it.effect("reports a class extending a lookalike not imported from effect", () =>
+    Effect.map(findings(rules, lookalike), (found) => {
+      expect(found).toStrictEqual([`3 ${finding}`, `4 ${finding}`]);
+    }),
+  );
 
-	it.effect("doesn't report a class extending each allowed Effect base", () =>
-		Effect.map(findings(rules, allowed), (found) => {
-			expect(found).toStrictEqual([]);
-		}),
-	);
+  it.effect("doesn't report a class extending each allowed Effect base", () =>
+    Effect.map(findings(rules, allowed), (found) => {
+      expect(found).toStrictEqual([]);
+    }),
+  );
 
-	it.effect("resolves an aliased or namespace import from effect", () =>
-		Effect.map(findings(rules, renamed), (found) => {
-			expect(found).toStrictEqual([]);
-		}),
-	);
+  it.effect("resolves an aliased or namespace import from effect", () =>
+    Effect.map(findings(rules, renamed), (found) => {
+      expect(found).toStrictEqual([]);
+    }),
+  );
 
-	it.effect("reports a class extending an Effect constructor not allowed", () =>
-		Effect.map(findings(rules, unlisted), (found) => {
-			expect(found).toStrictEqual([`3 ${finding}`, `4 ${finding}`]);
-		}),
-	);
+  it.effect("reports a class extending an Effect constructor not allowed", () =>
+    Effect.map(findings(rules, unlisted), (found) => {
+      expect(found).toStrictEqual([`3 ${finding}`, `4 ${finding}`]);
+    }),
+  );
 });

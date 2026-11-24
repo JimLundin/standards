@@ -1,15 +1,15 @@
 {
-	"name": "@fixture/core",
-	"private": true,
-	"type": "module",
-	"engines": {
-		"node": ">=26"
-	},
-	"exports": "./src/index.ts",
-	"standards": {
-		"layer": "core"
-	},
-	"dependencies": {
-		"effect": "4.1.5"
-	}
+  "name": "@fixture/core",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "effect": "4.1.5"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "standards": {
+    "layer": "core"
+  }
 }

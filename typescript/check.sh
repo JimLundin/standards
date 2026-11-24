@@ -20,7 +20,7 @@ fi
 pinned NODE node "nvm install {}, or another way to put Node {} on PATH" node --version
 # A check's key holds the pinned version of the tool it runs.
 versions=(
-	"--tool=format=${pins[BIOME]}"
+	"--tool=format=${pins[OXFMT]}"
 	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]}"
 	"--tool=unused=${pins[KNIP]}"
@@ -49,15 +49,16 @@ units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
 	--project=exceptions,format,lint,types,unused,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
-biome=()
-if ! biome_config=$(existing biome.json biome.jsonc); then
-	biome_config=$standards/biome.json
-	biome=(--config-path="$(native "$biome_config")")
+# oxfmt finds a project's own config itself, and is given the standard's
+# otherwise. It skips a file of a type it doesn't support.
+oxfmt_config=()
+if ! existing .oxfmtrc.json .oxfmtrc.jsonc >/dev/null; then
+	oxfmt_config=(--config="$(native "$standards/.oxfmtrc.json")")
 fi
+mapfile -t formatted < <(git ls-files -- . "${foreign[@]}" |
+	grep -vE '(^|/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$')
 
-mapfile -t sources < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' "${foreign[@]}" |
-	grep -vE '(^|/)(package-lock|tsconfig)\.json$')
-mapfile -t scripts < <(printf '%s\n' "${sources[@]}" | grep -E '\.(ts|tsx|js|mjs|jsx)$')
+mapfile -t scripts < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' "${foreign[@]}")
 
 # Oxlint, its type-aware backend and cloudflare's config are installed at
 # their pins once, into the cache, and run by oxlint.
@@ -149,9 +150,15 @@ oxlint_policy() {
 		"--resolved=typescript/oxlint.config.ts=$(native "$standard")"
 }
 
+oxfmt_format() {
+	((${#formatted[@]} > 0)) || return 0
+	npx -y "oxfmt@${pins[OXFMT]}" --check --no-error-on-unmatched-pattern \
+		"${oxfmt_config[@]}" "${formatted[@]}"
+}
+
 exceptions_unit oxlint_policy
-unit format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
-	npx -y "@biomejs/biome@${pins[BIOME]}" format "${biome[@]}" "${sources[@]}"
+unit format "last 'Format issues found in above [0-9]+ files?|All matched files use the correct format|No files found'" \
+	oxfmt_format
 unit lint "joined 'Found [0-9]+ (warnings? and [0-9]+ )?(error|warning|info)s?'" \
 	oxlint_lint
 if [ -f tsconfig.json ]; then
