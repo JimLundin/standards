@@ -516,10 +516,12 @@ def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
 # A project's own oxlint.config.ts, which extends the standard's.
 EXTENDING = """import standard from "#standards/oxlint";
 
-export default {
+const config = {
 	extends: [standard],
 	rules: {rules},
 };
+
+export default config;
 """
 
 
@@ -572,8 +574,10 @@ def test_an_exception_named_as_oxlint_prints_the_rule_clears_it(
             hooked: HOOKED,
         },
     )
+    # The break also breaks react's own hooks rules, which stay.
     assert run.units["exceptions"].outcome == "ok"
-    assert run.units["lint"].outcome == "ok", run.units["lint"].findings
+    assert hooked in run.units["lint"].findings
+    assert "react-hooks(rules-of-hooks)" not in run.units["lint"].findings
 
 
 NODE_IMPORTS = FrozenOrderedDict({
