@@ -66,8 +66,16 @@ def test_without_and_globs() -> None:
     assert lines(run(("globs", "api"), inputs(texts))) == ()
 
 
-OXLINT_CONFIG = """import config from "file:///std/oxlint.config.ts";
+RESTRICTED = """const restricted = (rule) =>
+	(config.rules?.[rule] ?? standard.rules[rule]).slice(1);
+"""
+OXLINT_CONFIG = (
+    """import config from "file:///std/oxlint.config.ts";
+import standard from "file:///std/oxlint.config.ts";
 
+"""
+    + RESTRICTED
+    + """
 export default {
 	extends: [config],
 	overrides: [
@@ -76,6 +84,7 @@ export default {
 	],
 };
 """
+)
 
 
 def test_oxlint_config_extends_the_config_with_an_override_per_exception() -> (
@@ -120,6 +129,23 @@ def test_oxlint_config_imports_the_config_by_an_escaped_file_url() -> None:
     )
 
 
+def test_oxlint_config_reads_restrictions_from_the_standard_named() -> None:
+    outcome = run(
+        (
+            "oxlint-config",
+            "--standard=/run/oxlint.config.ts",
+            "/run/p/oxlint.config.ts",
+        ),
+        inputs({}, cwd="/work"),
+    )
+    (config,) = outcome.writes.values()
+    imports = (
+        'import config from "file:///run/p/oxlint.config.ts";\n'
+        'import standard from "file:///run/oxlint.config.ts";\n'
+    )
+    assert config.startswith(imports)
+
+
 def test_oxlint_config_untyped_turns_type_aware_rules_off() -> None:
     outcome = run(
         ("oxlint-config", "--untyped", "/std/oxlint.config.ts"),
@@ -127,7 +153,9 @@ def test_oxlint_config_untyped_turns_type_aware_rules_off() -> None:
     )
     (config,) = outcome.writes.values()
     assert config == (
-        'import config from "file:///std/oxlint.config.ts";\n\n'
+        'import config from "file:///std/oxlint.config.ts";\n'
+        'import standard from "file:///std/oxlint.config.ts";\n\n'
+        f"{RESTRICTED}\n"
         "export default {\n"
         "\textends: [config],\n"
         "\toptions: { ...config.options, typeAware: false },\n"

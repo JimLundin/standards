@@ -1,0 +1,4 @@
+[[exception]]
+path = "packages/ui/src/main.tsx"
+rule = "lint/eslint/no-restricted-globals"
+reason = "the entry point mounts the app on the document's body"
