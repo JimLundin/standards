@@ -1,3 +1,4 @@
+import type { Entry } from "./entries.ts";
 import type { Measured } from "./decisions.ts";
 import { Schema } from "effect";
 
@@ -25,8 +26,12 @@ const fields = (text: string): ReadonlyArray<Readonly<Record<string, string | un
 const record = ({ layer, path, root }: Placement, { decisions, line, name }: Measured): string =>
   JSON.stringify({ decisions, function: name, layer, line, path, root });
 
+// The record of an entry point a file calls, named by its call; its root is its package.
+const entry = ({ layer, path, root }: Placement, { call, line }: Entry): string =>
+  JSON.stringify({ entry: call, layer, line, path, root });
+
 // The record of a file that couldn't be measured.
 const failure = ({ layer, path, root }: Placement, error: string): string =>
   JSON.stringify({ error, layer, path, root });
 
-export { LayerMap, Placement, failure, fields, record };
+export { LayerMap, Placement, entry, failure, fields, record };

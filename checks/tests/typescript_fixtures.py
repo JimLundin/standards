@@ -162,7 +162,14 @@ def fixtures(tmp_path_factory: pytest.TempPathFactory) -> Fixtures:
     return Fixtures(root, installed)
 
 
-COMMIT_UNITS = FrozenList(("exceptions", "format", "lint", "types", "unused"))
+COMMIT_UNITS = FrozenList((
+    "exceptions",
+    "format",
+    "lint",
+    "types",
+    "unused",
+    "entry",
+))
 
 
 @pytest.mark.parametrize(
@@ -1020,3 +1027,46 @@ def test_a_core_or_shell_file_is_not_held_to_the_ui_bans(
     )
     lint = run.units["lint"]
     assert lint.outcome == "ok", lint.findings
+
+
+RUN_AGAIN = """import { Effect } from "effect";
+import { NodeRuntime } from "@effect/platform-node";
+
+NodeRuntime.runMain(Effect.void);
+"""
+MOUNT_AGAIN = """import { RegistryProvider } from "@effect/atom-react";
+import { Welcome } from "./welcome.tsx";
+import { createRoot } from "react-dom/client";
+
+createRoot(document.body).render(
+\t<RegistryProvider>
+\t\t<Welcome />
+\t</RegistryProvider>,
+);
+"""
+
+
+@pytest.mark.parametrize(
+    ("path", "text", "first"),
+    [
+        (
+            "packages/shell/again.ts",
+            RUN_AGAIN,
+            "packages/shell/main.ts:5: the project calls NodeRuntime.runMain 2 times",
+        ),
+        (
+            "packages/ui/src/again.tsx",
+            MOUNT_AGAIN,
+            "packages/ui/src/main.tsx:5: packages/ui calls createRoot 2 times",
+        ),
+    ],
+    ids=["run-main", "create-root"],
+)
+def test_a_second_entry_point_fails_entry_naming_each(
+    fixtures: Fixtures, path: str, text: str, first: str
+) -> None:
+    run = fixtures.check("commit", files={path: text})
+    entry = run.units["entry"]
+    assert entry.outcome == "FAIL"
+    assert first in entry.findings
+    assert f"{path}:" in entry.findings

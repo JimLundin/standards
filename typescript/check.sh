@@ -27,6 +27,7 @@ versions=(
 	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]},${pins[EFFECT_TSGO]}"
 	"--tool=unused=${pins[KNIP]}"
+	"--tool=entry=${pins[TS_MEASURE]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
 	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
 )
@@ -49,7 +50,7 @@ if full; then
 fi
 release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
-	--project=exceptions,format,lint,types,unused,test,test-release,mutation,duplication,volume
+	--project=exceptions,format,lint,types,unused,entry,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
 # oxfmt finds a project's own config itself, and is given the standard's
@@ -180,6 +181,19 @@ if [ -f package.json ]; then
 	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress
 fi
+# A project starts one Node runtime and each ui package one React root, as
+# typescript/measure finds their calls in the files of the layer map.
+entry() {
+	checks typescript-layers "${scripts[@]}" >"$logs/layers.tsv" || {
+		cat "$logs/layers.tsv"
+		return 1
+	}
+	typescript-measure . "$(native "$logs/layers.tsv")" >"$logs/measure.jsonl" || return
+	checks typescript-entry "$(native "$logs/measure.jsonl")"
+}
+tools_of[entry]=typescript-measure
+unit entry "last 'Found [0-9]+ issues|[0-9]+ runMain, [0-9]+ createRoot'" entry
+
 # Vitest runs in the mode of vitest.config.ts that the tier names: fast at
 # step, full, with coverage and the slow tests, at release.
 if [ -f package.json ] && at_least step; then

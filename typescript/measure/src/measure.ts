@@ -1,6 +1,14 @@
 import type { API as Compiler, Snapshot } from "typescript/unstable/sync";
 import { Data, Effect, FileSystem, Path, Schema } from "effect";
-import { LayerMap, failure, fields, functions, record } from "@standards/measure-core";
+import {
+  LayerMap,
+  entries,
+  entry,
+  failure,
+  fields,
+  functions,
+  record,
+} from "@standards/measure-core";
 import { API } from "typescript/unstable/sync";
 import type { Placement } from "@standards/measure-core";
 import type { PlatformError } from "effect/PlatformError";
@@ -37,9 +45,14 @@ const measured = (
   placement: Placement,
 ): ReadonlyArray<string> => {
   const source = snapshot.getDefaultProjectForFile(file)?.program.getSourceFile(file);
-  return source === undefined
-    ? [failure(placement, ABSENT)]
-    : functions(syntaxOf(source)).map((found) => record(placement, found));
+  if (source === undefined) {
+    return [failure(placement, ABSENT)];
+  }
+  const syntax = syntaxOf(source);
+  return [
+    ...functions(syntax).map((found) => record(placement, found)),
+    ...entries(syntax).map((found) => entry(placement, found)),
+  ];
 };
 
 // The record lines of each file of the layer map at `layers`, whose paths are relative to `project`.
