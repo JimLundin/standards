@@ -683,6 +683,24 @@ def test_an_oxlint_config_that_weakens_every_check() -> None:
     )
 
 
+def test_an_oxlint_config_weakening_a_scoped_plugins_rule() -> None:
+    files = {OXLINT: EXTENDING, "vitest.config.ts": KEPT_RUNS}
+    resolved = {
+        OXLINT: json.dumps({"rules": {"@nkzw/no-instanceof": "allow"}}),
+        "typescript/oxlint.config.ts": json.dumps({
+            "rules": {"@nkzw/no-instanceof": "deny"}
+        }),
+    }
+    found = typescript_drift(
+        snapshot(files, TYPESCRIPT_STANDARDS, (), resolved)
+    )
+    assert tuple(found) == issues((
+        OXLINT,
+        "rules.@nkzw/no-instanceof",
+        "rules.@nkzw/no-instanceof is `allow`, weaker than `deny`",
+    ))
+
+
 def test_the_standard_oxlint_config_itself_has_no_drift() -> None:
     assert oxlint_drift_of(STANDARD_OXLINT_SOURCE, STANDARD_OXLINT) == ()
 

@@ -411,28 +411,45 @@ def test_an_async_function_returning_a_promise_unawaited_passes_lint(
     assert returned not in lint.findings
 
 
+# A scoped plugin's rule, such as @nkzw's, is printed as `@nkzw(rule)`.
+OWNED = """class Owned {
+	public readonly name = "owned";
+}
+
+export const owned = (value: unknown): boolean => value instanceof Owned;
+"""
+
+
+@pytest.mark.parametrize(
+    ("rule", "finding", "text"),
+    [
+        ("lint/eslint/no-bitwise", "eslint(no-bitwise)", MASKED),
+        ("lint/@nkzw/no-instanceof", "@nkzw(no-instanceof)", OWNED),
+    ],
+    ids=["plugin", "scoped-plugin"],
+)
 def test_an_exception_clears_its_rule_in_its_file_alone(
-    fixtures: Fixtures,
+    fixtures: Fixtures, rule: str, finding: str, text: str
 ) -> None:
-    excepted = "packages/core/src/masked.ts"
-    unexcepted = "packages/core/src/unmasked.ts"
+    excepted = "packages/core/src/excepted.ts"
+    unexcepted = "packages/core/src/unexcepted.ts"
     run = fixtures.check(
         "commit",
         files={
             "exceptions.toml": (
                 "[[exception]]\n"
                 f'path = "{excepted}"\n'
-                'rule = "lint/eslint/no-bitwise"\n'
+                f'rule = "{rule}"\n'
                 'reason = "a fixture"\n'
             ),
-            excepted: MASKED,
-            unexcepted: MASKED,
+            excepted: text,
+            unexcepted: text,
         },
     )
     findings = run.units["lint"].findings
     assert run.units["exceptions"].outcome == "ok"
     assert run.units["lint"].outcome == "FAIL"
-    assert findings.count("eslint(no-bitwise)") == 1
+    assert findings.count(finding) == 1
     assert unexcepted in findings
     assert excepted not in findings
 

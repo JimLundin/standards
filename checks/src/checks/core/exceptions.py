@@ -27,7 +27,9 @@ UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
-OXLINT = re.compile(r"lint/([\w-]+)/([\w-]+)")
+# A plugin is a name, a scope such as `@nkzw`, or a scoped name such as
+# `@scope/name`.
+OXLINT = re.compile(r"lint/((?:@[\w-]+/|@)?[\w-]+/[\w-]+)")
 
 
 def rule_covers(excepted: str, found: str) -> bool:
@@ -113,6 +115,11 @@ def exceptions_in(inputs: Inputs) -> Exceptions:
     return load(inputs.texts.get(EXCEPTIONS))
 
 
+def oxlint_rule(rule: str) -> str:
+    found = OXLINT.fullmatch(rule)
+    return found[1] if found else ""
+
+
 def kind(language: str, rule: str) -> str:
     if rule == MUTATION or (language == "rust" and rule in RUST_RULES):
         return rule
@@ -122,7 +129,7 @@ def kind(language: str, rule: str) -> str:
         return python_kind(rule)
     if language == "rust" and RUST_LINT.fullmatch(rule):
         return "attribute"
-    if language == "typescript" and OXLINT.fullmatch(rule):
+    if language == "typescript" and oxlint_rule(rule):
         return "oxlint"
     return ""
 
