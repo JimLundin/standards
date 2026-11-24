@@ -17,7 +17,8 @@ lazy from collections.abc import Mapping
 import pytest
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from tests.test_lib import STANDARDS, git
+from tests.helpers import STANDARDS
+from tests.test_lib import git
 
 TYPESCRIPT = STANDARDS / "typescript"
 FIXTURES = TYPESCRIPT / "fixtures"

@@ -1,9 +1,7 @@
 import tomllib
-from pathlib import Path
 
 from checks.core.units import pins_of
-
-STANDARDS = Path(__file__).resolve().parents[2]
+from tests.helpers import STANDARDS
 
 
 def test_rust_decisions_is_pinned_at_the_version_of_rust_measure() -> None:
