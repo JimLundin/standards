@@ -3,8 +3,9 @@ lazy from collections.abc import Mapping
 
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks.core.decoding import decode
 from checks.core.tools import request, run
-from checks.core.values import Inputs, Outcome, Request
+from checks.core.values import Inputs, Outcome, Request, entries, strings, table
 from tests.helpers import entry, inputs
 
 USE = 'use "core", "shell" or "ui"'
@@ -98,39 +99,43 @@ def overrides(texts: Mapping[str, str], *files: str) -> FrozenList[object]:
     )
     (config,) = outcome.writes.values()
     return FrozenList(
-        json.loads(line.strip().removesuffix(","))
+        decode(line.strip().removesuffix(","))
         for line in config.splitlines()
         if '"no-restricted-imports"' in line
     )
 
 
 def restriction(override: object) -> Mapping[str, object]:
-    assert isinstance(override, dict)
-    rules = override["rules"]
-    assert isinstance(rules, dict)
-    level, options = rules["no-restricted-imports"]
+    rules = table(table(override).get("rules"))
+    level, options = entries(rules.get("no-restricted-imports"))
     assert level == "error"
-    assert isinstance(options, dict)
-    return options
+    return table(options)
 
 
 def group(override: object) -> FrozenList[str]:
-    (pattern,) = restriction(override)["patterns"]
-    return FrozenList(pattern["group"])
+    (pattern,) = entries(restriction(override).get("patterns"))
+    return strings(table(pattern).get("group"))
 
 
-TOOLING = [
+def scope(override: object) -> tuple[FrozenList[str], FrozenList[str]]:
+    return (
+        strings(table(override).get("files")),
+        strings(table(override).get("excludeFiles")),
+    )
+
+
+TOOLING = (
     "/work/**/*.test.{ts,tsx}",
     "/work/**/test/**",
     "/work/**/*.config.{ts,tsx,mts,js,mjs}",
     "/work/**/vitest.setup.ts",
-]
-NESTED = {
+)
+NESTED = FrozenOrderedDict({
     "package.json": named("root"),
     "packages/io/package.json": named("@w/io", "shell"),
     "packages/io/pure/package.json": named("@w/pure"),
     "packages/app/package.json": named("@w/app", "ui"),
-}
+})
 NESTED_FILES = (
     "x.ts",
     "packages/io/a.ts",
@@ -148,24 +153,20 @@ def test_oxlint_config_reads_the_manifests_of_the_files_it_lints() -> None:
 
 
 def test_each_package_restricts_imports_in_its_files_alone() -> None:
-    scopes = FrozenList(
-        (override["files"], override["excludeFiles"])
-        for override in overrides(NESTED, *NESTED_FILES)
-        if isinstance(override, dict)
-    )
+    scopes = FrozenList(map(scope, overrides(NESTED, *NESTED_FILES)))
     assert scopes == (
         (
-            ["/work/**"],
-            [
+            ("/work/**",),
+            (
                 "/work/packages/io/**",
                 "/work/packages/io/pure/**",
                 "/work/packages/app/**",
                 *TOOLING,
-            ],
+            ),
         ),
-        (["/work/packages/io/**"], ["/work/packages/io/pure/**", *TOOLING]),
-        (["/work/packages/io/pure/**"], TOOLING),
-        (["/work/packages/app/**"], TOOLING),
+        (("/work/packages/io/**",), ("/work/packages/io/pure/**", *TOOLING)),
+        (("/work/packages/io/pure/**",), TOOLING),
+        (("/work/packages/app/**",), TOOLING),
     )
 
 
@@ -218,10 +219,14 @@ CORE_GROUP = (
 )
 
 
+def paths(override: object) -> FrozenList[Mapping[str, object]]:
+    return FrozenList(map(table, entries(restriction(override).get("paths"))))
+
+
 def allowed(override: object) -> FrozenOrderedDict[str, object]:
     return FrozenOrderedDict(
-        (path["name"], path.get("allowImportNames"))
-        for path in restriction(override)["paths"]
+        (str(path.get("name")), path.get("allowImportNames"))
+        for path in paths(override)
     )
 
 
@@ -275,12 +280,9 @@ def test_a_purity_exception_allows_its_module_in_its_core_files() -> None:
         texts, *NESTED_FILES, "y.ts", "packages/app/d.ts"
     )
     assert len(layers) == len(NESTED)
-    assert isinstance(wider, dict)
-    assert wider["files"] == ["/work/y.ts"]
+    assert scope(wider) == (("/work/y.ts",), TOOLING)
     assert group(wider)[-2:] == ("!@w/io", "!@w/io/**")
-    assert isinstance(excepted, dict)
-    assert excepted["files"] == ["/work/x.ts"]
-    assert excepted["excludeFiles"] == TOOLING
+    assert scope(excepted) == (("/work/x.ts",), TOOLING)
     assert group(excepted)[-7:] == (
         "!lodash",
         "!lodash/**",
@@ -302,10 +304,8 @@ def test_a_purity_exception_for_effect_keeps_hash_maps_banned() -> None:
         "effect/HashMap": None,
         "effect/HashSet": None,
     }
-    assert restriction(excepted)["paths"][0]["importNames"] == [
-        "HashMap",
-        "HashSet",
-    ]
+    (barrel, *_) = paths(excepted)
+    assert barrel.get("importNames") == ["HashMap", "HashSet"]
 
 
 def test_oxlint_config_writes_nothing_on_an_unknown_layer() -> None:

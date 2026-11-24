@@ -151,10 +151,14 @@ def packages_of(placed: Sequence[Placement]) -> FrozenList[Package]:
     )
 
 
+def layer_issue(package: Package) -> str:
+    layer = json.dumps(package.layer)
+    return f"{manifest(package.folder)}: {LAYER} is {layer}; {USE}"
+
+
 def layer_issues(placed: Sequence[Placement]) -> FrozenList[str]:
     return FrozenList(
-        f"{manifest(package.folder)}: {LAYER} is {json.dumps(package.layer)};"
-        f" {USE}"
+        layer_issue(package)
         for package in packages_of(placed)
         if not (isinstance(package.layer, str) and package.layer in LAYERS)
     )
@@ -170,8 +174,11 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         return Outcome(issues, 1)
     return listing(
         FrozenList(
-            f"{placement.package.layer}\t{placement.package.folder or '.'}"
-            f"\t{placement.file}"
+            "\t".join((
+                str(placement.package.layer),
+                placement.package.folder or ".",
+                placement.file,
+            ))
             for placement in placed
         )
     )

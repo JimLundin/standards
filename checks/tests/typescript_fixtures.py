@@ -817,7 +817,7 @@ def test_a_layer_crossing_fails_lint_naming_the_import(
         assert path in findings, path
 
 
-EFFECTFUL = """import { succeed } from "effect/Effect";
+EFFECT_MODULE = """import { succeed } from "effect/Effect";
 
 export const one = succeed(1);
 """
@@ -845,7 +845,7 @@ def test_a_core_import_beyond_its_allowlist_fails_lint_unless_excepted(
                 'rule = "purity:react"\n'
                 'reason = "a fixture"\n'
             ),
-            "packages/core/src/effectful.ts": EFFECTFUL,
+            "packages/core/src/effectful.ts": EFFECT_MODULE,
             "packages/core/src/hashed.ts": HASHED,
             excepted: REACTED,
             unexcepted: REACTED,
