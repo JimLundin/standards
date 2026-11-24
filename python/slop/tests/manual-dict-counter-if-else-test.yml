@@ -1,0 +1,21 @@
+id: manual-dict-counter-if-else
+valid:
+  - |
+    def f(words):
+        return FrozenOrderedDict(Counter(words))
+invalid:
+  - |
+    def f(words):
+        counts = {}
+        for word in words:
+            if word in counts:
+                counts[word] += 1
+            else:
+                counts[word] = 1
+        return counts
+  - |
+    def f(words):
+        counts = {}
+        for word in words:
+            counts[word] = counts.get(word, 0) + 1
+        return counts

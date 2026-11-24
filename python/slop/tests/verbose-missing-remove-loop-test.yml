@@ -1,0 +1,14 @@
+id: verbose-missing-remove-loop
+valid:
+  - |
+    def f(required, target):
+        present = FrozenOrderedSet(target)
+        return FrozenList(item for item in required if item not in present)
+invalid:
+  - |
+    def f(required, target):
+        missing = list(required)
+        for item in required:
+            if item in target:
+                missing.remove(item)
+        return missing

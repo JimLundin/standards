@@ -1,0 +1,12 @@
+id: conditional-same-target-subscript-assign
+valid:
+  - |
+    def f(key, flag):
+        return FrozenOrderedDict({key: 1 if flag else 2})
+invalid:
+  - |
+    def f(d, key, flag):
+        if flag:
+            d[key] = 1
+        else:
+            d[key] = 2

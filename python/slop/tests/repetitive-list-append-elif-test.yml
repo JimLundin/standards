@@ -1,0 +1,19 @@
+id: repetitive-list-append-elif
+valid:
+  - |
+    LABELS = FrozenOrderedDict({1: "one", 2: "two", 3: "three"})
+
+    def f(codes):
+        return FrozenList(LABELS[code] for code in codes)
+invalid:
+  - |
+    def f(codes):
+        labels = []
+        for code in codes:
+            if code == 1:
+                labels.append("one")
+            elif code == 2:
+                labels.append("two")
+            elif code == 3:
+                labels.append("three")
+        return labels

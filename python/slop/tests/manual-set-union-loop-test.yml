@@ -1,0 +1,12 @@
+id: manual-set-union-loop
+valid:
+  - |
+    def f(rows):
+        return FrozenOrderedSet(tag for row in rows for tag in row.tags())
+invalid:
+  - |
+    def f(rows):
+        tags = set()
+        for row in rows:
+            tags.update(row.tags())
+        return tags

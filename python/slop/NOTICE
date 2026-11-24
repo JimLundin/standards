@@ -4,4 +4,10 @@ f808b0fb214501092ae3c7d914dfe98fe2a312af), from
 src/scb_check/resources/slop_rules/. Upstream is not tracked.
 
 Changes from the release: each rule is in a file of its own, named for its
-id, and the rule tests in tests/ are the standards' own.
+id, and the rule tests in tests/ are the standards' own. So are the messages
+of conditional-same-target-subscript-assign, manual-str-join,
+consecutive-append-calls, repetitive-list-append-elif,
+manual-dict-counter-if-else, set-add-loop, manual-set-union-loop and
+verbose-missing-remove-loop, rewritten to advice the standard allows, and the
+rule body of dict-get-empty-string-default, which matches an assignment
+statement where the release's never matched.

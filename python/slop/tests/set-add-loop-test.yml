@@ -1,0 +1,12 @@
+id: set-add-loop
+valid:
+  - |
+    def f(numbers):
+        return FrozenOrderedSet(number * number for number in numbers)
+invalid:
+  - |
+    def f(numbers):
+        squares = set()
+        for number in numbers:
+            squares.add(number * number)
+        return squares

@@ -1,0 +1,23 @@
+id: manual-str-join
+language: python
+severity: warning
+message: "building a string with `+=` in a loop - build it in one expression, `''.join(...)` over a generator"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: augmented_assignment
+  all:
+    - pattern: $S += $X
+    - has:
+        field: right
+        any:
+          - kind: string              # matches "..." and f"..." both
+          - pattern: str($_)
+          - pattern: $_.format($$$)
+          - pattern: repr($_)
+    - inside:
+        stopBy: end
+        any:
+          - kind: for_statement
+          - kind: while_statement

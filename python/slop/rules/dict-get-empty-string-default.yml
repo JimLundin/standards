@@ -1,0 +1,18 @@
+id: dict-get-empty-string-default
+language: python
+severity: info
+message: "`x = d.get(k, ''); if x:` - conflates missing key with empty value; use `.get(k)` and `is not None`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    kind: assignment
+    pattern: $X = $D.get($K, "")
+  precedes:
+    stopBy: neighbor
+    kind: if_statement
+    pattern: |
+      if $X:
+          $$$BODY

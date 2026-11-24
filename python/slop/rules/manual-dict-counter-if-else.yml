@@ -1,0 +1,11 @@
+id: manual-dict-counter-if-else
+language: python
+severity: info
+message: "Manual dict counter - count in one expression, `FrozenOrderedDict(Counter(iterable))`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  any:
+  - pattern: "if $KEY in $DICT:\n    $DICT[$KEY] += 1\nelse:\n    $DICT[$KEY] = 1\n"
+  - pattern: "$DICT[$KEY] = $DICT.get($KEY, 0) + 1"

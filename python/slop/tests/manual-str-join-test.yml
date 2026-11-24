@@ -1,0 +1,12 @@
+id: manual-str-join
+valid:
+  - |
+    def f(items):
+        return "".join(f"{item}," for item in items)
+invalid:
+  - |
+    def f(items):
+        text = ""
+        for item in items:
+            text += f"{item},"
+        return text

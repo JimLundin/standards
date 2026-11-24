@@ -1,0 +1,15 @@
+id: verbose-missing-remove-loop
+language: python
+severity: info
+message: "Copy-list-then-remove to find missing items - select them in one expression, `FrozenList(x for x in required if x not in present)`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: for_statement
+  pattern: "for $ITEM in $REQ:\n  if $ITEM in $TARGET:\n    $MISSING.remove($ITEM)\n"
+  follows:
+    kind: expression_statement
+    has:
+      pattern: $MISSING = list($REQ)
+    stopBy: end

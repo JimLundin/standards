@@ -1,0 +1,18 @@
+id: manual-set-union-loop
+language: python
+severity: info
+message: "`s = set(); for r in it: s.update(r.X())` - build the set in one expression, `FrozenOrderedSet(x for r in it for x in r.X())`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    kind: assignment
+    pattern: $S = set()
+  precedes:
+    stopBy: neighbor
+    kind: for_statement
+    pattern: |
+      for $R in $COLL:
+          $S.update($R.$METHOD())

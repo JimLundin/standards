@@ -1,0 +1,13 @@
+id: consecutive-append-calls
+valid:
+  - |
+    def f(first, second, third):
+        return FrozenList((first, second, third))
+invalid:
+  - |
+    def f(first, second, third):
+        items = []
+        items.append(first)
+        items.append(second)
+        items.append(third)
+        return items

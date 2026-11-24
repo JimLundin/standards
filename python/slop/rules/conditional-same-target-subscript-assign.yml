@@ -1,0 +1,14 @@
+id: conditional-same-target-subscript-assign
+language: python
+severity: warning
+message: "`if c: d[k] = a else: d[k] = b` - build the mapping in one expression with `k: a if c else b`, such as `FrozenOrderedDict({k: a if c else b})`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: if_statement
+  pattern: |
+    if $COND:
+        $OBJ[$KEY] = $A
+    else:
+        $OBJ[$KEY] = $B
