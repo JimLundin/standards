@@ -60,7 +60,7 @@ def number(value: object) -> int:
 
 def required_integer(record: Mapping[str, object], field: str) -> int:
     match record.get(field):
-        case int() as value:
+        case int() as value if not isinstance(value, bool):
             return value
         case value:
             message = f"`{field}` is not an integer: {value!r}"

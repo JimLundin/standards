@@ -55,7 +55,9 @@ def test_required_integer_reads_an_int_field() -> None:
     assert required_integer({"line": 7}, "line") == 7
 
 
-@pytest.mark.parametrize("record", [{}, {"line": "7"}, {"line": None}])
+@pytest.mark.parametrize(
+    "record", [{}, {"line": "7"}, {"line": None}, {"line": True}]
+)
 def test_required_integer_names_a_field_that_is_not_an_int(
     record: Mapping[str, object],
 ) -> None:
