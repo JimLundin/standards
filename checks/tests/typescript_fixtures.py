@@ -598,51 +598,46 @@ def test_an_exception_named_as_oxlint_prints_the_rule_clears_it(
 
 LAYERS = FrozenList(("core", "shell", "ui"))
 # ADR 0004's bans, each a file with its one break and the rule that reports it.
+AWAITED = """export const awaited = async (load: () => Promise<string>): Promise<string> => {
+	const loaded = await load();
+	return loaded;
+};
+"""
+PROMISED = """export const promised = (value: string): Promise<string> =>
+	new Promise((resolve) => {
+		resolve(value);
+	});
+"""
+CHAINED = """export const chained = (load: () => Promise<string>): Promise<string> =>
+	load().then((loaded) => loaded.trim());
+"""
+THROWN = """export const thrown = (reason: string): never => {
+	throw new Error(reason);
+};
+"""
+TRIED = """export const tried = (run: () => string, fallback: string): string => {
+	try {
+		return run();
+	} catch {
+		return fallback;
+	}
+};
+"""
+PARSED = """export const parsed = (text: string): boolean =>
+	typeof JSON.parse(text) === "string";
+"""
+LOGGED = """export const logged = (text: string): void => {
+	console.log(text);
+};
+"""
 BANS = FrozenOrderedDict({
-    "awaited": (
-        "oxc(no-async-await)",
-        "export const awaited = async (load: () => Promise<string>): Promise<string> => {\n"
-        "\tconst loaded = await load();\n"
-        "\treturn loaded;\n"
-        "};\n",
-    ),
-    "promised": (
-        "promise(avoid-new)",
-        "export const promised = (value: string): Promise<string> =>\n"
-        "\tnew Promise((resolve) => {\n"
-        "\t\tresolve(value);\n"
-        "\t});\n",
-    ),
-    "chained": (
-        "eslint(no-restricted-properties)",
-        "export const chained = (load: () => Promise<string>): Promise<string> =>\n"
-        "\tload().then((loaded) => loaded.trim());\n",
-    ),
-    "thrown": (
-        "standards(no-throw)",
-        "export const thrown = (reason: string): never => {\n"
-        "\tthrow new Error(reason);\n"
-        "};\n",
-    ),
-    "tried": (
-        "standards(no-try)",
-        "export const tried = (run: () => string, fallback: string): string => {\n"
-        "\ttry {\n"
-        "\t\treturn run();\n"
-        "\t} catch {\n"
-        "\t\treturn fallback;\n"
-        "\t}\n"
-        "};\n",
-    ),
-    "parsed": (
-        "eslint(no-restricted-properties)",
-        "export const parsed = (text: string): boolean =>\n"
-        '\ttypeof JSON.parse(text) === "string";\n',
-    ),
-    "dated": (
-        "eslint(no-restricted-globals)",
-        "export const dated = (): number => Date.now();\n",
-    ),
+    "awaited": ("oxc(no-async-await)", AWAITED),
+    "promised": ("promise(avoid-new)", PROMISED),
+    "chained": ("eslint(no-restricted-properties)", CHAINED),
+    "thrown": ("standards(no-throw)", THROWN),
+    "tried": ("standards(no-try)", TRIED),
+    "parsed": ("eslint(no-restricted-properties)", PARSED),
+    "dated": ("eslint(no-restricted-globals)", TIMED),
     "rolled": (
         "eslint(no-restricted-properties)",
         "export const rolled = (): number => Math.random();\n",
@@ -655,12 +650,7 @@ BANS = FrozenOrderedDict({
         "eslint(no-restricted-globals)",
         "export const timed = (): number => performance.now();\n",
     ),
-    "logged": (
-        "eslint(no-console)",
-        "export const logged = (text: string): void => {\n"
-        "\tconsole.log(text);\n"
-        "};\n",
-    ),
+    "logged": ("eslint(no-console)", LOGGED),
 })
 # Effect's own bridge, clock and randomness.
 EFFECTFUL = """import { Clock, Effect, Random } from "effect";
@@ -702,9 +692,7 @@ def test_effect_try_promise_clock_and_random_pass_lint(
     effectful = FrozenList(
         f"packages/{layer}/src/effectful.ts" for layer in ("shell", "ui")
     )
-    run = fixtures.check(
-        "commit", files=dict.fromkeys(effectful, EFFECTFUL)
-    )
+    run = fixtures.check("commit", files=dict.fromkeys(effectful, EFFECTFUL))
     lint = run.units["lint"]
     assert lint.outcome == "ok", lint.findings
     for path in effectful:

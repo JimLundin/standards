@@ -122,10 +122,10 @@ export default defineConfig({
     "require-await": "off",
     // Contradicts typescript/no-non-null-assertion.
     "typescript/non-nullable-type-assertion-style": "off",
-    // It asks for async, which oxc/no-async-await bans.
-    "typescript/promise-function-async": "off",
     // A callback's parameter takes its type from the API it's passed to, such as an Effect service, which carries mutable markers.
     "typescript/prefer-readonly-parameter-types": ["error", { ignoreInferredTypes: true }],
+    // It asks for async, which oxc/no-async-await bans.
+    "typescript/promise-function-async": "off",
     // Effect's data-first combinators, such as Effect.map(self, f), look to it like a callback with a thisArg.
     "unicorn/no-array-method-this-argument": "off",
     "vitest/consistent-test-it": ["error", { fn: "it", withinDescribe: "it" }],
