@@ -26,11 +26,6 @@ const restrictedImports = {
 			message: "ambient input: pass values in from the boundary",
 			name: "node:os",
 		},
-		{
-			importNames: ["it"],
-			message: "test is the one test function",
-			name: "node:test",
-		},
 	],
 } as const;
 
@@ -76,15 +71,6 @@ export default defineConfig({
 			files: [...tests],
 			rules: {
 				"no-magic-numbers": "off",
-				// The runner awaits the promise that the test of node:test returns; @types/node declares it.
-				"typescript/no-floating-promises": [
-					"error",
-					{
-						allowForKnownSafeCalls: [
-							{ from: "package", name: ["suite", "test"], package: "node" },
-						],
-					},
-				],
 			},
 		},
 		{
@@ -92,6 +78,13 @@ export default defineConfig({
 			rules: {
 				// A tool reads its config file's default export.
 				"import/no-default-export": "off",
+			},
+		},
+		{
+			files: ["**/vitest.setup.ts"],
+			rules: {
+				// A setup file's hooks run around every test file, outside any describe.
+				"vitest/require-top-level-describe": "off",
 			},
 		},
 	],
@@ -139,13 +132,14 @@ export default defineConfig({
 		"require-await": "off",
 		// Contradicts typescript/no-non-null-assertion.
 		"typescript/non-nullable-type-assertion-style": "off",
-		"vitest/consistent-test-it": [
-			"error",
-			{ fn: "test", withinDescribe: "test" },
-		],
-		// The standard tests with node:test.
-		"vitest/no-import-node-test": "off",
-		// Reports any top-level call, in every file; node:test has no hooks to move it to.
-		"vitest/require-hook": "off",
+		"vitest/consistent-test-it": ["error", { fn: "it", withinDescribe: "it" }],
+		// Contradicts vitest/require-hook.
+		"vitest/no-hooks": "off",
+		// The standard imports it from @effect/vitest, and vitest's globals are off.
+		"vitest/no-importing-vitest-globals": "off",
+		// Vitest's testTimeout bounds every test; a test sets its own only to need another.
+		"vitest/require-test-timeout": "off",
+		// Vitest/prefer-describe-function-title names a describe by its function, not a string.
+		"vitest/valid-title": ["error", { ignoreTypeOfDescribeName: true }],
 	},
 });

@@ -37,7 +37,7 @@ The trees under `typescript/fixtures/` are the inputs of the `typescript-fixture
 
 ## Tool versions
 
-`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version. Python is the one uv resolves: `check.sh` sets `UV_PYTHON` to the `PYTHON` pin, so the standards' checks, a Python project's checks and its key use that interpreter whatever `python3` is on `PATH`, and a suite runs with it first on `PATH`.
+`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, vitest and Effect, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version. Python is the one uv resolves: `check.sh` sets `UV_PYTHON` to the `PYTHON` pin, so the standards' checks, a Python project's checks and its key use that interpreter whatever `python3` is on `PATH`, and a suite runs with it first on `PATH`.
 
 ## Units and recorded passes
 
@@ -99,3 +99,7 @@ Exceptions live only in a project's `exceptions.toml`; suppression comments and 
 **Ordered collections.** `python/ordered` is a small package of collections whose iteration order is part of their type: `OrderedCollection`, `OrderedSequence`, `OrderedSet` and `OrderedMapping` extend the collection ABCs with that promise, and `FrozenList`, `FrozenOrderedSet` and `FrozenOrderedDict` implement them, with set and merge operations that keep the left operand's order. Projects copy it or depend on it, and the core may import it.
 
 **Immutability.** The immutability check makes `ordered` the vocabulary: no set literals, set comprehensions, `set()` or `frozenset()`, since they iterate in hash order; no `set`, `frozenset`, `AbstractSet` or `Collection` in annotations, since they promise no order; and `FrozenList` and `FrozenOrderedDict` in place of `tuple[T, ...]`, `frozendict` and `MappingProxyType`. Plain `Sequence`, `Mapping` and `Container` stay for inputs that don't depend on order.
+
+## TypeScript
+
+**Tests.** Tests run on vitest with `it` from `@effect/vitest`, the one test function: `it.effect` for an Effect, `it.prop` for a property over Schemas or Arbitraries. A project copies `vitest.config.ts` and `vitest.setup.ts` to its root. The config's modes set the runs of every property test, through Effect's `Arbitrary`: `fast` runs 10, `full` 1000 with `@vitest/coverage-v8`, and `mutation` 10 with seed 42, ending on the first failure. `mutation` is also vitest's default mode, the one Stryker's vitest runner starts it in. A test tagged `slow` (`{ tags: ["slow"] }`) runs only in `full`. `check.sh` runs vitest in `fast` at `step` and `full` at `release`, which also runs Stryker on `@stryker-mutator/vitest-runner`. The exceptions check reports a project `vitest.config.ts` whose modes run fewer cases than the standard's as drift.

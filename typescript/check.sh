@@ -23,13 +23,25 @@ versions=(
 	"--tool=lint=${pins[BIOME]},${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]}"
 	"--tool=unused=${pins[KNIP]}"
+	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
+	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
 )
+# The project's own vitest, Effect and Stryker run its tests, so each that
+# it installs must be at its pin.
+installed() {
+	local name=$1 package=$2 install=$3
+	[ -e "node_modules/$package/package.json" ] || return 0
+	pinned "$name" node "$install" \
+		node -p "require('./node_modules/$package/package.json').version"
+}
+if at_least step; then
+	installed VITEST vitest "npm install -D vitest@{} @vitest/coverage-v8@{}"
+	installed EFFECT effect "npm install effect@{} && npm install -D @effect/vitest@{}"
+fi
 if full; then
-	versions+=("--tool=mutation=${pins[STRYKER]}")
-	if [ -e node_modules/@stryker-mutator/core ]; then
-		pinned STRYKER node "npm install -D @stryker-mutator/core@{} @stryker-mutator/tap-runner@{}" \
-			node -p 'require("./node_modules/@stryker-mutator/core/package.json").version'
-	fi
+	versions+=("--tool=mutation=${pins[STRYKER]},${pins[VITEST]},${pins[EFFECT]}")
+	installed STRYKER @stryker-mutator/core \
+		"npm install -D @stryker-mutator/core@{} @stryker-mutator/vitest-runner@{}"
 fi
 release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
@@ -127,14 +139,21 @@ if [ -f package.json ]; then
 	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress
 fi
-tests=(test)
-test_check=test
-if full && grep -qs '"test:full"' package.json; then
-	tests=(run test:full)
-	test_check=test-release
-fi
-if grep -qs '"test' package.json && at_least step; then
-	unit "$test_check" "joined '(pass|fail) [0-9]+'" npm "${tests[@]}" --silent
+# Vitest runs in the mode of vitest.config.ts that the tier names: fast at
+# step, full, with coverage and the slow tests, at release.
+if [ -f package.json ] && at_least step; then
+	test_check=test
+	mode=fast
+	if full; then
+		test_check=test-release
+		mode=full
+	fi
+	if dry || [ -e node_modules/vitest ]; then
+		unit "$test_check" "last 'Tests +[0-9]+ [a-z]+( \| [0-9]+ [a-z]+)*'" \
+			npx --no-install vitest run --mode "$mode" --reporter=verbose
+	else
+		skipped "$test_check" "vitest not installed"
+	fi
 fi
 if full; then
 	mutation=()

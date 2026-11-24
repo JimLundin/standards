@@ -31,8 +31,10 @@ COPIED = FrozenList((
     "biome-plugins",
     "knip.json",
     "oxlint.config.ts",
-    "profiles",
+    "stryker.config.json",
     "tsconfig.base.json",
+    "vitest.config.ts",
+    "vitest.setup.ts",
 ))
 OUTCOMES = FrozenOrderedSet(("ok", "flaky", "skip", "FAIL"))
 NO_FILES: FrozenOrderedDict[str, str] = FrozenOrderedDict()
@@ -261,3 +263,112 @@ def test_an_exception_clears_its_rule_in_its_file_alone(
     assert findings.count("eslint(no-bitwise)") == 1
     assert unexcepted in findings
     assert excepted not in findings
+
+
+# A property test's runs in the mode the run is in: Arbitrary takes them
+# from vitest.config.ts through vitest.setup.ts.
+RUNS = """import { expect, it } from "@effect/vitest";
+import { Arbitrary, Effect, Schema } from "effect";
+
+const runs = Effect.map(
+	Arbitrary.checkEffect(Arbitrary.schema(Schema.Number), () => true),
+	(result) => (result._tag === "Passed" ? result.runs : 0),
+);
+
+it.effect("checks {fast} cases", () =>
+	Effect.map(runs, (count) => {
+		expect(count).toBe({fast});
+	}),
+);
+
+it.effect(
+	"checks {slow} cases when slow",
+	() =>
+		Effect.map(runs, (count) => {
+			expect(count).toBe({slow});
+		}),
+	{ tags: ["slow"] },
+);
+"""
+
+
+def test_step_runs_the_tests_fast_and_skips_the_slow_ones(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check(
+        "step",
+        files={
+            "packages/core/src/runs.test.ts": RUNS.replace(
+                "{fast}", "10"
+            ).replace("{slow}", "1000")
+        },
+    )
+    test = run.units["test"]
+    assert test.outcome == "ok", test.findings
+    assert "checks 10 cases" in test.findings
+    assert "1 skipped" in test.summary
+    assert "Coverage report" not in test.findings
+
+
+def test_release_runs_the_tests_in_full_with_coverage_and_mutation(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check(
+        "release",
+        files={
+            "packages/core/src/runs.test.ts": RUNS.replace(
+                "{fast}", "1000"
+            ).replace("{slow}", "1000")
+        },
+    )
+    test = run.units["test-release"]
+    assert test.outcome == "ok", test.findings
+    assert "checks 1000 cases when slow" in test.findings
+    assert "skipped" not in test.summary
+    assert "Coverage report from v8" in test.findings
+    mutation = run.units["mutation"]
+    assert mutation.outcome == "ok", mutation.findings
+    assert "vitest test runner" in mutation.findings
+
+
+TESTED = """import { greet } from "./index.ts";
+import { expect, {name} } from "{module}";
+
+{name}("greets", () => {
+	expect(greet({ name: "Ada" })).toBe("Hello, Ada");
+});
+"""
+
+
+@pytest.mark.parametrize(
+    ("name", "module", "rule"),
+    [
+        ("test", "@effect/vitest", "vitest(consistent-test-it)"),
+        ("it", "node:test", "vitest(no-import-node-test)"),
+    ],
+    ids=["test", "node:test"],
+)
+def test_a_test_not_on_it_of_effect_vitest_fails_lint(
+    fixtures: Fixtures, name: str, module: str, rule: str
+) -> None:
+    tested = "packages/core/src/tested.test.ts"
+    run = fixtures.check(
+        "commit",
+        files={
+            tested: TESTED.replace("{name}", name).replace("{module}", module)
+        },
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    assert rule in lint.findings
+    assert tested in lint.findings
+
+
+def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
+    standard = (TYPESCRIPT / "vitest.config.ts").read_text()
+    lowered = re.sub(r"(fast: \{[^}]*runs: )10", r"\g<1>5", standard)
+    assert lowered != standard
+    run = fixtures.check("commit", files={"vitest.config.ts": lowered})
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "FAIL"
+    assert "drift:arbitrary.fast" in exceptions.findings
