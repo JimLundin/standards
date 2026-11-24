@@ -67,3 +67,23 @@ reason = "drives git in fixture repositories by name from PATH, with fixed argum
 path = "tests/test_notes.py"
 rule = "start-process-with-partial-path"
 reason = "drives git in fixture repositories by name from PATH, with fixed arguments"
+
+[[exception]]
+path = "src/checks/core/drift.py"
+rule = "slop:is-true-false-strict"
+reason = "parsed TOML and JSON values are typed object, and `is True` or `is False` asks for the boolean itself, where truthiness would also take 1 or a non-empty string"
+
+[[exception]]
+path = "src/checks/core/immutability.py"
+rule = "slop:is-true-false-strict"
+reason = "an ast.Constant value may be 1 or a string, and `is True` asks for the literal True that frozen=True needs"
+
+[[exception]]
+path = "src/checks/core/rust_api.py"
+rule = "slop:is-true-false-strict"
+reason = "parsed JSON values are typed object, and `is True` asks for the boolean itself, where truthiness would also take 1 or a non-empty string"
+
+[[exception]]
+path = "src/checks/core/rust_core.py"
+rule = "slop:is-true-false-strict"
+reason = "parsed JSON values are typed object, and `is True` asks for the boolean itself, where truthiness would also take 1 or a non-empty string"

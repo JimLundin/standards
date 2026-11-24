@@ -1,0 +1,18 @@
+id: len-as-condition
+language: python
+severity: warning
+message: "`len(x) == 0` - use `if not x:` (or `if x:` for `> 0`)"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: comparison_operator
+  all:
+  - has:
+      kind: call
+      has:
+        kind: identifier
+        regex: ^len$
+  - has:
+      kind: integer
+      pattern: '0'

@@ -1,0 +1,14 @@
+id: redundant-continue
+language: python
+severity: warning
+message: "`continue` at end of loop body - delete it, the loop iterates anyway"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: block
+  regex: continue\s*$
+  inside:
+    any:
+    - kind: for_statement
+    - kind: while_statement

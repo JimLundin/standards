@@ -1,0 +1,7 @@
+id: suffix-slice-removesuffix
+valid:
+  - |
+    stem = name.removesuffix(".py")
+invalid:
+  - |
+    stem = name[:-len(".py")]

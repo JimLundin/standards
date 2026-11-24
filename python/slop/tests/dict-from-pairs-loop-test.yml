@@ -1,0 +1,8 @@
+id: dict-from-pairs-loop
+valid:
+  - |
+    d = dict(pairs)
+invalid:
+  - |
+    for k, v in pairs:
+        d[k] = v

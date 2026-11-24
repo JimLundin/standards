@@ -1,0 +1,7 @@
+id: double-conversion-int-float
+valid:
+  - |
+    n = int(x)
+invalid:
+  - |
+    n = int(float(x))

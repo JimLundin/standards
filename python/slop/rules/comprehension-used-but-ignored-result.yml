@@ -1,0 +1,15 @@
+id: comprehension-used-but-ignored-result
+language: python
+severity: warning
+message: "Comprehension result discarded - use a `for` loop for side effects"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    any:
+    - kind: list_comprehension
+    - kind: set_comprehension
+    - kind: dictionary_comprehension
+    - kind: generator_expression

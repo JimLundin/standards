@@ -12,6 +12,7 @@ from checks.core.values import (
     listing,
     operands,
     parse_json,
+    required_integer,
     summarized,
     text,
 )
@@ -79,9 +80,9 @@ def measured(
         return Failure(path, str(record.get("error")))
     return Function(
         path,
-        int(str(record.get("line"))),
+        required_integer(record, "line"),
         str(record.get("function")),
-        int(str(record.get("decisions"))),
+        required_integer(record, "decisions"),
         roots.get(str(record.get("root")), False),
     )
 

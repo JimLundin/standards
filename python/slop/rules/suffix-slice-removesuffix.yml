@@ -1,0 +1,12 @@
+id: suffix-slice-removesuffix
+language: python
+severity: warning
+message: "`s[:-len('literal')]` - use `s.removesuffix('literal')`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: subscript
+  has:
+    kind: slice
+    regex: "^:\\s*-\\s*len\\(\\s*['\"].*['\"]\\s*\\)\\s*$"

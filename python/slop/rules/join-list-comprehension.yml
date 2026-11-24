@@ -1,0 +1,17 @@
+id: join-list-comprehension
+language: python
+severity: warning
+message: "`''.join([x for ...])` - drop brackets for a generator expression"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: call
+  all:
+  - has:
+      kind: attribute
+      regex: \.join$
+  - has:
+      kind: argument_list
+      has:
+        kind: list_comprehension

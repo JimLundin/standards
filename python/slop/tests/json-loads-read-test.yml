@@ -1,0 +1,7 @@
+id: json-loads-read
+valid:
+  - |
+    data = json.load(f)
+invalid:
+  - |
+    data = json.loads(f.read())

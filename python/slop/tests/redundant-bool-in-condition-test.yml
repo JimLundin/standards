@@ -1,0 +1,9 @@
+id: redundant-bool-in-condition
+valid:
+  - |
+    if a and b:
+        f()
+invalid:
+  - |
+    if bool(a) and b:
+        f()

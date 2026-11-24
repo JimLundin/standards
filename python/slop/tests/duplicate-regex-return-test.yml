@@ -1,0 +1,17 @@
+id: duplicate-regex-return
+valid:
+  - |
+    def kind(text):
+        if re.search("a", text):
+            return 1
+        if re.search("b", text):
+            return 2
+        return 0
+invalid:
+  - |
+    def kind(text):
+        if re.search("a", text):
+            return 1
+        if re.search("b", text):
+            return 1
+        return 0

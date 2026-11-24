@@ -1,0 +1,20 @@
+id: list-dict-keys
+language: python
+severity: warning
+message: "`list(d.keys())` - use `list(d)`"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: call
+  all:
+  - has:
+      kind: identifier
+      regex: ^list$
+  - has:
+      kind: argument_list
+      has:
+        kind: call
+        has:
+          kind: attribute
+          regex: \.keys$

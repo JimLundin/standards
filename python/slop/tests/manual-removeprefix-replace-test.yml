@@ -1,0 +1,7 @@
+id: manual-removeprefix-replace
+valid:
+  - |
+    t = s.removeprefix(p)
+invalid:
+  - |
+    t = s.replace(p, "") if s.startswith(p) else s

@@ -1,0 +1,17 @@
+id: empty-init
+language: python
+severity: warning
+message: "Empty `__init__` - delete it, Python provides a default constructor"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: function_definition
+  all:
+  - has:
+      kind: identifier
+      regex: ^__init__$
+  - has:
+      kind: block
+      has:
+        kind: pass_statement

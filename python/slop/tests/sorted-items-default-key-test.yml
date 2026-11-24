@@ -1,0 +1,7 @@
+id: sorted-items-default-key
+valid:
+  - |
+    pairs = sorted(d.items(), key=lambda i: i[1])
+invalid:
+  - |
+    pairs = sorted(d.items(), key=lambda i: i[0])

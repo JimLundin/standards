@@ -1,0 +1,10 @@
+id: lbyl-isfile-before-open
+valid:
+  - |
+    with open(path) as f:
+        read(f)
+invalid:
+  - |
+    if os.path.isfile(path):
+        with open(path) as f:
+            read(f)

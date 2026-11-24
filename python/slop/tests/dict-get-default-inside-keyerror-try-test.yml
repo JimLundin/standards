@@ -1,0 +1,13 @@
+id: dict-get-default-inside-keyerror-try
+valid:
+  - |
+    try:
+        v = d.get(k, 0)
+    except ValueError:
+        v = 1
+invalid:
+  - |
+    try:
+        v = d.get(k, 0)
+    except KeyError:
+        v = 1

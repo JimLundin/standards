@@ -1,0 +1,7 @@
+id: verbose-type-conversion-chain
+valid:
+  - |
+    s = str(x)
+invalid:
+  - |
+    s = str(int(x))

@@ -1,0 +1,16 @@
+id: verbose-type-conversion-chain
+language: python
+severity: warning
+message: "Chained type conversions like `str(int(x))` - parse once or validate input format"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  kind: call
+  any:
+  - pattern: str(int($X))
+  - pattern: int(str($X))
+  - pattern: str(float($X))
+  - pattern: float(str($X))
+  - pattern: list(tuple($X))
+  - pattern: tuple(list($X))

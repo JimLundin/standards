@@ -1,0 +1,7 @@
+id: len-comparison
+valid:
+  - |
+    ok = len(xs) > 3
+invalid:
+  - |
+    ok = len(xs) > 0

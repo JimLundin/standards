@@ -1,4 +1,4 @@
-lazy from collections.abc import Sequence
+lazy from collections.abc import Mapping, Sequence
 
 import pytest
 from hypothesis import given
@@ -21,6 +21,7 @@ from checks.core.values import (
     parse_json,
     parse_toml,
     posix,
+    required_integer,
     strings,
     summarized,
     table,
@@ -48,6 +49,20 @@ def test_entries_and_strings_read_lists() -> None:
     assert entries((1,)) == ()
     assert strings(["a", 1, "b"]) == ("a", "b")
     assert strings("a") == ()
+
+
+def test_required_integer_reads_an_int_field() -> None:
+    assert required_integer({"line": 7}, "line") == 7
+
+
+@pytest.mark.parametrize(
+    "record", [{}, {"line": "7"}, {"line": None}, {"line": True}]
+)
+def test_required_integer_names_a_field_that_is_not_an_int(
+    record: Mapping[str, object],
+) -> None:
+    with pytest.raises(ValueError, match="`line`"):
+        _ = required_integer(record, "line")
 
 
 def test_lookup_follows_dotted_keys() -> None:

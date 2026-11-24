@@ -1,0 +1,7 @@
+id: verbose-string-literal-plus-str
+valid:
+  - |
+    s = f"n={x}"
+invalid:
+  - |
+    s = "n=" + str(x)

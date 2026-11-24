@@ -1,0 +1,7 @@
+id: list-dict-keys
+valid:
+  - |
+    ks = list(d)
+invalid:
+  - |
+    ks = list(d.keys())

@@ -1,0 +1,7 @@
+id: join-list-comprehension
+valid:
+  - |
+    s = "".join(str(x) for x in xs)
+invalid:
+  - |
+    s = "".join([str(x) for x in xs])

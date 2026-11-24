@@ -1,0 +1,9 @@
+id: returncode-int-cast
+language: python
+severity: warning
+message: int(proc.returncode) - returncode is already int
+metadata:
+  weight: 5
+  category: slop
+rule:
+  pattern: int($X.returncode)

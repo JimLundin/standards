@@ -1,0 +1,7 @@
+id: verbose-string-concat-str
+valid:
+  - |
+    s = f"{x}{y}"
+invalid:
+  - |
+    s = str(x) + str(y)

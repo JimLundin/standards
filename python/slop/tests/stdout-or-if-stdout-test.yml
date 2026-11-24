@@ -1,0 +1,7 @@
+id: stdout-or-if-stdout
+valid:
+  - |
+    out = stdout or ""
+invalid:
+  - |
+    out = (stdout or "") if stdout else ""

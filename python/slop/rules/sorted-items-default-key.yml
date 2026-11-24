@@ -1,0 +1,12 @@
+id: sorted-items-default-key
+language: python
+severity: warning
+message: "sorted(..., key=lambda i: i[0]) / `(i[0], i[1])` - default sort already matches; drop the key"
+metadata:
+  weight: 5
+  category: slop
+rule:
+  any:
+  - pattern: "sorted($D.items(), key=lambda $I: $I[0])"
+  - pattern: "sorted($XS, key=lambda $I: ($I[0], $I[1]))"
+  - pattern: "sorted($XS, key=lambda $I: ($I[0], $I[1], $I[2]))"

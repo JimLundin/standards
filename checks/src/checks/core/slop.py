@@ -9,6 +9,7 @@ from checks.core.values import (
     Outcome,
     Request,
     lookup,
+    number,
     parse_json,
     posix,
     summarized,
@@ -26,10 +27,6 @@ class Finding:
     column: int
     message: str
     min_file_count: int
-
-
-def number(value: object) -> int:
-    return value if isinstance(value, int) else 0
 
 
 def parse_finding(record: Mapping[str, object]) -> Finding:
