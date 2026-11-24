@@ -23,8 +23,17 @@ TYPESCRIPT = STANDARDS / "typescript"
 FIXTURES = TYPESCRIPT / "fixtures"
 COMPLIANT = "compliant"
 # The standard's config files that a project copies to its root. Biome reads
-# a workspace's package.json files only from a config at the project root.
-COPIED = FrozenList(("biome.json", "biome-plugins", "knip.json", "profiles"))
+# a workspace's package.json files only from a config at the project root,
+# and Oxlint's type-aware rules read the tsconfig.json there, which extends
+# the standard's.
+COPIED = FrozenList((
+    "biome.json",
+    "biome-plugins",
+    "knip.json",
+    "oxlint.config.ts",
+    "profiles",
+    "tsconfig.base.json",
+))
 OUTCOMES = FrozenOrderedSet(("ok", "flaky", "skip", "FAIL"))
 NO_FILES: FrozenOrderedDict[str, str] = FrozenOrderedDict()
 LOGS = re.compile(r"^tier: \w+, logs: (.+)$")
@@ -184,3 +193,45 @@ def test_a_suppression_comment_fails_exceptions(fixtures: Fixtures) -> None:
     )
     assert run.units["exceptions"].outcome == "FAIL"
     assert suppressed in run.units["exceptions"].findings
+
+
+DEFERRED = """export const defer = (task: () => void): void => {
+	queueMicrotask(task);
+};
+"""
+STARTED = """const work = async (): Promise<void> => {
+	await Promise.resolve();
+};
+
+export const start = (): void => {
+	work();
+};
+"""
+MASKED = """export const masked = (left: number, right: number): number => left & right;
+"""
+
+
+def test_a_break_of_each_kind_of_rule_fails_lint_naming_the_rule(
+    fixtures: Fixtures,
+) -> None:
+    breaks = FrozenList((
+        (
+            "packages/core/src/deferred.ts",
+            "eslint(no-restricted-globals)",
+            DEFERRED,
+        ),
+        (
+            "packages/core/src/started.ts",
+            "typescript(no-floating-promises)",
+            STARTED,
+        ),
+        ("packages/core/src/masked.ts", "eslint(no-bitwise)", MASKED),
+    ))
+    run = fixtures.check(
+        "commit", files={path: text for path, _, text in breaks}
+    )
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    for path, rule, _ in breaks:
+        assert findings.count(rule) == 1, rule
+        assert path in findings, path

@@ -1,3 +1,3 @@
-import fc from "fast-check";
+import { configureGlobal } from "fast-check";
 
-fc.configureGlobal({ numRuns: 10 });
+configureGlobal({ numRuns: 10 });
