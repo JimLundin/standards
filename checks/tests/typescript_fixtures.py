@@ -162,7 +162,15 @@ def fixtures(tmp_path_factory: pytest.TempPathFactory) -> Fixtures:
     return Fixtures(root, installed)
 
 
-COMMIT_UNITS = FrozenList(("exceptions", "format", "lint", "types", "unused"))
+COMMIT_UNITS = FrozenList((
+    "exceptions",
+    "format",
+    "lint",
+    "types",
+    "unused",
+    "shell",
+    "shell-share",
+))
 
 
 @pytest.mark.parametrize(
@@ -1020,3 +1028,94 @@ def test_a_core_or_shell_file_is_not_held_to_the_ui_bans(
     )
     lint = run.units["lint"]
     assert lint.outcome == "ok", lint.findings
+
+
+# An if, a run of && and a ternary: 3 decisions.
+ROUTED = """export const route = (path: string, verbose: boolean): string => {
+	if (path === "") {
+		return "root";
+	}
+	return verbose && path.length > 1 ? path : "short";
+};
+"""
+# A JSX ternary, an && render and an Option.match: 3 decisions.
+BADGED = """import { Option } from "effect";
+import type { ReactElement } from "react";
+
+interface Counted {
+	readonly count: number;
+	readonly label: Option.Option<string>;
+}
+
+export const Badge = (props: Counted): ReactElement => (
+	<p>
+		{props.count > 0 ? <b>{props.count}</b> : <i>none</i>}
+		{props.count > 9 && <span>many</span>}
+		{Option.match(props.label, { onNone: () => "", onSome: (label) => label })}
+	</p>
+);
+"""
+THICK = FrozenOrderedDict({
+    "packages/shell/src/route.ts": ROUTED,
+    "packages/ui/src/badge.tsx": BADGED,
+})
+
+
+def shell_exceptions(*paths: str) -> str:
+    return "".join(
+        f'[[exception]]\npath = "{path}"\nrule = "shell"\nreason = "a fixture"\n'
+        for path in paths
+    )
+
+
+def test_a_thick_shell_function_or_component_fails_shell_unless_excepted(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=THICK)
+    shell = run.units["shell"]
+    assert shell.outcome == "FAIL"
+    assert "Found 2 issues" in shell.summary
+    for path in THICK:
+        assert path in shell.findings, path
+    assert "`route` makes 3 decisions (limit 2)" in shell.findings
+    assert "`Badge` makes 3 decisions (limit 2)" in shell.findings
+    excepted = fixtures.check(
+        "commit", files={**THICK, "exceptions.toml": shell_exceptions(*THICK)}
+    )
+    assert excepted.units["exceptions"].outcome == "ok"
+    assert excepted.units["shell"].outcome == "ok"
+
+
+def branching(name: str, count: int) -> str:
+    """`count` functions of 2 decisions each."""
+    return "".join(
+        f"export const {name}{index} = (value: number): number =>\n\tvalue > {index} ? (value > {index + 1} ? 1 : 2) : 3;\n"
+        for index in range(count)
+    )
+
+
+# 6 of 20 decisions in the shell and the UI, each function within the limit.
+SHARED = FrozenOrderedDict({
+    "packages/core/src/branches.ts": branching("core", 7),
+    "packages/shell/src/branches.ts": branching("shell", 2),
+    "packages/ui/src/branches.ts": branching("ui", 1),
+})
+
+
+def test_a_shell_and_ui_over_a_quarter_of_the_decisions_fail_shell_share(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=SHARED)
+    assert run.units["shell"].outcome == "ok"
+    share = run.units["shell-share"]
+    assert share.outcome == "FAIL"
+    assert "package.json: the shell makes 6 of 20 decisions" in share.findings
+    excepted = fixtures.check(
+        "commit",
+        files={**SHARED, "exceptions.toml": shell_exceptions("package.json")},
+    )
+    assert excepted.units["exceptions"].outcome == "ok"
+    assert excepted.units["shell-share"].outcome == "ok"
+    assert (
+        "shell makes 6 of 20 decisions" in excepted.units["shell-share"].summary
+    )

@@ -216,3 +216,23 @@ def test_globs_lists_the_paths_an_exception_of_the_rule_covers() -> None:
     assert lines(run(("globs", "PUR001:attrs.x"), inputs(texts))) == (
         "src/a.py",
     )
+
+
+def test_stryker_mutate_skips_the_shell_files_it_is_given() -> None:
+    texts = {
+        "exceptions.toml": entry("src/skip.ts", "mutation"),
+        "stryker.json": json.dumps({"mutate": ["src/**"]}),
+        "shell.txt": "packages/shell/main.ts\npackages/ui/src/view.tsx\n",
+    }
+    assert request(
+        ("stryker-mutate", "stryker.json", "shell.txt"), Inputs()
+    ) == Request(FrozenList(("exceptions.toml", "stryker.json", "shell.txt")))
+    assert lines(
+        run(("stryker-mutate", "stryker.json", "shell.txt"), inputs(texts))
+    ) == (
+        "src/**,!src/skip.ts,!packages/shell/main.ts,!packages/ui/src/view.tsx",
+    )
+    del texts["exceptions.toml"]
+    assert lines(
+        run(("stryker-mutate", "stryker.json", "shell.txt"), inputs(texts))
+    ) == ("src/**,!packages/shell/main.ts,!packages/ui/src/view.tsx",)

@@ -145,7 +145,16 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
 
 
 def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    excepted = exceptions_in(inputs).paths(MUTATION)
+    """Stryker's mutate globs without the files of mutation exceptions and,
+    from the file the second argument names, the shell's files."""
+    excepted = (
+        *exceptions_in(inputs).paths(MUTATION),
+        *(
+            inputs.texts.get(arguments[1], "").splitlines()
+            if len(arguments) > 1
+            else ()
+        ),
+    )
     if not excepted:
         return Outcome()
     config = parse_json(inputs.texts.get(arguments[0]))
@@ -185,7 +194,7 @@ def with_manifests(arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 
 def with_named(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(FrozenList((EXCEPTIONS, arguments[0])))
+    return Request(FrozenList((EXCEPTIONS, *operands(arguments))))
 
 
 def with_stdin(_: Sequence[str], _inputs: Inputs) -> Request:
