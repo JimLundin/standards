@@ -24,27 +24,6 @@
 						}
 					}
 				},
-				"noRestrictedImports": {
-					"level": "error",
-					"options": {
-						"paths": {
-							"node:fs": "side effect: keep I/O at the boundary",
-							"node:fs/promises": "side effect: keep I/O at the boundary",
-							"node:child_process": "side effect: keep I/O at the boundary",
-							"node:net": "side effect: keep I/O at the boundary",
-							"node:dgram": "side effect: keep I/O at the boundary",
-							"node:dns": "side effect: keep I/O at the boundary",
-							"node:http": "side effect: keep I/O at the boundary",
-							"node:https": "side effect: keep I/O at the boundary",
-							"node:http2": "side effect: keep I/O at the boundary",
-							"node:tls": "side effect: keep I/O at the boundary",
-							"node:worker_threads": "shared mutable state: return new values instead",
-							"node:cluster": "shared mutable state: return new values instead",
-							"node:process": "ambient input and side effects: pass values in from the boundary",
-							"node:os": "ambient input: pass values in from the boundary"
-						}
-					}
-				},
 				"useConsistentTestIt": {
 					"level": "error",
 					"options": {
@@ -75,26 +54,6 @@
 		}
 	},
 	"overrides": [
-		{
-			"includes": ["**/src/core/**", "!**/*.test.ts"],
-			"linter": {
-				"rules": {
-					"style": {
-						"noRestrictedImports": {
-							"level": "error",
-							"options": {
-								"patterns": [
-									{
-										"group": ["node:*"],
-										"message": "core is pure: keep Node APIs in the shell"
-									}
-								]
-							}
-						}
-					}
-				}
-			}
-		},
 		{
 			"includes": ["**/*.test.ts", "**/test/**"],
 			"linter": {

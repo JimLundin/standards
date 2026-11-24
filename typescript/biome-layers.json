@@ -1,0 +1,22 @@
+{
+	"core": {
+		"includes": ["!**/*.test.ts"],
+		"linter": {
+			"rules": {
+				"style": {
+					"noRestrictedImports": {
+						"level": "error",
+						"options": {
+							"patterns": [
+								{
+									"group": ["node:*"],
+									"message": "core is pure: keep Node APIs in the shell"
+								}
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

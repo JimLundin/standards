@@ -43,11 +43,17 @@ fi
 mapfile -t sources < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' '*.css' '*.json' "${foreign[@]}" |
 	grep -vE '(^|/)(package-lock|tsconfig)\.json$')
 
+# Biome reads a workspace's package.json files only from a config inside the
+# project, so the lint config, the project's or the standard's with each
+# package's layer rules from biome-layers.json added as overrides, is written
+# under node_modules, which git ignores and Biome doesn't scan.
 # Biome can only skip all plugins at once, so built-in rules run first with
 # plugins skipped, then each plugin runs alone on the files it still covers.
 biome_lint() {
-	local status=0 skips name path rule
+	local status=0 skips name path rule layered=node_modules/.cache/standards/biome.json
 	local -a fields files skip covered
+	mkdir -p "${layered%/*}"
+	checks biome-layers "$(native "$biome_config")" "$(native "$standards/biome-layers.json")" 		"$layered" "${sources[@]}" || return 1
 	while IFS='|' read -r -a fields; do
 		skips=${fields[0]}
 		files=("${fields[@]:1}")
@@ -55,7 +61,7 @@ biome_lint() {
 		for rule in $skips; do
 			skip+=(--skip="$rule")
 		done
-		npx -y "@biomejs/biome@${pins[BIOME]}" lint "${biome[@]}" "${skip[@]}" "${files[@]}" || status=1
+		npx -y "@biomejs/biome@${pins[BIOME]}" lint --config-path="$layered" "${skip[@]}" "${files[@]}" || status=1
 	done < <(checks biome-groups "${sources[@]}")
 	while IFS='|' read -r name path; do
 		mapfile -t covered < <(checks without "lint/plugin/$name" "${sources[@]}")

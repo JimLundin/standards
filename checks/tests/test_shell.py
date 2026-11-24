@@ -33,6 +33,7 @@ def invoke(
 
 def test_tools_dispatch_to_each_tool() -> None:
     assert tuple(TOOLS) == (
+        "biome-layers",
         "core-clippy",
         "core-libraries",
         "immutability",
@@ -44,6 +45,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "rust-roots",
         "rust-shell",
         "rust-shell-share",
+        "typescript-layers",
         "units",
         "ruff-config",
         "without",

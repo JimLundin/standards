@@ -22,9 +22,8 @@ from tests.test_lib import STANDARDS, git
 TYPESCRIPT = STANDARDS / "typescript"
 FIXTURES = TYPESCRIPT / "fixtures"
 COMPLIANT = "compliant"
-# The standard's config files that a project copies to its root. Biome reads
-# a workspace's package.json files only from a config at the project root.
-COPIED = FrozenList(("biome.json", "biome-plugins", "knip.json", "profiles"))
+# The standard's config files that a project copies to its root.
+COPIED = FrozenList(("knip.json", "profiles"))
 OUTCOMES = FrozenOrderedSet(("ok", "flaky", "skip", "FAIL"))
 NO_FILES: FrozenOrderedDict[str, str] = FrozenOrderedDict()
 LOGS = re.compile(r"^tier: \w+, logs: (.+)$")
@@ -184,3 +183,47 @@ def test_a_suppression_comment_fails_exceptions(fixtures: Fixtures) -> None:
     )
     assert run.units["exceptions"].outcome == "FAIL"
     assert suppressed in run.units["exceptions"].findings
+
+
+NODE_IO = (
+    'import { readFileSync } from "node:fs";\n'
+    "\n"
+    "export const read = (path: string): string =>"
+    ' readFileSync(path, "utf8");\n'
+)
+
+
+def test_node_io_in_a_core_package_fails_lint_wherever_it_sits(
+    fixtures: Fixtures,
+) -> None:
+    deep = "packages/core/lib/deep/read.ts"
+    lint = fixtures.check("commit", files={deep: NODE_IO}).units["lint"]
+    assert lint.outcome == "FAIL"
+    assert f"{deep}:1:" in lint.findings
+    assert "core is pure" in lint.findings
+
+
+def test_node_io_in_a_shell_package_passes_lint(fixtures: Fixtures) -> None:
+    files = {"packages/shell/src/core/read.ts": NODE_IO}
+    assert fixtures.check("commit", files=files).units["lint"].outcome == "ok"
+
+
+def standard_config() -> FrozenOrderedDict[str, str]:
+    copied = (
+        TYPESCRIPT / "biome.json",
+        *sorted((TYPESCRIPT / "biome-plugins").iterdir()),
+    )
+    return FrozenOrderedDict(
+        (path.relative_to(TYPESCRIPT).as_posix(), path.read_text())
+        for path in copied
+    )
+
+
+def test_a_project_biome_config_still_lints_core_by_its_layer(
+    fixtures: Fixtures,
+) -> None:
+    core = "packages/core/src/read.ts"
+    run = fixtures.check("commit", files=standard_config() | {core: NODE_IO})
+    assert run.units["exceptions"].outcome == "ok"
+    assert run.units["lint"].outcome == "FAIL"
+    assert f"{core}:1:" in run.units["lint"].findings
