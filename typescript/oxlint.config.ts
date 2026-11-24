@@ -97,7 +97,10 @@ export default defineConfig({
 		// Its default, a function declaration, contradicts func-style.
 		"react/function-component-definition": [
 			"error",
-			{ namedComponents: "arrow-function", unnamedComponents: "arrow-function" },
+			{
+				namedComponents: "arrow-function",
+				unnamedComponents: "arrow-function",
+			},
 		],
 		// Its default allows JSX only in .jsx files; the standard's JSX is in .tsx files.
 		"react/jsx-filename-extension": ["error", { extensions: [".tsx"] }],
