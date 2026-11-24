@@ -32,32 +32,27 @@ export const all = (): number =>
 `;
 
 describe("no-module-state", () => {
-	it.effect("reports a module-level let and var", () =>
-		Effect.map(findings(rules, bindings), (found) => {
-			expect(found).toStrictEqual([`1 ${finding}`, `2 ${finding}`]);
-		}),
-	);
+  it.effect("reports a module-level let and var", () =>
+    Effect.map(findings(rules, bindings), (found) => {
+      expect(found).toStrictEqual([`1 ${finding}`, `2 ${finding}`]);
+    }),
+  );
 
-	it.effect("reports a module-level mutable collection", () =>
-		Effect.map(findings(rules, collections), (found) => {
-			expect(found).toStrictEqual([
-				`1 ${finding}`,
-				`2 ${finding}`,
-				`3 ${finding}`,
-				`4 ${finding}`,
-			]);
-		}),
-	);
+  it.effect("reports a module-level mutable collection", () =>
+    Effect.map(findings(rules, collections), (found) => {
+      expect(found).toStrictEqual([`1 ${finding}`, `2 ${finding}`, `3 ${finding}`, `4 ${finding}`]);
+    }),
+  );
 
-	it.effect("doesn't report a let inside a function", () =>
-		Effect.map(findings(rules, local), (found) => {
-			expect(found).toStrictEqual([]);
-		}),
-	);
+  it.effect("doesn't report a let inside a function", () =>
+    Effect.map(findings(rules, local), (found) => {
+      expect(found).toStrictEqual([]);
+    }),
+  );
 
-	it.effect("doesn't report a module-level const of a readonly value", () =>
-		Effect.map(findings(rules, readonly), (found) => {
-			expect(found).toStrictEqual([]);
-		}),
-	);
+  it.effect("doesn't report a module-level const of a readonly value", () =>
+    Effect.map(findings(rules, readonly), (found) => {
+      expect(found).toStrictEqual([]);
+    }),
+  );
 });

@@ -25,18 +25,15 @@ export const caught = (): string => attempt.catch();
 `;
 
 describe("no-try", () => {
-	it.effect("reports each try statement, with a catch or a finally", () =>
-		Effect.map(findings(rules, tried), (found) => {
-			expect(found).toStrictEqual([
-				"2 standards(no-try)",
-				"9 standards(no-try)",
-			]);
-		}),
-	);
+  it.effect("reports each try statement, with a catch or a finally", () =>
+    Effect.map(findings(rules, tried), (found) => {
+      expect(found).toStrictEqual(["2 standards(no-try)", "9 standards(no-try)"]);
+    }),
+  );
 
-	it.effect("doesn't report a property or method named try or catch", () =>
-		Effect.map(findings(rules, lookalikes), (found) => {
-			expect(found).toStrictEqual([]);
-		}),
-	);
+  it.effect("doesn't report a property or method named try or catch", () =>
+    Effect.map(findings(rules, lookalikes), (found) => {
+      expect(found).toStrictEqual([]);
+    }),
+  );
 });
