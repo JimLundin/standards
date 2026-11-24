@@ -49,7 +49,6 @@ def test_tools_dispatch_to_each_tool() -> None:
         "without",
         "globs",
         "oxlint-config",
-        "biome-plugins",
         "filter-mutmut",
         "stryker-mutate",
         "nextest-config",
@@ -213,10 +212,14 @@ def test_main_resolves_paths_against_the_working_directory(
     capsysbinary: pytest.CaptureFixture[bytes],
 ) -> None:
     (project / "conf").mkdir()
-    _ = (project / "conf" / "biome.json").write_text(
-        '{"plugins": ["p/a.grit"]}', encoding="utf-8"
+    _ = (project / "conf" / "stryker.json").write_text(
+        '{"mutate": ["src/**"]}', encoding="utf-8"
+    )
+    _ = (project / "exceptions.toml").write_text(
+        '[[exception]]\npath = "src/a.ts"\nrule = "mutation"\nreason = "r"\n',
+        encoding="utf-8",
     )
     status, out = invoke(
-        monkeypatch, capsysbinary, "biome-plugins", "conf/biome.json"
+        monkeypatch, capsysbinary, "stryker-mutate", "conf/stryker.json"
     )
-    assert (status, out) == (0, f"a|{project.as_posix()}/conf/p/a.grit\n")
+    assert (status, out) == (0, "src/**,!src/a.ts\n")

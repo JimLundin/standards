@@ -1,9 +1,12 @@
 import cloudflare from "@cloudflare/oxlint-config";
 import { defineConfig } from "oxlint";
+import standards from "./oxlint-plugins/index.ts";
 
 const ambient =
 	"ambient input and side effects: pass values in from the boundary";
 const boundary = "side effect: keep I/O at the boundary";
+const nondeterministic =
+	"nondeterministic: pass the value in from the boundary";
 const tests = ["**/*.test.ts", "**/test/**"] as const;
 
 export default defineConfig({
@@ -24,6 +27,8 @@ export default defineConfig({
 			),
 		},
 	],
+	// The standards plugin sits beside this file, wherever a run copies it.
+	jsPlugins: [import.meta.resolve("./oxlint-plugins/index.ts")],
 	options: { typeAware: true },
 	overrides: [
 		{
@@ -49,6 +54,12 @@ export default defineConfig({
 	],
 	plugins: ["typescript", "unicorn", "import", "promise", "oxc", "vitest"],
 	rules: {
+		...Object.fromEntries(
+			Object.keys(standards.rules).map((rule) => [
+				`standards/${rule}`,
+				"error" as const,
+			]),
+		),
 		// Contradicts import/no-default-export.
 		"import/no-named-export": "off",
 		// Contradicts import/no-default-export.
@@ -63,6 +74,13 @@ export default defineConfig({
 			{ message: boundary, name: "setInterval" },
 			{ message: boundary, name: "setImmediate" },
 			{ message: boundary, name: "queueMicrotask" },
+			{ message: nondeterministic, name: "Date" },
+			{ message: nondeterministic, name: "performance" },
+			{ message: nondeterministic, name: "crypto" },
+		],
+		"no-restricted-properties": [
+			"error",
+			{ message: nondeterministic, object: "Math", property: "random" },
 		],
 		// Contradicts unicorn/prefer-ternary.
 		"no-ternary": "off",
@@ -83,6 +101,11 @@ export default defineConfig({
 		"vitest/no-hooks": "off",
 		// The standard imports it from @effect/vitest, and vitest's globals are off.
 		"vitest/no-importing-vitest-globals": "off",
+		// @effect/vitest's it.effect and it.prop run a test, as it does.
+		"vitest/no-standalone-expect": [
+			"error",
+			{ additionalTestBlockFunctions: ["it.effect", "it.prop"] },
+		],
 		// Vitest's testTimeout bounds every test; a test sets its own only to need another.
 		"vitest/require-test-timeout": "off",
 		// Vitest/prefer-describe-function-title names a describe by its function, not a string.

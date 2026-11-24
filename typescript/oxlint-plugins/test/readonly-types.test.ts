@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { findings } from "./test/oxlint.ts";
+import { findings } from "./oxlint.ts";
 
 const rules = { "standards/readonly-types": "error" } as const;
 

@@ -8,19 +8,20 @@ cd "$project" || exit 2
 begin typescript
 # The standard's own part holds the fixture trees of its S1 harness, which
 # typescript_fixtures.py checks as projects of their own and whose breaking
-# trees break rules on purpose, so its checks leave them out.
+# trees break rules on purpose, and the oxlint-plugins package, a part of its
+# own, so its checks leave them out.
 foreign=()
 own=
 if [ "$(pwd -P)" = "$(cd "$standards" && pwd -P)" ]; then
 	own=1
-	foreign=(':!fixtures/')
+	foreign=(':!fixtures/' ':!oxlint-plugins/')
 	mapfile -t tracked < <(git ls-files -- . "${foreign[@]}")
 fi
 pinned NODE node "nvm install {}, or another way to put Node {} on PATH" node --version
 # A check's key holds the pinned version of the tool it runs.
 versions=(
 	"--tool=format=${pins[BIOME]}"
-	"--tool=lint=${pins[BIOME]},${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
+	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]}"
 	"--tool=unused=${pins[KNIP]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
@@ -61,7 +62,8 @@ mapfile -t scripts < <(printf '%s\n' "${sources[@]}" | grep -E '\.(ts|tsx|js|mjs
 # Oxlint, its type-aware backend and cloudflare's config are installed at
 # their pins once, into the cache. A project's oxlint.config.ts runs in
 # place. The standard's imports cloudflare's config, so it runs from a copy
-# beside that install, outside node_modules, where Node won't strip types.
+# beside that install, outside node_modules, where Node won't strip types,
+# with the standards plugin it loads from beside it.
 oxlint_lint() {
 	local install run tsgolint typed= status
 	((${#scripts[@]} > 0)) || return 0
@@ -81,6 +83,8 @@ oxlint_lint() {
 	run=$(mktemp -d "$install/run.XXXXXX")
 	if [ -n "$own" ] || ! oxlint_config=$(existing oxlint.config.ts); then
 		cp "$standards/oxlint.config.ts" "$run/oxlint.config.ts"
+		mkdir "$run/oxlint-plugins"
+		cp -r "$standards/oxlint-plugins/index.ts" "$standards/oxlint-plugins/rules" "$run/oxlint-plugins/"
 		oxlint_config=$run/oxlint.config.ts
 	fi
 	# Without a tsconfig.json there are no types to check, as for the types
@@ -105,28 +109,11 @@ oxlint_lint() {
 	return "$status"
 }
 
-# Oxlint runs the rules, and Biome each GritQL plugin alone on the files it
-# still covers, as Biome can only skip all plugins at once.
-lint() {
-	local status=0 name path
-	local -a covered
-	oxlint_lint || status=1
-	while IFS='|' read -r name path; do
-		mapfile -t covered < <(checks without "lint/plugin/$name" "${sources[@]}")
-		((${#covered[@]} > 0)) || continue
-		mkdir -p "$logs/plugins/$name"
-		printf '{"plugins": ["%s"]}\n' "$path" >"$logs/plugins/$name/biome.json"
-		npx -y "@biomejs/biome@${pins[BIOME]}" lint --only=plugin \
-			--config-path="$(native "$logs/plugins/$name/biome.json")" "${covered[@]}" || status=1
-	done < <(checks biome-plugins "$(native "$biome_config")")
-	return "$status"
-}
-
 exceptions_unit
 unit format "last 'Found [0-9]+ errors?|Checked [0-9]+ files?'" \
 	npx -y "@biomejs/biome@${pins[BIOME]}" format "${biome[@]}" "${sources[@]}"
 unit lint "joined 'Found [0-9]+ (warnings? and [0-9]+ )?(error|warning|info)s?'" \
-	lint
+	oxlint_lint
 if [ -f tsconfig.json ]; then
 	printf '{"extends": ["%s", "%s"], "compilerOptions": {"typeRoots": ["%s"]}}\n' \
 		"$(native "$project/tsconfig.json")" \

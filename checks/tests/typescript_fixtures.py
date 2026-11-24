@@ -25,12 +25,11 @@ COMPLIANT = "compliant"
 # The standard's config files that a project copies to its root. Biome reads
 # a workspace's package.json files only from a config at the project root,
 # and Oxlint's type-aware rules read the tsconfig.json there, which extends
-# the standard's.
+# the standard's. Oxlint runs on the standard's config, as in a project
+# without its own.
 COPIED = FrozenList((
     "biome.json",
-    "biome-plugins",
     "knip.json",
-    "oxlint.config.ts",
     "stryker.config.json",
     "tsconfig.base.json",
     "vitest.config.ts",
@@ -228,6 +227,50 @@ def test_a_break_of_each_kind_of_rule_fails_lint_naming_the_rule(
             STARTED,
         ),
         ("packages/core/src/masked.ts", "eslint(no-bitwise)", MASKED),
+    ))
+    run = fixtures.check(
+        "commit", files={path: text for path, _, text in breaks}
+    )
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    for path, rule, _ in breaks:
+        assert findings.count(rule) == 1, rule
+        assert path in findings, path
+
+
+STATEFUL = """let count = 0;
+
+export const bump = (): number => {
+	count += 1;
+	return count;
+};
+"""
+TIMED = """export const now = (): number => Date.now();
+"""
+COUNTED = """export class Counter {
+	count = 0;
+}
+"""
+LISTED = """export const first = (names: string[]): string | undefined => names[0];
+"""
+
+
+def test_a_break_of_each_standards_rule_fails_lint_naming_the_rule(
+    fixtures: Fixtures,
+) -> None:
+    breaks = FrozenList((
+        (
+            "packages/core/src/stateful.ts",
+            "standards(no-module-state)",
+            STATEFUL,
+        ),
+        (
+            "packages/core/src/counted.ts",
+            "standards(readonly-members)",
+            COUNTED,
+        ),
+        ("packages/core/src/listed.ts", "standards(readonly-types)", LISTED),
+        ("packages/core/src/timed.ts", "eslint(no-restricted-globals)", TIMED),
     ))
     run = fixtures.check(
         "commit", files={path: text for path, _, text in breaks}

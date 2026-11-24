@@ -20,7 +20,7 @@ export default defineConfig(({ mode }: Readonly<ConfigEnv>) => {
 	return {
 		test: {
 			bail,
-			coverage: { enabled: full, provider: "v8", reporter: ["text"] },
+			coverage: { enabled: full, provider: "v8" as const, reporter: ["text"] },
 			provide: { arbitrary },
 			setupFiles: ["./vitest.setup.ts"],
 			tags: [{ description: "runs only in the full mode", name: "slow" }],

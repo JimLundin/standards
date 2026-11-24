@@ -16,10 +16,9 @@ def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
         assert request((command, "mutation", "a.py"), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
-    for command in ("stryker-mutate", "biome-plugins"):
-        assert request((command, "x.json"), Inputs()) == Request(
-            FrozenList(("exceptions.toml", "x.json"))
-        )
+    assert request(("stryker-mutate", "x.json"), Inputs()) == Request(
+        FrozenList(("exceptions.toml", "x.json"))
+    )
     assert request(("filter-mutmut",), Inputs()) == Request(
         FrozenList(("exceptions.toml",)), stdin=True
     )
@@ -111,31 +110,16 @@ def test_oxlint_config_anchors_globs_at_a_windows_project_root() -> None:
     )
 
 
-def test_oxlint_config_leaves_biome_plugin_rules_to_biome() -> None:
-    texts = {"exceptions.toml": entry("src/a.ts", "lint/plugin/noModuleState")}
+def test_oxlint_config_turns_a_standards_plugin_rule_off() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.ts", "lint/standards/no-module-state")
+    }
     outcome = run(
         ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
     )
     (config,) = outcome.writes.values()
-    assert "overrides: [\n\t],\n" in config
-
-
-def test_biome_plugins_resolve_against_the_config() -> None:
-    config = json.dumps({"plugins": ["./p/a.grit", {"path": "../b.grit"}, {}]})
-    outcome = run(
-        ("biome-plugins", "conf/biome.json"),
-        inputs({"conf/biome.json": config}, cwd="C:\\work"),
-    )
-    assert lines(outcome) == (
-        "a|C:/work/conf/p/a.grit",
-        "b|C:/work/b.grit",
-        "|C:/work/conf",
-    )
-    absolute = run(
-        ("biome-plugins", "/std/biome.json"),
-        inputs({"/std/biome.json": config}, cwd="/home"),
-    )
-    assert lines(absolute)[0] == "a|/std/p/a.grit"
+    override = '{ files: ["/work/src/a.ts"], rules: { "standards/no-module-state": "off" } },'
+    assert override in config
 
 
 def test_filter_mutmut_drops_excepted_modules() -> None:
