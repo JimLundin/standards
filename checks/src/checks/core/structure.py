@@ -1,5 +1,5 @@
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -28,6 +28,9 @@ RECEIVERS = FrozenOrderedSet(("self", "cls"))
 TRIVIAL_WRAPPER = Rule("STR001", "adds no behaviour; inline it")
 COGNITIVE_COMPLEXITY = Rule("STR002", "flatten it")
 COGNITIVE_LIMIT = 10
+CODES = FrozenOrderedSet(
+    rule.code for rule in (TRIVIAL_WRAPPER, COGNITIVE_COMPLEXITY)
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,12 +294,17 @@ def function_findings(
     function = definition.node
     if isinstance(function, ast.ClassDef):
         return
-    yield from filter(
+    qualifier = definition.name.removeprefix(f"{module.name}.")
+    found = filter(
         None,
         (
             trivial_wrapper(definition, function, module, symbols),
             cognitive_complexity(function),
         ),
+    )
+    yield from (
+        replace(finding, rule=f"{finding.rule}:{qualifier}")
+        for finding in found
     )
 
 

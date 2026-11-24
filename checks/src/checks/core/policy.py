@@ -1,9 +1,17 @@
 from typing import TYPE_CHECKING
 
-from ordered import FrozenList, FrozenOrderedDict
+from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
-from checks.core.exceptions import EXCEPTIONS, exceptions_in, validate
+from checks.core.exceptions import (
+    EXCEPTIONS,
+    Exceptions,
+    exceptions_in,
+    kind,
+    validate,
+)
+from checks.core.slop import rule_file
+from checks.core.structure import CODES
 from checks.core.suppressions import is_source, suppressions, used_attributes
 from checks.core.values import Inputs, Outcome, Request, summarized
 
@@ -37,10 +45,35 @@ def snapshot_of(
     return Snapshot(FrozenList(files), project, shared)
 
 
-def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
+def slop_rules(language: str, exceptions: Exceptions) -> FrozenOrderedSet[str]:
+    return FrozenOrderedSet(
+        entry.rule
+        for entry in exceptions.entries
+        if kind(language, entry.rule) == "slop"
+    )
+
+
+def request(arguments: Sequence[str], inputs: Inputs) -> Request:
     language, standards, *files = arguments
     shared = (f"{standards}/{path}" for path in STANDARD_FILES[language])
-    return Request(FrozenList((*project_paths(language, files), *shared)))
+    definitions = (
+        rule_file(standards, rule)
+        for rule in slop_rules(language, exceptions_in(inputs))
+    )
+    return Request(
+        FrozenList((*project_paths(language, files), *shared, *definitions))
+    )
+
+
+def defined(
+    language: str, standards: str, exceptions: Exceptions, inputs: Inputs
+) -> FrozenList[str]:
+    slop = (
+        rule
+        for rule in slop_rules(language, exceptions)
+        if rule_file(standards, rule) in inputs.texts
+    )
+    return FrozenList((*CODES, *slop))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
@@ -54,7 +87,13 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         if not exceptions.covers(issue.rule, issue.path)
     )
     issues = (
-        *validate(language, exceptions, snapshot.files, attributes),
+        *validate(
+            language,
+            exceptions,
+            snapshot.files,
+            attributes,
+            defined(language, standards, exceptions, inputs),
+        ),
         *suppressions(language, snapshot.project, exceptions),
         *drifted,
     )

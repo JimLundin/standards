@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 NO_THRESHOLD = 0
+RULES = "python/slop/rules"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,10 @@ def reported(found: Sequence[Match]) -> FrozenList[Match]:
             ),
         )
     )
+
+
+def rule_file(standards: str, rule: str) -> str:
+    return f"{standards}/{RULES}/{rule.removeprefix('slop:')}.yml"
 
 
 def request(_arguments: Sequence[str], _inputs: Inputs) -> Request:

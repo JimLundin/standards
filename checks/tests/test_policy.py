@@ -90,6 +90,39 @@ def test_flaky_tests_are_named_not_tracked_paths() -> None:
     )
 
 
+def test_request_reads_the_definitions_of_excepted_slop_rules() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.py", "slop:for-range-len")
+        + entry("src/a.py", "STR001")
+        + entry("src/a.py", "slop:no-such-rule")
+    }
+    paths = request(("python", STD, "src/a.py"), inputs(texts)).paths
+    assert paths[-2:] == (
+        f"{STD}/python/slop/rules/for-range-len.yml",
+        f"{STD}/python/slop/rules/no-such-rule.yml",
+    )
+
+
+def test_policy_validates_slop_and_structure_rules_against_their_definitions() -> (
+    None
+):
+    texts = {
+        "exceptions.toml": entry("src/a.py", "slop:for-range-len")
+        + entry("src/a.py", "slop:no-such-rule")
+        + entry("src/a.py", "STR001")
+        + entry("src/a.py", "STR002:Class.method")
+        + entry("src/a.py", "STR009"),
+        "src/a.py": "x = 1\n",
+        f"{STD}/python/slop/rules/for-range-len.yml": "id: for-range-len\n",
+    }
+    outcome = run(("python", STD, "src/a.py"), inputs(texts))
+    assert lines(outcome) == (
+        "exceptions.toml (src/a.py, slop:no-such-rule): unknown rule for python",
+        "exceptions.toml (src/a.py, STR009): unknown rule for python",
+        "Found 2 issues",
+    )
+
+
 def test_policy_validates_slop_and_structure_paths() -> None:
     texts = {
         "exceptions.toml": entry("src/a.py", "slop:for-range-len")
@@ -97,6 +130,7 @@ def test_policy_validates_slop_and_structure_paths() -> None:
         + entry("gone.py", "slop:for-range-len")
         + entry("gone.py", "STR002"),
         "src/a.py": "x = 1\n",
+        f"{STD}/python/slop/rules/for-range-len.yml": "id: for-range-len\n",
     }
     outcome = run(("python", STD, "src/a.py"), inputs(texts))
     assert lines(outcome) == (

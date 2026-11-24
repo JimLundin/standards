@@ -226,6 +226,24 @@ def test_an_exception_drops_the_cognitive_findings_in_its_paths() -> None:
     )
 
 
+def test_a_function_exception_drops_that_function_alone() -> None:
+    source, score = ABOVE_THE_LIMIT[0]
+    sources = {"a.py": f"{source}\n\n{source.replace('def f', 'def g')}"}
+    assert findings(sources, entry("a.py", "STR002:f")) == (
+        f"a.py:13:1: {complex_function(score).replace('`f`', '`g`')}",
+    )
+
+
+def test_a_method_exception_names_the_method_by_its_class() -> None:
+    source, score = ABOVE_THE_LIMIT[0]
+    body = "".join(f"    {line}\n" for line in source.splitlines())
+    method = f"class C:\n{body}"
+    sources = {"a.py": method, "b.py": method}
+    assert findings(sources, entry("a.py", "STR002:C.f")) == (
+        f"b.py:2:5: {complex_function(score)}",
+    )
+
+
 @pytest.mark.parametrize(
     "source",
     dict.fromkeys([

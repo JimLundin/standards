@@ -24,19 +24,28 @@ BOX = "box"
 MUTATION = "mutation"
 RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY, BOX))
 UNPATHED = FrozenOrderedSet(("drift", FLAKY))
+DEFINED = FrozenOrderedSet(("structure", "slop"))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
-STRUCTURE = re.compile(r"STR\d{3}")
+STRUCTURE = re.compile(r"STR\d{3}(?::[\w.]+)?")
 SLOP = re.compile(r"slop:[\w-]+")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
 
 
 def rule_covers(excepted: str, found: str) -> bool:
-    if not PURITY.fullmatch(excepted):
+    code, _, qualifier = excepted.partition(":")
+    found_code, _, found_qualifier = found.partition(":")
+    if PURITY.fullmatch(excepted):
+        within_qualifier = within(found_qualifier, (qualifier,))
+    elif STRUCTURE.fullmatch(excepted):
+        within_qualifier = found_qualifier == qualifier
+    else:
         return excepted == found
-    code, _, prefix = excepted.partition(":")
-    found_code, _, module = found.partition(":")
-    return code == found_code and (not prefix or within(module, (prefix,)))
+    return code == found_code and (not qualifier or within_qualifier)
+
+
+def definition(rule: str) -> str:
+    return rule.partition(":")[0] if STRUCTURE.fullmatch(rule) else rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,10 +154,13 @@ def invalidity(
     entry: ExceptionEntry,
     files: Sequence[str],
     attributes: Container[tuple[str, str]],
+    defined: Container[str],
 ) -> str:
     rule_kind = kind(language, entry.rule)
     matched = FrozenList(file for file in files if matches(file, entry.path))
-    if not rule_kind:
+    if not rule_kind or (
+        rule_kind in DEFINED and definition(entry.rule) not in defined
+    ):
         return f"unknown rule for {language}"
     if rule_kind not in UNPATHED and not matched:
         return "path matches no tracked file"
@@ -164,9 +176,10 @@ def validate(
     exceptions: Exceptions,
     files: Sequence[str],
     attributes: Container[tuple[str, str]],
+    defined: Container[str],
 ) -> FrozenList[Issue]:
     return exceptions.problems + FrozenList(
         Issue(f"{EXCEPTIONS} ({entry.path}, {entry.rule})", message)
         for entry in exceptions.entries
-        if (message := invalidity(language, entry, files, attributes))
+        if (message := invalidity(language, entry, files, attributes, defined))
     )

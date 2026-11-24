@@ -8,6 +8,7 @@ from checks.core.exceptions import (
     kind,
     load,
     parse_entry,
+    validate,
 )
 from tests.helpers import entry
 
@@ -26,6 +27,9 @@ def exceptions_for(excepted: str) -> Exceptions:
         ("PUR001:attrs", "PUR001:attrs.x", "src/a.py"),
         ("api", "api", "src/lib.rs"),
         ("shell", "shell", "src/main.rs"),
+        ("STR002", "STR002:Class.method", "src/a.py"),
+        ("STR002:Class.method", "STR002:Class.method", "src/a.py"),
+        ("slop:for-range-len", "slop:for-range-len", "src/a.py"),
     ],
 )
 def test_an_exception_covers_its_rule_in_matching_paths(
@@ -46,6 +50,10 @@ def test_an_exception_covers_its_rule_in_matching_paths(
         ("PUR001:attrs", "PUR001:attrs", "tests/a.py"),
         ("shell", "api", "src/lib.rs"),
         ("api", "shell", "src/lib.rs"),
+        ("STR002:f", "STR002:g", "src/a.py"),
+        ("STR002:f", "STR002:f.inner", "src/a.py"),
+        ("STR002:f", "STR001:f", "src/a.py"),
+        ("STR002:f", "STR002", "src/a.py"),
     ],
 )
 def test_an_exception_leaves_other_rules_and_paths(
@@ -143,6 +151,8 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
         ("python", "slop:for-range-len", "slop"),
         ("python", "STR001", "structure"),
         ("python", "STR002", "structure"),
+        ("python", "STR002:Class.method", "structure"),
+        ("python", "STR002:", "ruff"),
         ("python", "STR01", "ruff"),
         ("python", "slop:", "ruff"),
         ("rust", "slop:for-range-len", ""),
@@ -157,3 +167,23 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
 )
 def test_kind(language: str, rule: str, expected: str) -> None:
     assert kind(language, rule) == expected
+
+
+def test_python_rules_validate_against_their_definitions() -> None:
+    rules = (
+        "slop:for-range-len",
+        "slop:no-such-rule",
+        "STR001",
+        "STR002:Class.method",
+        "STR009",
+    )
+    exceptions = load("".join(entry("src/a.py", rule) for rule in rules))
+    defined = ("STR001", "STR002", "slop:for-range-len")
+    issues = validate("python", exceptions, ("src/a.py",), (), defined)
+    assert issues == (
+        Issue(
+            "exceptions.toml (src/a.py, slop:no-such-rule)",
+            "unknown rule for python",
+        ),
+        Issue("exceptions.toml (src/a.py, STR009)", "unknown rule for python"),
+    )
