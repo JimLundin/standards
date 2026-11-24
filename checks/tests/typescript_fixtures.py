@@ -22,13 +22,11 @@ from tests.test_lib import STANDARDS, git
 TYPESCRIPT = STANDARDS / "typescript"
 FIXTURES = TYPESCRIPT / "fixtures"
 COMPLIANT = "compliant"
-# The standard's config files that a project copies to its root. Biome reads
-# a workspace's package.json files only from a config at the project root,
-# and Oxlint's type-aware rules read the tsconfig.json there, which extends
-# the standard's. Oxlint runs on the standard's config, as in a project
-# without its own.
+# The standard's config files that a project copies to its root. Oxlint's
+# type-aware rules read the tsconfig.json there, which extends the
+# standard's. Oxlint runs on the standard's config, as in a project without
+# its own.
 COPIED = FrozenList((
-    "biome.json",
     "knip.json",
     "stryker.config.json",
     "tsconfig.base.json",
@@ -181,7 +179,7 @@ def test_the_compliant_tree_passes_every_unit(
     assert run.status == 0
 
 
-# Indented by tabs, as Biome formats it; oxfmt indents by two spaces.
+# Indented by tabs; oxfmt indents by two spaces.
 TABBED = """export const double = (value: number): number => {
 \treturn value * 2;
 };

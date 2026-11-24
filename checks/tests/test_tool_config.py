@@ -66,9 +66,7 @@ def test_without_and_globs() -> None:
     assert lines(run(("globs", "api"), inputs(texts))) == ()
 
 
-OXLINT_CONFIG = """import { pathToFileURL } from "node:url";
-
-const { default: config } = await import(pathToFileURL("/std/oxlint.config.ts").href);
+OXLINT_CONFIG = """import config from "file:///std/oxlint.config.ts";
 
 export default {
 	extends: [config],
@@ -103,10 +101,38 @@ def test_oxlint_config_anchors_globs_at_a_windows_project_root() -> None:
         inputs(texts, cwd="C:\\work"),
     )
     (config,) = outcome.writes.values()
-    assert 'pathToFileURL("C:/work/conf/oxlint.config.ts")' in config
+    assert (
+        'import config from "file:///C:/work/conf/oxlint.config.ts";' in config
+    )
     assert (
         '{ files: ["C:/work/*.ts"], rules: { "eslint/no-var": "off" } },'
         in config
+    )
+
+
+def test_oxlint_config_imports_the_config_by_an_escaped_file_url() -> None:
+    outcome = run(
+        ("oxlint-config", "my std/oxlint.config.ts"), inputs({}, cwd="/work")
+    )
+    (config,) = outcome.writes.values()
+    assert (
+        'import config from "file:///work/my%20std/oxlint.config.ts";' in config
+    )
+
+
+def test_oxlint_config_untyped_turns_type_aware_rules_off() -> None:
+    outcome = run(
+        ("oxlint-config", "--untyped", "/std/oxlint.config.ts"),
+        inputs({}, cwd="/work"),
+    )
+    (config,) = outcome.writes.values()
+    assert config == (
+        'import config from "file:///std/oxlint.config.ts";\n\n'
+        "export default {\n"
+        "\textends: [config],\n"
+        "\toptions: { ...config.options, typeAware: false },\n"
+        "\toverrides: [\n\t],\n"
+        "};\n"
     )
 
 

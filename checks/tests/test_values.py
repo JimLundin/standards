@@ -78,9 +78,9 @@ def test_matches_uses_full_path_globs() -> None:
 
 def test_posix_and_absolute() -> None:
     assert posix("a\\b\\c") == "a/b/c"
-    assert absolute("biome.json", "C:\\work") == "C:/work/biome.json"
-    assert absolute("C:\\x\\biome.json", "/home") == "C:/x/biome.json"
-    assert absolute("/etc/biome.json", "/home") == "/etc/biome.json"
+    assert absolute("knip.json", "C:\\work") == "C:/work/knip.json"
+    assert absolute("C:\\x\\knip.json", "/home") == "C:/x/knip.json"
+    assert absolute("/etc/knip.json", "/home") == "/etc/knip.json"
     assert absolute("d:/x", "/home") == "d:/x"
     assert absolute("ab:/x", "/home") == "/home/ab:/x"
 

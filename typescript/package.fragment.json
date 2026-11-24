@@ -4,7 +4,7 @@
   "scripts": {
     "test": "vitest run --mode fast",
     "test:full": "vitest run --mode full",
-    "check": "tsc && biome check",
+    "check": "tsc && oxlint && oxfmt --check",
     "mutate": "stryker run"
   },
   "dependencies": {
@@ -12,8 +12,8 @@
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "@biomejs/biome": "2.6.8",
     "oxlint": "1.95.0",
+    "oxfmt": "0.80.0",
     "oxlint-tsgolint": "7.0.2008",
     "@cloudflare/oxlint-config": "0.2.0",
     "vitest": "5.1.1",
