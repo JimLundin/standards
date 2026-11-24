@@ -1,5 +1,6 @@
 import json
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from ordered import FrozenList, FrozenOrderedDict
 
@@ -19,6 +20,7 @@ from checks.core.values import (
     Request,
     absolute,
     listing,
+    operands,
     parse_json,
     posix,
     strings,
@@ -67,14 +69,27 @@ def oxlint_override(root: str, entry: ExceptionEntry) -> str:
     return f'\t\t{{ files: {files}, rules: {{ {rule}: "off" }} }},\n'
 
 
+# A file URL of an absolute path, which Node imports on any platform, such as
+# file:///C:/work/a.ts for a Windows path.
+def file_url(path: str) -> str:
+    drive = "" if path.startswith("/") else f"/{path[:2]}"
+    return f"file://{drive}{quote(path.removeprefix(drive[1:]))}"
+
+
 # Oxlint resolves an override's globs against its config's folder, which
 # here is not the project root, and matches a file outside that folder by
 # its absolute path, so each glob is anchored at the project root. The
-# exceptions come last, so that one turning a rule off wins.
+# exceptions come last, so that one turning a rule off wins. Untyped, for a
+# project without a tsconfig.json, the type-aware rules are off.
 def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    base, *files = arguments
+    path, *files = operands(arguments)
     root = posix(inputs.cwd)
-    config = json.dumps(absolute(base, inputs.cwd))
+    config = json.dumps(file_url(absolute(path, inputs.cwd)))
+    options = (
+        "\toptions: { ...config.options, typeAware: false },\n"
+        if "--untyped" in arguments
+        else ""
+    )
     exceptions = exceptions_in(inputs)
     placed = typescript_layers.placements(files, inputs.texts)
     if issues := typescript_layers.layer_issues(placed):
@@ -83,11 +98,10 @@ def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         root, placed, exceptions
     ) + "".join(oxlint_override(root, entry) for entry in exceptions.entries)
     text = (
-        'import { pathToFileURL } from "node:url";\n\n'
-        "const { default: config } = await import("
-        f"pathToFileURL({config}).href);\n\n"
+        f"import config from {config};\n\n"
         "export default {\n"
         "\textends: [config],\n"
+        f"{options}"
         f"\toverrides: [\n{overrides}\t],\n"
         "};\n"
     )
@@ -153,7 +167,10 @@ def exceptions_only(_: Sequence[str], _inputs: Inputs) -> Request:
 
 def with_manifests(arguments: Sequence[str], _inputs: Inputs) -> Request:
     return Request(
-        FrozenList((EXCEPTIONS, *typescript_layers.manifests(arguments[1:])))
+        FrozenList((
+            EXCEPTIONS,
+            *typescript_layers.manifests(operands(arguments)[1:]),
+        ))
     )
 
 

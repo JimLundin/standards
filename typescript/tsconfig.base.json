@@ -17,6 +17,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "allowUnreachableCode": false,
-    "allowUnusedLabels": false
+    "allowUnusedLabels": false,
+    "plugins": [{ "name": "@effect/language-service", "ignoreEffectWarningsInTscExitCode": true }]
   }
 }

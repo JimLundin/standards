@@ -22,13 +22,11 @@ from tests.test_lib import STANDARDS, git
 TYPESCRIPT = STANDARDS / "typescript"
 FIXTURES = TYPESCRIPT / "fixtures"
 COMPLIANT = "compliant"
-# The standard's config files that a project copies to its root. Biome reads
-# a workspace's package.json files only from a config at the project root,
-# and Oxlint's type-aware rules read the tsconfig.json there, which extends
-# the standard's. Oxlint runs on the standard's config, as in a project
-# without its own.
+# The standard's config files that a project copies to its root. Oxlint's
+# type-aware rules read the tsconfig.json there, which extends the
+# standard's. Oxlint runs on the standard's config, as in a project without
+# its own.
 COPIED = FrozenList((
-    "biome.json",
     "knip.json",
     "stryker.config.json",
     "tsconfig.base.json",
@@ -181,7 +179,7 @@ def test_the_compliant_tree_passes_every_unit(
     assert run.status == 0
 
 
-# Indented by tabs, as Biome formats it; oxfmt indents by two spaces.
+# Indented by tabs; oxfmt indents by two spaces.
 TABBED = """export const double = (value: number): number => {
 \treturn value * 2;
 };
@@ -319,6 +317,45 @@ def test_a_break_of_each_standards_rule_fails_lint_naming_the_rule(
         assert path in findings, path
 
 
+PLAIN_CLASS = """export class Greeter {}
+"""
+# Max-classes-per-file holds each to its own file.
+EFFECT_CLASSES = FrozenOrderedDict({
+    "packages/shell/src/person.ts": (
+        'import { Schema } from "effect";\n\n'
+        'export class Person extends Schema.Class<Person>("Person")({\n'
+        "\tname: Schema.String,\n"
+        "}) {}\n"
+    ),
+    "packages/shell/src/missing.ts": (
+        'import { Data } from "effect";\n\n'
+        'export class Missing extends Data.TaggedError("Missing")<{\n'
+        "\treadonly path: string;\n"
+        "}> {}\n"
+    ),
+    "packages/shell/src/clock.ts": (
+        'import { Context } from "effect";\n\n'
+        "export class Clock extends Context.Service<\n"
+        "\tClock,\n"
+        "\t{ readonly now: number }\n"
+        '>()("Clock") {}\n'
+    ),
+})
+
+
+def test_a_plain_class_fails_lint_and_an_effect_class_passes(
+    fixtures: Fixtures,
+) -> None:
+    plain = "packages/shell/src/greeter.ts"
+    run = fixtures.check("commit", files={plain: PLAIN_CLASS, **EFFECT_CLASSES})
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("standards(no-plain-class)") == 1
+    assert plain in findings
+    for path in EFFECT_CLASSES:
+        assert path not in findings, findings
+
+
 HOOKED = """import type { ReactElement } from "react";
 import { useState } from "react";
 
@@ -394,23 +431,32 @@ def test_a_break_of_each_react_and_jsx_plugin_fails_lint_naming_the_rule(
         assert path in findings, path
 
 
-# Typescript/promise-function-async makes a function returning a promise
-# async, and typescript/require-await accepts an async function that returns
-# a promise without awaiting it. Eslint's require-await, which doesn't, is off.
-RETURNED = """export const returned = async (
-	load: () => Promise<number>,
-): Promise<number> => load();
+FLOATING = """import { Console } from "effect";
+
+export const start = (): void => {
+  Console.log("started");
+};
+"""
+MISTYPED = """export const count: number = "one";
 """
 
 
-def test_an_async_function_returning_a_promise_unawaited_passes_lint(
-    fixtures: Fixtures,
+@pytest.mark.parametrize(
+    ("path", "text", "diagnostic"),
+    [
+        ("packages/shell/src/floating.ts", FLOATING, "error TS377001"),
+        ("packages/core/src/mistyped.ts", MISTYPED, "error TS2322"),
+    ],
+    ids=["floating-effect", "plain-type-error"],
+)
+def test_a_floating_effect_or_a_type_error_fails_types(
+    fixtures: Fixtures, path: str, text: str, diagnostic: str
 ) -> None:
-    returned = "packages/core/src/returned.ts"
-    run = fixtures.check("commit", files={returned: RETURNED})
-    lint = run.units["lint"]
-    assert lint.outcome == "ok", lint.findings
-    assert returned not in lint.findings
+    run = fixtures.check("commit", files={path: text})
+    types = run.units["types"]
+    assert types.outcome == "FAIL"
+    assert f"{path}(" in types.findings
+    assert diagnostic in types.findings
 
 
 def test_an_exception_clears_its_rule_in_its_file_alone(
@@ -613,6 +659,109 @@ def test_an_exception_named_as_oxlint_prints_the_rule_clears_it(
     assert run.units["exceptions"].outcome == "ok"
     assert hooked in run.units["lint"].findings
     assert "react-hooks(rules-of-hooks)" not in run.units["lint"].findings
+
+
+LAYERS = FrozenList(("core", "shell", "ui"))
+# ADR 0004's bans, each a file with its one break and the rule that reports it.
+AWAITED = """export const awaited = async (load: () => Promise<string>): Promise<string> => {
+	const loaded = await load();
+	return loaded;
+};
+"""
+PROMISED = """export const promised = (value: string): Promise<string> =>
+	new Promise((resolve) => {
+		resolve(value);
+	});
+"""
+CHAINED = """export const chained = (load: () => Promise<string>): Promise<string> =>
+	load().then((loaded) => loaded.trim());
+"""
+THROWN = """export const thrown = (reason: string): never => {
+	throw new Error(reason);
+};
+"""
+TRIED = """export const tried = (run: () => string, fallback: string): string => {
+	try {
+		return run();
+	} catch {
+		return fallback;
+	}
+};
+"""
+PARSED = """export const parsed = (text: string): boolean =>
+	typeof JSON.parse(text) === "string";
+"""
+LOGGED = """export const logged = (text: string): void => {
+	console.log(text);
+};
+"""
+BANS = FrozenOrderedDict({
+    "awaited": ("oxc(no-async-await)", AWAITED),
+    "promised": ("promise(avoid-new)", PROMISED),
+    "chained": ("eslint(no-restricted-properties)", CHAINED),
+    "thrown": ("standards(no-throw)", THROWN),
+    "tried": ("standards(no-try)", TRIED),
+    "parsed": ("eslint(no-restricted-properties)", PARSED),
+    "dated": ("eslint(no-restricted-globals)", TIMED),
+    "rolled": (
+        "eslint(no-restricted-properties)",
+        "export const rolled = (): number => Math.random();\n",
+    ),
+    "identified": (
+        "eslint(no-restricted-globals)",
+        "export const identified = (): string => crypto.randomUUID();\n",
+    ),
+    "timed": (
+        "eslint(no-restricted-globals)",
+        "export const timed = (): number => performance.now();\n",
+    ),
+    "logged": ("eslint(no-console)", LOGGED),
+})
+# Effect's own bridge, clock and randomness.
+EFFECTFUL = """import { Clock, Effect, Random } from "effect";
+
+const loaded = (load: () => Promise<string>): Effect.Effect<string, string> =>
+	Effect.tryPromise({ catch: () => "unloaded", try: load });
+const stamped: Effect.Effect<number> = Clock.currentTimeMillis;
+const rolled: Effect.Effect<number> = Random.next;
+
+export { loaded, rolled, stamped };
+"""
+
+
+def test_each_ban_fails_lint_in_every_layer_with_one_finding(
+    fixtures: Fixtures,
+) -> None:
+    banned = FrozenOrderedDict(
+        (f"packages/{layer}/src/{name}.ts", (rule, text))
+        for layer in LAYERS
+        for name, (rule, text) in BANS.items()
+    )
+    run = fixtures.check(
+        "commit", files={path: text for path, (_, text) in banned.items()}
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    for path, (rule, _) in banned.items():
+        found = FrozenList(
+            line for line in lint.findings.splitlines() if f"{path}:" in line
+        )
+        assert len(found) == 1, (path, found)
+        assert rule in lint.findings, rule
+
+
+def test_effect_try_promise_clock_and_random_pass_lint(
+    fixtures: Fixtures,
+) -> None:
+    # The core imports no Effect module, by its layer's import override.
+    effectful = FrozenList(
+        f"packages/{layer}/src/effectful.ts" for layer in ("shell", "ui")
+    )
+    run = fixtures.check("commit", files=dict.fromkeys(effectful, EFFECTFUL))
+    lint = run.units["lint"]
+    assert lint.outcome == "ok", lint.findings
+    for path in effectful:
+        assert path not in lint.findings, path
 
 
 NODE_IMPORTS = FrozenOrderedDict({
