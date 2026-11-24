@@ -3,6 +3,7 @@ import re
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import reduce
 from pathlib import PurePosixPath
 from typing import TypeIs
 
@@ -102,16 +103,17 @@ def posix(path: str) -> str:
     return path.replace("\\", "/")
 
 
+def resolved(parts: FrozenList[str], part: str) -> FrozenList[str]:
+    if part == "." or (not part and parts):
+        return parts
+    if part == ".." and parts and parts[-1] != "..":
+        return parts if parts == ("",) else parts[:-1]
+    return FrozenList((*parts, part))
+
+
 def normalized(path: str) -> str:
-    parts: FrozenList[str] = FrozenList()
-    for part in posix(path).split("/"):
-        if part == "." or (not part and parts):
-            continue
-        if part == ".." and parts and parts[-1] != "..":
-            parts = parts if parts == ("",) else parts[:-1]
-            continue
-        parts = FrozenList((*parts, part))
-    return "/".join(parts)
+    empty: FrozenList[str] = FrozenList()
+    return "/".join(reduce(resolved, posix(path).split("/"), empty))
 
 
 def absolute(path: str, cwd: str) -> str:

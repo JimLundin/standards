@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
+from checks.core.immutability import unquoted
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -235,10 +236,8 @@ def names(annotation: ast.expr | None) -> Iterator[str]:
         return
     for node in ast.walk(annotation):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            try:
-                yield from names(ast.parse(node.value, mode="eval").body)
-            except SyntaxError:
-                continue
+            for parsed in unquoted(node.value):
+                yield from names(parsed)
         name = base_name(node)
         if name:
             yield name
@@ -265,22 +264,29 @@ def bounds(node: ast.FunctionDef | ast.ClassDef) -> Iterator[ast.expr | None]:
             yield parameter.bound
 
 
+type ApiInput = tuple[str, ast.stmt, Iterator[ast.expr | None]]
+
+
 def api_inputs(
     body: Sequence[ast.stmt], *, in_class: bool = False
-) -> Iterator[tuple[str, ast.stmt, Iterator[ast.expr | None]]]:
+) -> Iterator[ApiInput]:
     for node in body:
-        if isinstance(node, ast.FunctionDef) and is_public(node.name):
-            yield node.name, node, iter((*parameters(node), *bounds(node)))
-        elif isinstance(node, ast.ClassDef) and is_public(node.name):
-            yield node.name, node, bounds(node)
-            yield from api_inputs(node.body, in_class=True)
-        elif (
-            in_class
-            and isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and is_public(node.target.id)
-        ):
-            yield node.target.id, node, iter((node.annotation,))
+        yield from api_input(node, in_class=in_class)
+
+
+def api_input(node: ast.stmt, *, in_class: bool) -> Iterator[ApiInput]:
+    if isinstance(node, ast.FunctionDef) and is_public(node.name):
+        yield node.name, node, iter((*parameters(node), *bounds(node)))
+    elif isinstance(node, ast.ClassDef) and is_public(node.name):
+        yield node.name, node, bounds(node)
+        yield from api_inputs(node.body, in_class=True)
+    elif (
+        in_class
+        and isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and is_public(node.target.id)
+    ):
+        yield node.target.id, node, iter((node.annotation,))
 
 
 def api_findings(

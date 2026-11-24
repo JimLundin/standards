@@ -100,3 +100,111 @@ def test_an_exception_drops_the_findings_in_its_paths() -> None:
 def test_an_exception_for_another_rule_drops_nothing() -> None:
     sources = {"a.py": "def f(x):\n    return x\n"}
     assert findings(sources, entry("a.py", "STR002")) == (f"a.py:1:1: {WRAPS}",)
+
+
+# Each score is worked by hand from scb-check 0.2.0's tree-sitter walk: a
+# flow break scores 1 plus its nesting, with all its children one deeper.
+ELIF_CHAIN = """\
+def f(x):
+    if x == 1:  # 1
+        return 1
+    elif x == 2:  # 1 + 1
+        return 2
+    elif x == 3:  # 1 + 1
+        return 3
+    else:  # 1 + 1
+        for y in x:  # 1 + 2
+            {}
+"""
+BOOLEAN_RUN = """\
+def f(a, b, c, d):
+    if a and b and c or d:  # 1, and three operators
+        return 1
+    while {}:  # 1, and its operators
+        if c and not d:  # 1 + 1, and one operator
+            continue  # 1
+    return 0
+"""
+NESTED_FUNCTION = """\
+def f(xs):
+    def g(x):
+        if x:  # 1
+            return [y for y in x if y]
+        return {}
+    for x in xs:  # 1
+        key = lambda y: y if y else x  # 1 + 1
+        if key(x):  # 1 + 1
+            try:
+                g(x)
+            except ValueError:  # 1 + 2
+                break  # 1
+    return xs
+"""
+CLAUSES = """\
+def f(xs):
+    for x in xs:  # 1
+        try:
+            pass
+        except ValueError:  # 1 + 1
+            continue  # 1
+        else:  # 1 + 1
+            pass
+    else:  # 1 + 1
+        while xs:  # 1 + 2
+            pass
+"""
+ELSE_IF = """\
+def f(x):
+    for y in x:  # 1
+        pass
+    if x:  # 1
+        pass
+    else:  # 1 + 1
+        if y:  # 1 + 2
+            pass
+        else:  # 1 + 3
+            pass
+"""
+
+
+def complex_function(score: int) -> str:
+    return f"STR002 `f` has cognitive complexity {score}, above 10; flatten it"
+
+
+@pytest.mark.parametrize(
+    ("source", "score"),
+    [
+        (ELIF_CHAIN.format("break  # 1"), 11),
+        (BOOLEAN_RUN.format("a or b or c"), 11),
+        (NESTED_FUNCTION.format("x if x else None  # 1"), 11),
+        (CLAUSES, 11),
+        (ELIF_CHAIN.format("pass").replace("x == 3:  #", "x and y:  # 1,"), 11),
+        (ELSE_IF, 11),
+    ],
+)
+def test_a_function_above_the_cognitive_limit_is_reported(
+    source: str, score: int
+) -> None:
+    assert findings({"m.py": source}) == (
+        f"m.py:1:1: {complex_function(score)}",
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        ELIF_CHAIN.format("pass"),
+        BOOLEAN_RUN.format("a or b"),
+        NESTED_FUNCTION.format("None"),
+    ],
+)
+def test_a_function_at_the_cognitive_limit_is_not_reported(source: str) -> None:
+    assert findings({"m.py": source}) == ()
+
+
+def test_an_exception_drops_the_cognitive_findings_in_its_paths() -> None:
+    source = ELIF_CHAIN.format("break")
+    sources = {"a.py": source, "b.py": source}
+    assert findings(sources, entry("a.py", "STR002")) == (
+        f"b.py:1:1: {complex_function(11)}",
+    )

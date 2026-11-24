@@ -24,6 +24,8 @@ class Rule:
 
 
 TRIVIAL_WRAPPER = Rule("STR001", "adds no behaviour; inline it")
+COGNITIVE_COMPLEXITY = Rule("STR002", "flatten it")
+COGNITIVE_LIMIT = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,21 +58,29 @@ def package(directory: PurePosixPath, paths: Container[str]) -> FrozenList[str]:
     return FrozenList((*package(directory.parent, paths), directory.name))
 
 
+def modules_imported(statement: ast.Import) -> Iterator[tuple[str, str]]:
+    for alias in statement.names:
+        root = alias.name.split(".", 1)[0]
+        yield (alias.asname, alias.name) if alias.asname else (root, root)
+
+
+def names_imported(
+    statement: ast.ImportFrom, parts: Sequence[str]
+) -> Iterator[tuple[str, str]]:
+    base = parts[: len(parts) + 1 - statement.level] if statement.level else ()
+    origin = ".".join((*base, *filter(None, (statement.module,))))
+    for alias in statement.names:
+        name = f"{origin}.{alias.name}" if origin else alias.name
+        yield alias.asname or alias.name, name
+
+
 def imported(
     statement: ast.stmt, parts: Sequence[str]
 ) -> Iterator[tuple[str, str]]:
     if isinstance(statement, ast.Import):
-        for alias in statement.names:
-            root = alias.name.split(".", 1)[0]
-            yield (alias.asname, alias.name) if alias.asname else (root, root)
+        yield from modules_imported(statement)
     if isinstance(statement, ast.ImportFrom):
-        base = (
-            parts[: len(parts) + 1 - statement.level] if statement.level else ()
-        )
-        origin = ".".join((*base, *filter(None, (statement.module,))))
-        for alias in statement.names:
-            name = f"{origin}.{alias.name}" if origin else alias.name
-            yield alias.asname or alias.name, name
+        yield from names_imported(statement, parts)
 
 
 def definitions(
@@ -212,6 +222,95 @@ def trivial_wrapper(
     return Finding(function.lineno, function.col_offset, rule, message)
 
 
+def scored(nodes: Sequence[ast.AST], nesting: int) -> int:
+    return sum(cognitive(node, nesting) for node in nodes)
+
+
+def clause(body: Sequence[ast.stmt], nesting: int) -> int:
+    return 1 + nesting + scored(body, nesting + 1) if body else 0
+
+
+def alternatives(branch: ast.If, nesting: int) -> int:
+    # The tree-sitter grammar scb-check scores makes each `elif` a clause of
+    # the first `if`, so a chain stays at one nesting; `ast` reads an `elif`
+    # as an `if` in the `else`, told apart from one only by its column.
+    match branch.orelse:
+        case (ast.If(col_offset=column) as chained,) if (
+            column == branch.col_offset
+        ):
+            heads = (chained.test, *chained.body)
+            return (
+                1
+                + nesting
+                + scored(heads, nesting + 1)
+                + alternatives(chained, nesting)
+            )
+        case body:
+            return clause(body, nesting)
+
+
+def flow_break(node: ast.AST, nesting: int) -> int | None:
+    match node:
+        case ast.If(test=test, body=body):
+            heads = (test, *body)
+            tail = alternatives(node, nesting + 1)
+        case (
+            ast.For(target=target, iter=iterable, body=body, orelse=orelse)
+            | ast.AsyncFor(
+                target=target, iter=iterable, body=body, orelse=orelse
+            )
+        ):
+            heads = (target, iterable, *body)
+            tail = clause(orelse, nesting + 1)
+        case ast.While(test=test, body=body, orelse=orelse):
+            heads = (test, *body)
+            tail = clause(orelse, nesting + 1)
+        case ast.ExceptHandler() | ast.IfExp():
+            heads = FrozenList(ast.iter_child_nodes(node))
+            tail = 0
+        case _:
+            return None
+    return 1 + nesting + scored(heads, nesting + 1) + tail
+
+
+def cognitive(node: ast.AST, nesting: int) -> int:
+    match node:
+        case ast.BoolOp(values=values):
+            return len(values) - 1 + scored(values, nesting)
+        case ast.Break() | ast.Continue():
+            return 1
+        case (
+            ast.Try(body=body, handlers=handlers, orelse=orelse, finalbody=end)
+            | ast.TryStar(
+                body=body, handlers=handlers, orelse=orelse, finalbody=end
+            )
+        ):
+            return scored((*body, *handlers, *end), nesting) + clause(
+                orelse, nesting
+            )
+        case _:
+            score = flow_break(node, nesting)
+            return (
+                scored(FrozenList(ast.iter_child_nodes(node)), nesting)
+                if score is None
+                else score
+            )
+
+
+def cognitive_complexity(function: Function) -> Finding | None:
+    returns = filter(None, (function.returns,))
+    parts = (function.args, *function.body, *returns, *function.type_params)
+    score = scored(parts, 0)
+    if score <= COGNITIVE_LIMIT:
+        return None
+    rule = COGNITIVE_COMPLEXITY
+    message = (
+        f"`{function.name}` has cognitive complexity {score},"
+        f" above {COGNITIVE_LIMIT}; {rule.advice}"
+    )
+    return Finding(function.lineno, function.col_offset, rule, message)
+
+
 def function_findings(
     definition: Definition, module: Module, symbols: Container[str]
 ) -> Iterator[Finding]:
@@ -219,7 +318,11 @@ def function_findings(
     if isinstance(function, ast.ClassDef):
         return
     yield from filter(
-        None, (trivial_wrapper(definition, function, module, symbols),)
+        None,
+        (
+            trivial_wrapper(definition, function, module, symbols),
+            cognitive_complexity(function),
+        ),
     )
 
 

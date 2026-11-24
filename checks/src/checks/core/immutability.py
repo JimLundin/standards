@@ -146,42 +146,51 @@ def annotations(tree: ast.Module) -> Iterator[ast.expr]:
             )
 
 
+def node_annotations(node: ast.AST) -> Iterator[ast.expr]:
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        yield from filter(
+            None,
+            (
+                *(parameter.annotation for parameter in parameters(node.args)),
+                node.returns,
+            ),
+        )
+    if isinstance(node, ast.AnnAssign) and name_of(node.target) != "__slots__":
+        yield node.annotation
+    if isinstance(node, ast.TypeAlias):
+        yield node.value
+    if isinstance(node, ast.TypeVar) and node.bound is not None:
+        yield node.bound
+
+
 def every_annotation(tree: ast.Module) -> Iterator[ast.expr]:
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            yield from filter(
-                None,
-                (
-                    *(
-                        parameter.annotation
-                        for parameter in parameters(node.args)
-                    ),
-                    node.returns,
-                ),
-            )
-        if (
-            isinstance(node, ast.AnnAssign)
-            and name_of(node.target) != "__slots__"
-        ):
-            yield node.annotation
-        if isinstance(node, ast.TypeAlias):
-            yield node.value
-        if isinstance(node, ast.TypeVar) and node.bound is not None:
-            yield node.bound
+        yield from node_annotations(node)
+
+
+def unquoted(text: str) -> Iterator[ast.expr]:
+    try:
+        parsed = ast.parse(text, mode="eval")
+    except SyntaxError:
+        return
+    yield parsed.body
 
 
 def annotation_nodes(
     annotation: ast.expr, anchor: ast.expr | None = None
 ) -> Iterator[tuple[ast.expr, ast.expr]]:
     for node in ast.walk(annotation):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            try:
-                parsed = ast.parse(node.value, mode="eval").body
-            except SyntaxError:
-                continue
+        yield from annotation_node(node, anchor)
+
+
+def annotation_node(
+    node: ast.AST, anchor: ast.expr | None
+) -> Iterator[tuple[ast.expr, ast.expr]]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        for parsed in unquoted(node.value):
             yield from annotation_nodes(parsed, anchor or node)
-        elif isinstance(node, ast.expr):
-            yield node, anchor or node
+    elif isinstance(node, ast.expr):
+        yield node, anchor or node
 
 
 def is_homogeneous_tuple(node: ast.expr) -> bool:
@@ -210,50 +219,57 @@ def membership_sets(tree: ast.Module) -> FrozenOrderedSet[int]:
     )
 
 
+def built_set(node: ast.expr) -> str:
+    if isinstance(node, ast.Set):
+        return "a set literal"
+    if isinstance(node, ast.SetComp):
+        return "a set comprehension"
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in SET_CONSTRUCTORS
+    ):
+        return f"`{name_of(node.func)}()`"
+    return ""
+
+
 def hash_ordered_sets(tree: ast.Module) -> Iterator[Finding]:
     rule = HASH_ORDERED_SET
     tested = membership_sets(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.expr) or id(node) in tested:
             continue
-        built = (
-            "a set literal"
-            if isinstance(node, ast.Set)
-            else "a set comprehension"
-            if isinstance(node, ast.SetComp)
-            else f"`{name_of(node.func)}()`"
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in SET_CONSTRUCTORS
-            else ""
-        )
+        built = built_set(node)
         if built:
             message = f"{built} {rule.advice}; use FrozenOrderedSet"
             yield Finding(node.lineno, node.col_offset, rule, message)
 
 
+def unordered_annotation(node: ast.expr, place: ast.expr) -> Finding | None:
+    name = name_of(node) if isinstance(node, ast.Name | ast.Attribute) else None
+    if name is not None and name in UNORDERED_TYPES:
+        rule = UNORDERED_ANNOTATION
+        message = f"`{name}` {rule.advice}"
+    elif name is not None and name in NAMED_COLLECTIONS:
+        rule = UNNAMED_COLLECTION
+        message = f"`{name}` {rule.advice}; use {NAMED_COLLECTIONS[name]}"
+    elif is_homogeneous_tuple(node):
+        rule = UNNAMED_COLLECTION
+        message = f"`tuple[T, ...]` {rule.advice}; use FrozenList[T]"
+    else:
+        return None
+    return Finding(place.lineno, place.col_offset, rule, message)
+
+
 def unordered_annotations(tree: ast.Module) -> Iterator[Finding]:
-    for annotation in every_annotation(tree):
-        for node, place in annotation_nodes(annotation):
-            name = (
-                name_of(node)
-                if isinstance(node, ast.Name | ast.Attribute)
-                else None
-            )
-            if name is not None and name in UNORDERED_TYPES:
-                rule = UNORDERED_ANNOTATION
-                message = f"`{name}` {rule.advice}"
-                yield Finding(place.lineno, place.col_offset, rule, message)
-            elif name is not None and name in NAMED_COLLECTIONS:
-                rule = UNNAMED_COLLECTION
-                message = (
-                    f"`{name}` {rule.advice}; use {NAMED_COLLECTIONS[name]}"
-                )
-                yield Finding(place.lineno, place.col_offset, rule, message)
-            elif is_homogeneous_tuple(node):
-                rule = UNNAMED_COLLECTION
-                message = f"`tuple[T, ...]` {rule.advice}; use FrozenList[T]"
-                yield Finding(place.lineno, place.col_offset, rule, message)
+    yield from filter(
+        None,
+        (
+            unordered_annotation(node, place)
+            for annotation in every_annotation(tree)
+            for node, place in annotation_nodes(annotation)
+        ),
+    )
 
 
 def unfrozen_dataclasses(tree: ast.Module) -> Iterator[Finding]:
