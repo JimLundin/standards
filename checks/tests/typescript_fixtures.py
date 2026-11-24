@@ -181,16 +181,18 @@ def test_the_compliant_tree_passes_every_unit(
     assert run.status == 0
 
 
-def test_a_suppression_comment_fails_exceptions(fixtures: Fixtures) -> None:
+@pytest.mark.parametrize(
+    "comment",
+    ["// oxlint-disable-next-line no-magic-numbers", "/* eslint-disable */"],
+    ids=["oxlint-disable-next-line", "eslint-disable"],
+)
+def test_a_lint_disable_comment_fails_exceptions(
+    fixtures: Fixtures, comment: str
+) -> None:
     suppressed = "packages/core/src/suppressed.ts"
     run = fixtures.check(
         "commit",
-        files={
-            suppressed: (
-                "// biome-ignore lint/style/useConst: a fixture\n"
-                "export const suppressed = 1;\n"
-            )
-        },
+        files={suppressed: f"{comment}\nexport const suppressed = 1;\n"},
     )
     assert run.units["exceptions"].outcome == "FAIL"
     assert suppressed in run.units["exceptions"].findings

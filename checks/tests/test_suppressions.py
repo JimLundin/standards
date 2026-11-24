@@ -80,7 +80,6 @@ def test_python_markers_ignore_other_text(text: str) -> None:
 @pytest.mark.parametrize(
     "line",
     [
-        "// biome-ignore lint: x",
         "/* @ts-ignore */",
         "// @ts-expect-error",
         "//@ts-nocheck",
@@ -89,7 +88,6 @@ def test_python_markers_ignore_other_text(text: str) -> None:
         "/* c8 ignore next */",
         "/* istanbul ignore next */",
         "/* node:coverage ignore next */",
-        "// eslint-disable-next-line",
         "// prettier-ignore",
     ],
 )
@@ -98,8 +96,28 @@ def test_typescript_markers(line: str) -> None:
     assert tuple(typescript_markers(text)) == ((2, line),)
 
 
+@pytest.mark.parametrize("linter", ["oxlint", "eslint"])
+@pytest.mark.parametrize(
+    "form", ["disable", "enable", "disable-line", "disable-next-line"]
+)
+@pytest.mark.parametrize(
+    ("opening", "closing"), [("// ", ""), ("/* ", " */")], ids=["line", "block"]
+)
+def test_typescript_markers_find_lint_disable_comments(
+    linter: str, form: str, opening: str, closing: str
+) -> None:
+    line = f"{opening}{linter}-{form} no-console{closing}"
+    text = f"const a = 1;\n  {line}  \n"
+    assert tuple(typescript_markers(text)) == ((2, line),)
+
+
+def test_typescript_markers_ignore_biome_ignore() -> None:
+    text = "// biome-ignore lint: x\n/* biome-ignore lint: x */\n"
+    assert tuple(typescript_markers(text)) == ()
+
+
 def test_typescript_markers_need_a_comment() -> None:
-    assert tuple(typescript_markers('const a = "biome-ignore";\n')) == ()
+    assert tuple(typescript_markers('const a = "oxlint-disable";\n')) == ()
 
 
 def test_attribute_lints_drop_reasons() -> None:
@@ -153,14 +171,16 @@ def test_rust_suppressions() -> None:
 def test_python_and_typescript_suppressions_skip_other_files() -> None:
     texts = FrozenOrderedDict({
         "a.py": "x = 1  # noqa\n",
-        "b.ts": "// biome-ignore x\n",
+        "b.ts": "// oxlint-disable-next-line x\n",
         "c.txt": "# noqa\n",
     })
     assert tuple(suppressions("python", texts, load(None))) == (
         Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),
     )
     assert tuple(suppressions("typescript", texts, load(None))) == (
-        Issue("b.ts:1", f"suppression `// biome-ignore x`{INSTEAD}"),
+        Issue(
+            "b.ts:1", f"suppression `// oxlint-disable-next-line x`{INSTEAD}"
+        ),
     )
 
 
