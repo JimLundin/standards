@@ -1,5 +1,11 @@
-export interface Greeting {
-	readonly name: string;
-}
+import { Schema } from "effect";
 
-export const greet = (greeting: Greeting): string => `Hello, ${greeting.name}`;
+const Greeting = Schema.Struct({ name: Schema.String });
+
+type Greeting = typeof Greeting.Type;
+
+const GreetingJson = Schema.fromJsonString(Greeting);
+
+const greet = (greeting: Greeting): string => `Hello, ${greeting.name}`;
+
+export { Greeting, GreetingJson, greet };
