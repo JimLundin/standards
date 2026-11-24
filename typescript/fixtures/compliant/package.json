@@ -1,0 +1,19 @@
+{
+	"name": "fixture",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"node": ">=26"
+	},
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"test": "node --test --import ./profiles/fast.ts --test-skip-pattern=@slow",
+		"test:full": "node --test --import ./profiles/full.ts --experimental-test-coverage"
+	},
+	"devDependencies": {
+		"@types/node": "26.6.6",
+		"fast-check": "4.11.0"
+	}
+}
