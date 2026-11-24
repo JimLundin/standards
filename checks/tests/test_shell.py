@@ -44,6 +44,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "rust-roots",
         "rust-shell",
         "rust-shell-share",
+        "typescript-api",
         "typescript-entry",
         "typescript-layers",
         "typescript-shell",
