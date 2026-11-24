@@ -372,3 +372,30 @@ def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
     exceptions = run.units["exceptions"]
     assert exceptions.outcome == "FAIL"
     assert "drift:arbitrary.fast" in exceptions.findings
+
+
+NODE_IMPORTS = FrozenOrderedDict({
+    "packages/core/src/read.ts": (
+        'import { readFileSync } from "node:fs";\n\n'
+        "export const read = (path: string): string =>"
+        ' readFileSync(path, "utf8");\n'
+    ),
+    "paths.config.ts": (
+        'import { join } from "node:path";\n\n'
+        'export default join("packages", "core");\n'
+    ),
+    "packages/core/src/tested.test.ts": TESTED.replace("{name}", "it").replace(
+        "{module}", "node:test"
+    ),
+})
+
+
+def test_a_node_import_fails_lint_in_source_config_and_test_files(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=NODE_IMPORTS)
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("import(no-nodejs-modules)") == len(NODE_IMPORTS)
+    for path in NODE_IMPORTS:
+        assert path in findings, path
