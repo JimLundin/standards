@@ -235,3 +235,29 @@ def test_a_break_of_each_kind_of_rule_fails_lint_naming_the_rule(
     for path, rule, _ in breaks:
         assert findings.count(rule) == 1, rule
         assert path in findings, path
+
+
+def test_an_exception_clears_its_rule_in_its_file_alone(
+    fixtures: Fixtures,
+) -> None:
+    excepted = "packages/core/src/masked.ts"
+    unexcepted = "packages/core/src/unmasked.ts"
+    run = fixtures.check(
+        "commit",
+        files={
+            "exceptions.toml": (
+                "[[exception]]\n"
+                f'path = "{excepted}"\n'
+                'rule = "lint/eslint/no-bitwise"\n'
+                'reason = "a fixture"\n'
+            ),
+            excepted: MASKED,
+            unexcepted: MASKED,
+        },
+    )
+    findings = run.units["lint"].findings
+    assert run.units["exceptions"].outcome == "ok"
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("eslint(no-bitwise)") == 1
+    assert unexcepted in findings
+    assert excepted not in findings

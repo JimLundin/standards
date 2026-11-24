@@ -27,6 +27,7 @@ UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
+OXLINT = re.compile(r"lint/([\w-]+)/([\w-]+)")
 
 
 def rule_covers(excepted: str, found: str) -> bool:
@@ -121,8 +122,8 @@ def kind(language: str, rule: str) -> str:
         return python_kind(rule)
     if language == "rust" and RUST_LINT.fullmatch(rule):
         return "attribute"
-    if language == "typescript" and rule.startswith("lint/"):
-        return "biome"
+    if language == "typescript" and OXLINT.fullmatch(rule):
+        return "oxlint"
     return ""
 
 

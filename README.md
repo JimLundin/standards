@@ -72,7 +72,7 @@ A project declares its own suites in `checks.toml`. Each `[[suite]]` has a `name
 
 ## Exceptions
 
-Exceptions live only in a project's `exceptions.toml`; suppression comments and weakened configs fail the checks. Each entry has a path glob, a rule and a reason; `exceptions.toml` at the root lists the rules.
+Exceptions live only in a project's `exceptions.toml`; suppression comments and weakened configs fail the checks. Each entry has a path glob, a rule and a reason; `exceptions.toml` at the root lists the rules. A TypeScript lint exception names its rule `lint/<plugin>/<rule>`, as Oxlint prints it, such as `lint/typescript/no-floating-promises` or `lint/eslint/no-bitwise`; `checks oxlint-config` writes a config under `node_modules/.cache/standards/` that extends the project's or the standard's config and turns each such rule off for its path, anchored at the project root, and the lint unit runs Oxlint with it.
 
 ## Rust
 

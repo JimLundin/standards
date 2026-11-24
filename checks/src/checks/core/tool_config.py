@@ -9,6 +9,7 @@ from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
     MUTATION,
+    OXLINT,
     ExceptionEntry,
     exceptions_in,
     kind,
@@ -19,9 +20,9 @@ from checks.core.values import (
     Request,
     absolute,
     listing,
-    matches,
     normalized,
     parse_json,
+    posix,
     strings,
 )
 
@@ -56,34 +57,40 @@ def globs(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return listing(exceptions_in(inputs).paths(arguments[0]))
 
 
-def biome_skips(
-    file: str, entries: Sequence[ExceptionEntry]
-) -> FrozenList[str]:
-    return FrozenList(
-        sorted(
-            entry.rule.removeprefix("lint/")
-            for entry in entries
-            if entry.rule.startswith("lint/")
-            and not entry.rule.startswith("lint/plugin/")
-            and matches(file, entry.path)
-        )
-    )
+OXLINT_CONFIG = "node_modules/.cache/standards/oxlint.config.mjs"
 
 
-def biome_groups(files: Sequence[str], inputs: Inputs) -> Outcome:
-    entries = exceptions_in(inputs).entries
-    groups: FrozenOrderedDict[FrozenList[str], FrozenList[str]] = (
-        FrozenOrderedDict()
+def oxlint_override(root: str, entry: ExceptionEntry) -> str:
+    found = OXLINT.fullmatch(entry.rule)
+    # lint/plugin/<name> names a GritQL plugin, which Biome still runs.
+    if not found or found[1] == "plugin":
+        return ""
+    files = json.dumps([f"{root}/{entry.path}"])
+    rule = json.dumps(f"{found[1]}/{found[2]}")
+    return f'\t\t{{ files: {files}, rules: {{ {rule}: "off" }} }},\n'
+
+
+# Oxlint resolves an override's globs against its config's folder, which
+# here is not the project root, and matches a file outside that folder by
+# its absolute path, so each glob is anchored at the project root.
+def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    root = posix(inputs.cwd)
+    config = json.dumps(absolute(arguments[0], inputs.cwd))
+    overrides = "".join(
+        oxlint_override(root, entry) for entry in exceptions_in(inputs).entries
     )
-    for file in files:
-        skips = biome_skips(file, entries)
-        known = groups.get(skips, FrozenList())
-        groups |= {skips: FrozenList((*known, file))}
-    return listing(
-        FrozenList(
-            "|".join((" ".join(skips), *members))
-            for skips, members in groups.items()
-        )
+    text = (
+        'import { pathToFileURL } from "node:url";\n\n'
+        "const { default: config } = await import("
+        f"pathToFileURL({config}).href);\n\n"
+        "export default {\n"
+        "\textends: [config],\n"
+        f"\toverrides: [\n{overrides}\t],\n"
+        "};\n"
+    )
+    return Outcome(
+        FrozenList((OXLINT_CONFIG,)),
+        writes=FrozenOrderedDict({OXLINT_CONFIG: text}),
     )
 
 
@@ -168,7 +175,7 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "ruff-config": (exceptions_only, ruff_config),
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
-        "biome-groups": (exceptions_only, biome_groups),
+        "oxlint-config": (exceptions_only, oxlint_config),
         "biome-plugins": (with_named, biome_plugins),
         "filter-mutmut": (with_stdin, filter_mutmut),
         "stryker-mutate": (with_named, stryker_mutate),

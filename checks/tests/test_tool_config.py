@@ -8,7 +8,7 @@ from tests.helpers import entry, inputs, lines
 
 
 def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
-    for command in ("ruff-config", "nextest-config"):
+    for command in ("ruff-config", "nextest-config", "oxlint-config"):
         assert request((command,), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
@@ -67,21 +67,57 @@ def test_without_and_globs() -> None:
     assert lines(run(("globs", "api"), inputs(texts))) == ()
 
 
-def test_biome_groups_by_shared_skips() -> None:
+OXLINT_CONFIG = """import { pathToFileURL } from "node:url";
+
+const { default: config } = await import(pathToFileURL("/std/oxlint.config.ts").href);
+
+export default {
+	extends: [config],
+	overrides: [
+		{ files: ["/work/src/b.ts"], rules: { "eslint/no-bitwise": "off" } },
+		{ files: ["/work/**/*.test.ts"], rules: { "typescript/no-floating-promises": "off" } },
+	],
+};
+"""
+
+
+def test_oxlint_config_extends_the_config_with_an_override_per_exception() -> (
+    None
+):
     texts = {
-        "exceptions.toml": entry("a.ts", "lint/style/noVar")
-        + entry("*.ts", "lint/style/useConst")
-        + entry("*.ts", "lint/plugin/a")
-        + entry("c.js", "mutation")
+        "exceptions.toml": entry("src/b.ts", "lint/eslint/no-bitwise")
+        + entry("src/c.ts", "mutation")
+        + entry("**/*.test.ts", "lint/typescript/no-floating-promises")
     }
     outcome = run(
-        ("biome-groups", "a.ts", "b.ts", "c.js", "d.ts"), inputs(texts)
+        ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
     )
-    assert lines(outcome) == (
-        "style/noVar style/useConst|a.ts",
-        "style/useConst|b.ts|d.ts",
-        "|c.js",
+    written = "node_modules/.cache/standards/oxlint.config.mjs"
+    assert lines(outcome) == (written,)
+    assert outcome.writes == {written: OXLINT_CONFIG}
+
+
+def test_oxlint_config_anchors_globs_at_a_windows_project_root() -> None:
+    texts = {"exceptions.toml": entry("*.ts", "lint/eslint/no-var")}
+    outcome = run(
+        ("oxlint-config", "conf/oxlint.config.ts"),
+        inputs(texts, cwd="C:\\work"),
     )
+    (config,) = outcome.writes.values()
+    assert 'pathToFileURL("C:/work/conf/oxlint.config.ts")' in config
+    assert (
+        '{ files: ["C:/work/*.ts"], rules: { "eslint/no-var": "off" } },'
+        in config
+    )
+
+
+def test_oxlint_config_leaves_biome_plugin_rules_to_biome() -> None:
+    texts = {"exceptions.toml": entry("src/a.ts", "lint/plugin/noModuleState")}
+    outcome = run(
+        ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
+    )
+    (config,) = outcome.writes.values()
+    assert "overrides: [\n\t],\n" in config
 
 
 def test_biome_plugins_resolve_against_the_config() -> None:

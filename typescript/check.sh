@@ -82,6 +82,10 @@ oxlint_lint() {
 		typed=$oxlint_config
 		oxlint_config=$run/untyped.mjs
 	fi
+	# The exceptions turn their rules off for their paths, as overrides of a
+	# config that extends this one.
+	mkdir -p node_modules/.cache/standards
+	oxlint_config=$(checks oxlint-config "$(native "$oxlint_config")") || return 1
 	OXLINT_CONFIG=${typed:+$(native "$typed")} OXLINT_TSGOLINT_PATH=$tsgolint \
 		node "$(native "$install/node_modules/oxlint/bin/oxlint")" --config="$(native "$oxlint_config")" "${scripts[@]}"
 	status=$?

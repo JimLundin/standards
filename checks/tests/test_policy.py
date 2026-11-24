@@ -90,6 +90,18 @@ def test_flaky_tests_are_named_not_tracked_paths() -> None:
     )
 
 
+def test_policy_rejects_an_oxlint_exception_for_no_tracked_file() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.ts", "lint/eslint/no-bitwise")
+        + entry("gone/*.ts", "lint/typescript/no-floating-promises")
+    }
+    outcome = run(("typescript", STD, "src/a.ts"), inputs(texts))
+    assert lines(outcome) == (
+        "exceptions.toml (gone/*.ts, lint/typescript/no-floating-promises): path matches no tracked file",
+        "Found 1 issues",
+    )
+
+
 def test_policy_ignores_attributes_outside_rust() -> None:
     texts = {
         "exceptions.toml": entry("a.ts", "lint/style/noVar"),

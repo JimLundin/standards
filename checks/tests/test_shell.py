@@ -48,7 +48,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "ruff-config",
         "without",
         "globs",
-        "biome-groups",
+        "oxlint-config",
         "biome-plugins",
         "filter-mutmut",
         "stryker-mutate",
