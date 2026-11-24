@@ -61,17 +61,19 @@ mapfile -t formatted < <(git ls-files -- . "${foreign[@]}" |
 mapfile -t scripts < <(git ls-files -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.jsx' "${foreign[@]}")
 
 # Oxlint, its type-aware backend and cloudflare's config are installed at
-# their pins once, into the cache, and run by oxlint.
+# their pins once, into the cache, and run by oxlint. Their own dependencies
+# are pinned by oxlint-install/package-lock.json, whose hash names the install,
+# and which npm ci refuses if it doesn't match the pins.
 oxlint_install() {
-	local fresh
-	install="$(cache_root)/oxlint/${pins[OXLINT]}-${pins[OXLINT_TSGOLINT]}-${pins[CLOUDFLARE_OXLINT_CONFIG]}"
+	local fresh lock=$standards/oxlint-install/package-lock.json
+	install="$(cache_root)/oxlint/${pins[OXLINT]}-${pins[OXLINT_TSGOLINT]}-${pins[CLOUDFLARE_OXLINT_CONFIG]}-$(sha256sum <"$lock" | cut -c1-16)"
 	[ ! -e "$install/node_modules/oxlint/package.json" ] || return 0
 	mkdir -p "${install%/*}"
 	fresh=$(mktemp -d "$install.XXXXXX")
-	printf '{"private": true, "type": "module"}\n' >"$fresh/package.json"
-	npm install --prefix "$(native "$fresh")" --no-audit --no-fund --loglevel=error \
-		"oxlint@${pins[OXLINT]}" "oxlint-tsgolint@${pins[OXLINT_TSGOLINT]}" \
-		"@cloudflare/oxlint-config@${pins[CLOUDFLARE_OXLINT_CONFIG]}" || return 1
+	printf '{"name": "standards-oxlint", "private": true, "type": "module", "dependencies": {"oxlint": "%s", "oxlint-tsgolint": "%s", "@cloudflare/oxlint-config": "%s"}}\n' \
+		"${pins[OXLINT]}" "${pins[OXLINT_TSGOLINT]}" "${pins[CLOUDFLARE_OXLINT_CONFIG]}" >"$fresh/package.json"
+	cp "$lock" "$fresh/package-lock.json"
+	npm ci --prefix "$(native "$fresh")" --no-audit --no-fund --loglevel=error || return 1
 	if [ -e "$install" ]; then rm -rf "$fresh"; else mv "$fresh" "$install"; fi
 }
 
@@ -103,29 +105,21 @@ oxlint_run() {
 }
 
 oxlint_lint() {
-	local install run oxlint_config tsgolint typed= status
+	local install run oxlint_config tsgolint untyped=() status
 	((${#scripts[@]} > 0)) || return 0
 	oxlint_run || return 1
 	tsgolint=$(cd "$install" && node -p \
 		'require.resolve(`@oxlint-tsgolint/${process.platform}-${process.arch}/tsgolint${process.platform === "win32" ? ".exe" : ""}`)') ||
 		return 1
-	# Without a tsconfig.json there are no types to check, as for the types
-	# unit, so the type-aware rules are off.
-	if [ ! -f tsconfig.json ]; then
-		cat >"$run/untyped.mjs" <<-'EOF'
-			import { pathToFileURL } from "node:url";
-			const { default: config } = await import(pathToFileURL(process.env.OXLINT_CONFIG).href);
-			export default { ...config, options: { ...config.options, typeAware: false } };
-		EOF
-		typed=$oxlint_config
-		oxlint_config=$run/untyped.mjs
-	fi
 	# The exceptions turn their rules off for their paths, as overrides of a
-	# config that extends this one.
+	# config that extends this one. Without a tsconfig.json there are no types
+	# to check, as for the types unit, so the type-aware rules are off.
+	if [ ! -f tsconfig.json ]; then
+		untyped=(--untyped)
+	fi
 	mkdir -p node_modules/.cache/standards
-	oxlint_config=$(checks oxlint-config "$(native "$oxlint_config")") || return 1
-	OXLINT_CONFIG=${typed:+$(native "$typed")} OXLINT_TSGOLINT_PATH=$tsgolint \
-		oxlint --config="$(native "$oxlint_config")" "${scripts[@]}"
+	oxlint_config=$(checks oxlint-config "${untyped[@]}" "$(native "$oxlint_config")") || return 1
+	OXLINT_TSGOLINT_PATH=$tsgolint oxlint --config="$(native "$oxlint_config")" "${scripts[@]}"
 	status=$?
 	rm -rf "$run"
 	return "$status"

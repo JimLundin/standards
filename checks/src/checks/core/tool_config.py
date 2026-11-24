@@ -1,5 +1,6 @@
 import json
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from ordered import FrozenList, FrozenOrderedDict
 
@@ -66,21 +67,35 @@ def oxlint_override(root: str, entry: ExceptionEntry) -> str:
     return f'\t\t{{ files: {files}, rules: {{ {rule}: "off" }} }},\n'
 
 
+# A file URL of an absolute path, which Node imports on any platform, such as
+# file:///C:/work/a.ts for a Windows path.
+def file_url(path: str) -> str:
+    drive = "" if path.startswith("/") else f"/{path[:2]}"
+    return f"file://{drive}{quote(path.removeprefix(drive[1:]))}"
+
+
 # Oxlint resolves an override's globs against its config's folder, which
 # here is not the project root, and matches a file outside that folder by
 # its absolute path, so each glob is anchored at the project root.
+# Untyped, for a project without a tsconfig.json, the type-aware rules are
+# off.
 def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    *flags, path = arguments
     root = posix(inputs.cwd)
-    config = json.dumps(absolute(arguments[0], inputs.cwd))
+    config = json.dumps(file_url(absolute(path, inputs.cwd)))
+    options = (
+        "\toptions: { ...config.options, typeAware: false },\n"
+        if "--untyped" in flags
+        else ""
+    )
     overrides = "".join(
         oxlint_override(root, entry) for entry in exceptions_in(inputs).entries
     )
     text = (
-        'import { pathToFileURL } from "node:url";\n\n'
-        "const { default: config } = await import("
-        f"pathToFileURL({config}).href);\n\n"
+        f"import config from {config};\n\n"
         "export default {\n"
         "\textends: [config],\n"
+        f"{options}"
         f"\toverrides: [\n{overrides}\t],\n"
         "};\n"
     )
