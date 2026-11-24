@@ -14,3 +14,15 @@ _Avoid_: boundary, adapter, infrastructure
 
 **Decision**:
 A branch the code writes: an `if`, a ternary or a multi-arm `match`/`switch`, a loop, a run of `&&`/`||`/`??`, and, in TypeScript, a branching Effect combinator. The thin-shell rules count them.
+
+**UI**:
+The browser layer of a TypeScript project: React packages that render views and run their effects in atoms. Like the shell, it calls the core and the core never calls it.
+_Avoid_: frontend, client, view layer
+
+**Contract**:
+A core definition both the shell and the UI build on: the Schemas and `HttpApi` or `Rpc` group definitions of what crosses between them.
+_Avoid_: interface, DTO, API types
+
+**View model**:
+The data a core function computes for a component to render, so that the component holds no logic of its own.
+_Avoid_: presenter, props mapper
