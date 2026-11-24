@@ -33,81 +33,90 @@ def test_clean_sources_pass() -> None:
     assert outcome.status == 0
 
 
-@pytest.mark.parametrize(
-    ("source", "expected"),
-    [
-        (f"{TARGET}def f(x):\n    return g(x)\n", "4:1"),
-        ("def f(x):\n    return x\n", "1:1"),
-        (f"{TARGET}async def f(x, y):\n    return g(y, x)\n", "4:1"),
-        (f'{TARGET}def f(x):\n    """Doc."""\n    return g(x)\n', "4:1"),
-        (f"{TARGET}def f(*x, **y):\n    return g(x, y)\n", "4:1"),
-        (
-            f"{TARGET}class A:\n    def f(self, x):\n        return g(x)\n",
-            "5:5",
-        ),
-        ("class A:\n    pass\n\ndef f(x):\n    return A(x)\n", "4:1"),
-        (f"{TARGET}def h():\n    def f(x):\n        return g(x)\n", "5:5"),
-    ],
-)
+WRAPPERS = [
+    (f"{TARGET}def f(x):\n    return g(x)\n", "4:1"),
+    ("def f(x):\n    return x\n", "1:1"),
+    (f"{TARGET}async def f(x, y):\n    return g(y, x)\n", "4:1"),
+    (f'{TARGET}def f(x):\n    """Doc."""\n    return g(x)\n', "4:1"),
+    (f"{TARGET}def f(*x, **y):\n    return g(x, y)\n", "4:1"),
+    (f"{TARGET}class A:\n    def f(self, x):\n        return g(x)\n", "5:5"),
+    ("class A:\n    pass\n\ndef f(x):\n    return A(x)\n", "4:1"),
+    (f"{TARGET}def h():\n    def f(x):\n        return g(x)\n", "5:5"),
+]
+
+
+@pytest.mark.parametrize(("source", "expected"), WRAPPERS)
 def test_a_trivial_wrapper_is_reported(source: str, expected: str) -> None:
     outcome = run(("m.py",), Inputs(FrozenOrderedDict({"m.py": source})))
     assert outcome.lines == (f"m.py:{expected}: {WRAPS}", "Found 1 issues")
     assert outcome.status == 1
 
 
+PACKAGE = {
+    "pkg/__init__.py": "",
+    "pkg/a.py": TARGET,
+    "pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
+    "pkg/c.py": "from . import a\n\ndef f(x):\n    return a.g(x)\n",
+}
+NAMESPACE_PACKAGE = {
+    "src/pkg/a.py": TARGET,
+    "src/pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
+    "src/pkg/c.py": "from .a import g\n\ndef f(x):\n    return g(x)\n",
+}
+
+
 def test_a_wrapper_of_a_function_imported_from_the_scanned_sources() -> None:
-    assert findings({
-        "pkg/__init__.py": "",
-        "pkg/a.py": TARGET,
-        "pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
-        "pkg/c.py": "from . import a\n\ndef f(x):\n    return a.g(x)\n",
-    }) == (f"pkg/b.py:3:1: {WRAPS}", f"pkg/c.py:3:1: {WRAPS}")
+    assert findings(PACKAGE) == (
+        f"pkg/b.py:3:1: {WRAPS}",
+        f"pkg/c.py:3:1: {WRAPS}",
+    )
 
 
 def test_a_wrapper_of_a_function_in_a_namespace_package_under_src() -> None:
-    assert findings({
-        "src/pkg/a.py": TARGET,
-        "src/pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
-        "src/pkg/c.py": "from .a import g\n\ndef f(x):\n    return g(x)\n",
-    }) == (f"src/pkg/b.py:3:1: {WRAPS}", f"src/pkg/c.py:3:1: {WRAPS}")
+    assert findings(NAMESPACE_PACKAGE) == (
+        f"src/pkg/b.py:3:1: {WRAPS}",
+        f"src/pkg/c.py:3:1: {WRAPS}",
+    )
 
 
-@pytest.mark.parametrize(
-    "source",
-    [
-        "from ext import g\n\ndef f(x):\n    return g(x)\n",
-        "def f(x):\n    return g(x)\n",
-        f"{TARGET}@cache\ndef f(x):\n    return g(x)\n",
-        f"{TARGET}class A:\n    def __call__(self, x):\n        return g(x)\n",
-        f"{TARGET}class A(B):\n    def f(self, x):\n        return g(x)\n",
-        f"{TARGET}class A(metaclass=M):\n    def f(self, x):\n        return g(x)\n",
-        "def f(x):\n    return 1\n",
-        f"{TARGET}def f(x):\n    return g(x=x)\n",
-        f"{TARGET}def f(x):\n    return g(*x)\n",
-        f"{TARGET}def f(x, y):\n    return g(x)\n",
-        f"{TARGET}def f(x):\n    return g(x, x)\n",
-        f"{TARGET}def f(x):\n    return g(x.y)\n",
-        f"{TARGET}def f():\n    return g()\n",
-        f"{TARGET}def f(x):\n    y = x\n    return g(y)\n",
-        "def f(x):\n    return f(x)\n",
-        "def f(x):\n    return\n",
-        f"{TARGET}class A:\n    def f(self):\n        return self\n",
-        f"{TARGET}class A:\n    def f(self, x):\n        return self.g(x)\n",
-        f"{TARGET}if x:\n    def f(x):\n        return g(x)\n",
-    ],
-)
+KEPT_WRAPPERS = [
+    "from ext import g\n\ndef f(x):\n    return g(x)\n",
+    "def f(x):\n    return g(x)\n",
+    f"{TARGET}@cache\ndef f(x):\n    return g(x)\n",
+    f"{TARGET}class A:\n    def __call__(self, x):\n        return g(x)\n",
+    f"{TARGET}class A(B):\n    def f(self, x):\n        return g(x)\n",
+    f"{TARGET}class A(metaclass=M):\n    def f(self, x):\n        return g(x)\n",
+    "def f(x):\n    return 1\n",
+    f"{TARGET}def f(x):\n    return g(x=x)\n",
+    f"{TARGET}def f(x):\n    return g(*x)\n",
+    f"{TARGET}def f(x, y):\n    return g(x)\n",
+    f"{TARGET}def f(x):\n    return g(x, x)\n",
+    f"{TARGET}def f(x):\n    return g(x.y)\n",
+    f"{TARGET}def f():\n    return g()\n",
+    f"{TARGET}def f(x):\n    y = x\n    return g(y)\n",
+    "def f(x):\n    return f(x)\n",
+    "def f(x):\n    return\n",
+    f"{TARGET}class A:\n    def f(self):\n        return self\n",
+    f"{TARGET}class A:\n    def f(self, x):\n        return self.g(x)\n",
+    f"{TARGET}if x:\n    def f(x):\n        return g(x)\n",
+]
+
+
+@pytest.mark.parametrize("source", KEPT_WRAPPERS)
 def test_a_wrapper_with_a_reason_to_exist_is_not_reported(source: str) -> None:
     assert findings({"m.py": source}) == ()
 
 
+WRAPPER = "def f(x):\n    return x\n"
+
+
 def test_an_exception_drops_the_findings_in_its_paths() -> None:
-    wrapper = "def f(x):\n    return x\n"
-    sources = {"a.py": wrapper, "b.py": TARGET, "c.py": wrapper}
+    sources = {"a.py": WRAPPER, "b.py": TARGET, "c.py": WRAPPER}
     assert findings(sources, entry("a.py", "STR001")) == (f"c.py:1:1: {WRAPS}",)
 
 
 def test_an_exception_for_another_rule_drops_nothing() -> None:
-    sources = {"a.py": "def f(x):\n    return x\n"}
+    sources = {"a.py": WRAPPER}
     assert findings(sources, entry("a.py", "STR002")) == (f"a.py:1:1: {WRAPS}",)
 
 
@@ -180,17 +189,22 @@ def complex_function(score: int) -> str:
     return f"STR002 `f` has cognitive complexity {score}, above 10; flatten it"
 
 
-@pytest.mark.parametrize(
-    ("source", "score"),
-    [
-        (ELIF_CHAIN.format("break  # 1"), 11),
-        (BOOLEAN_RUN.format("a or b or c"), 11),
-        (NESTED_FUNCTION.format("x if x else None  # 1"), 11),
-        (CLAUSES, 11),
-        (ELIF_CHAIN.format("pass").replace("x == 3:  #", "x and y:  # 1,"), 11),
-        (ELSE_IF, 11),
-    ],
-)
+ABOVE_THE_LIMIT = [
+    (ELIF_CHAIN.format("break  # 1"), 11),
+    (BOOLEAN_RUN.format("a or b or c"), 11),
+    (NESTED_FUNCTION.format("x if x else None  # 1"), 11),
+    (CLAUSES, 11),
+    (ELIF_CHAIN.format("pass").replace("x == 3:  #", "x and y:  # 1,"), 11),
+    (ELSE_IF, 11),
+]
+AT_THE_LIMIT = [
+    ELIF_CHAIN.format("pass"),
+    BOOLEAN_RUN.format("a or b"),
+    NESTED_FUNCTION.format("None"),
+]
+
+
+@pytest.mark.parametrize(("source", "score"), ABOVE_THE_LIMIT)
 def test_a_function_above_the_cognitive_limit_is_reported(
     source: str, score: int
 ) -> None:
@@ -199,21 +213,30 @@ def test_a_function_above_the_cognitive_limit_is_reported(
     )
 
 
-@pytest.mark.parametrize(
-    "source",
-    [
-        ELIF_CHAIN.format("pass"),
-        BOOLEAN_RUN.format("a or b"),
-        NESTED_FUNCTION.format("None"),
-    ],
-)
+@pytest.mark.parametrize("source", AT_THE_LIMIT)
 def test_a_function_at_the_cognitive_limit_is_not_reported(source: str) -> None:
     assert findings({"m.py": source}) == ()
 
 
 def test_an_exception_drops_the_cognitive_findings_in_its_paths() -> None:
-    source = ELIF_CHAIN.format("break")
+    source, score = ABOVE_THE_LIMIT[0]
     sources = {"a.py": source, "b.py": source}
     assert findings(sources, entry("a.py", "STR002")) == (
-        f"b.py:1:1: {complex_function(11)}",
+        f"b.py:1:1: {complex_function(score)}",
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    dict.fromkeys([
+        WRAPPER,
+        *(source for source, _ in WRAPPERS),
+        *KEPT_WRAPPERS,
+        *PACKAGE.values(),
+        *NAMESPACE_PACKAGE.values(),
+        *(source for source, _ in ABOVE_THE_LIMIT),
+        *AT_THE_LIMIT,
+    ]),
+)
+def test_every_fixture_is_valid_python(source: str) -> None:
+    compile(source, "m.py", "exec", dont_inherit=True)
