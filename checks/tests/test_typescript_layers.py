@@ -350,3 +350,23 @@ def test_oxlint_config_writes_nothing_on_an_unknown_layer() -> None:
     ) == Outcome(
         FrozenList((f'package.json: standards.layer is "domain"; {USE}',)), 1
     )
+
+
+def test_the_map_of_code_leaves_tests_and_tool_configs_out() -> None:
+    files = (
+        "src/a.ts",
+        "src/a.test.ts",
+        "src/view.test.tsx",
+        "packages/p/test/helpers.ts",
+        "vitest.config.ts",
+        "packages/p/vite.config.mts",
+        "vitest.setup.ts",
+        "src/view.tsx",
+    )
+    outcome = run(("typescript-layers", "--code", *files), inputs({}))
+    assert outcome == Outcome(
+        FrozenList(("core\t.\tsrc/a.ts", "core\t.\tsrc/view.tsx"))
+    )
+    assert len(run(("typescript-layers", *files), inputs({})).lines) == len(
+        files
+    )

@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -168,12 +169,46 @@ def layer_issues(placed: Sequence[Placement]) -> FrozenList[str]:
     )
 
 
+BRACES = re.compile(r"\{([^{}]*)\}")
+
+
+def alternatives(glob: str) -> FrozenList[str]:
+    """The globs a glob's `{a,b}` groups stand for."""
+    found = BRACES.search(glob)
+    if found is None:
+        return FrozenList((glob,))
+    return FrozenList(
+        alternative
+        for choice in found[1].split(",")
+        for alternative in alternatives(
+            f"{glob[: found.start()]}{choice}{glob[found.end() :]}"
+        )
+    )
+
+
+def tooling(file: str) -> bool:
+    return any(
+        matches(file, glob)
+        for pattern in TOOLING
+        for glob in alternatives(pattern)
+    )
+
+
+# With --code, the map holds only the layers' code, without the tests and
+# tool configs that run beside it.
+def mapped(arguments: Sequence[str]) -> FrozenList[str]:
+    files = operands(arguments)
+    if "--code" not in arguments:
+        return files
+    return FrozenList(file for file in files if not tooling(file))
+
+
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(manifests(operands(arguments)))
+    return Request(manifests(mapped(arguments)))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    placed = placements(operands(arguments), inputs.texts)
+    placed = placements(mapped(arguments), inputs.texts)
     if issues := layer_issues(placed):
         return Outcome(issues, 1)
     return listing(

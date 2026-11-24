@@ -23,6 +23,7 @@ FLAKY = "flaky"
 BOX = "box"
 MUTATION = "mutation"
 RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY, BOX))
+TYPESCRIPT_RULES = FrozenOrderedSet((SHELL,))
 UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
@@ -115,7 +116,11 @@ def exceptions_in(inputs: Inputs) -> Exceptions:
 
 
 def kind(language: str, rule: str) -> str:
-    if rule == MUTATION or (language == "rust" and rule in RUST_RULES):
+    if (
+        rule == MUTATION
+        or (language == "rust" and rule in RUST_RULES)
+        or (language == "typescript" and rule in TYPESCRIPT_RULES)
+    ):
         return rule
     if rule.startswith("drift:"):
         return "drift"

@@ -130,6 +130,7 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
         ("rust", "flaky", "flaky"),
         ("python", "flaky", "ruff"),
         ("typescript", "flaky", ""),
+        ("typescript", "shell", "shell"),
         ("python", "std", "ruff"),
         ("typescript", "api", ""),
         ("python", "drift:tool.ruff", "drift"),
