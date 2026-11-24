@@ -27,6 +27,8 @@ versions=(
 	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]},${pins[EFFECT_TSGO]}"
 	"--tool=unused=${pins[KNIP]}"
+	"--tool=shell=${pins[TS_MEASURE]}"
+	"--tool=shell-share=${pins[TS_MEASURE]}"
 	"--tool=entry=${pins[TS_MEASURE]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
 	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
@@ -50,7 +52,7 @@ if full; then
 fi
 release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
-	--project=exceptions,format,lint,types,unused,entry,test,test-release,mutation,duplication,volume
+	--project=exceptions,format,lint,types,unused,shell,shell-share,entry,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
 # oxfmt finds a project's own config itself, and is given the standard's
@@ -159,6 +161,35 @@ oxfmt_format() {
 		"${oxfmt_config[@]}" "${formatted[@]}"
 }
 
+# typescript-measure counts the decisions of each function of the layer map
+# of the project's code, without its tests and tool configs, into `$2`. The
+# shell's and the UI's files, which mutation testing skips, are written to
+# shell-files.txt.
+measured() {
+	checks typescript-layers --code "${scripts[@]}" >"$logs/layers.tsv" || {
+		cat "$logs/layers.tsv"
+		return 1
+	}
+	typescript-measure . "$(native "$logs/layers.tsv")" >"$1"
+}
+
+shell() {
+	measured "$logs/decisions.jsonl" || return
+	checks typescript-shell "$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
+}
+
+shell_share() {
+	measured "$logs/share.jsonl" || return
+	checks typescript-shell-share "$(native "$logs/share.jsonl")"
+}
+
+# A project starts one Node runtime and each ui package one React root, as
+# typescript-measure finds their calls.
+entry() {
+	measured "$logs/entry.jsonl" || return
+	checks typescript-entry "$(native "$logs/entry.jsonl")"
+}
+
 exceptions_unit oxlint_policy
 unit format "last 'Format issues found in above [0-9]+ files?|All matched files use the correct format|No files found'" \
 	oxfmt_format
@@ -181,19 +212,12 @@ if [ -f package.json ]; then
 	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
 		npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress
 fi
-# A project starts one Node runtime and each ui package one React root, as
-# typescript/measure finds their calls in the files of the layer map.
-entry() {
-	checks typescript-layers "${scripts[@]}" >"$logs/layers.tsv" || {
-		cat "$logs/layers.tsv"
-		return 1
-	}
-	typescript-measure . "$(native "$logs/layers.tsv")" >"$logs/measure.jsonl" || return
-	checks typescript-entry "$(native "$logs/measure.jsonl")"
-}
+tools_of[shell]=typescript-measure
+tools_of[shell-share]=typescript-measure
 tools_of[entry]=typescript-measure
+unit shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
+unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
 unit entry "last 'Found [0-9]+ issues|[0-9]+ runMain, [0-9]+ createRoot'" entry
-
 # Vitest runs in the mode of vitest.config.ts that the tier names: fast at
 # step, full, with coverage and the slow tests, at release.
 if [ -f package.json ] && at_least step; then
@@ -217,7 +241,10 @@ if full; then
 		stryker_config=$standards/stryker.config.json
 		mutation=("$(native "$stryker_config")")
 	fi
-	mutate=$(checks stryker-mutate "$(native "$stryker_config")")
+	if ! dry && [ ! -f "$logs/shell-files.txt" ] && command -v typescript-measure >/dev/null; then
+		shell >/dev/null 2>&1
+	fi
+	mutate=$(checks stryker-mutate "$(native "$stryker_config")" "$(native "$logs/shell-files.txt")")
 	if [ -n "$mutate" ]; then
 		mutation+=(--mutate "$mutate")
 	fi

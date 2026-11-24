@@ -4,8 +4,9 @@
 # clippy::shadow_reuse, lint/eslint/no-restricted-globals, PUR003 or PUR001:attrs
 # for one module), "purity:<module>" (a module a TypeScript core file may
 # import), "mutation", "unused", "api" (a Rust file whose public
-# items may take more than data), "shell" (a Rust shell file whose functions
-# may make more decisions, or Cargo.toml for the shell's share of them),
+# items may take more than data), "shell" (a Rust shell file or a TypeScript
+# shell or UI file whose functions may make more decisions, or Cargo.toml or
+# package.json for the shell's share of them),
 # "box" (a Rust core file that may use Box, Rc or Arc),
 # "flaky" (a Rust test, named by its nextest name or a glob of it, that
 # nextest retries once; a pass on the retry is reported as flaky), or a

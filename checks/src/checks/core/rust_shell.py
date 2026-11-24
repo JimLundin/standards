@@ -28,10 +28,16 @@ MEASURED_KINDS = FrozenOrderedSet((
     "staticlib",
     "proc-macro",
 ))
+# A TypeScript record's layer, which the UI shares with the shell.
+OUTER_LAYERS = FrozenOrderedSet(("shell", "ui"))
+CARGO = "Cargo.toml"
+PACKAGE = "package.json"
 COMPLEX = "the shell function"
 SHARED = "the shell makes"
 MOVE = "; move the decisions into the core"
 UNMEASURED = "cannot be measured"
+# typescript-measure's record of an entry point, which the entry unit reads.
+ENTRY = "entry"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,24 +83,40 @@ def measured(
     path = relative(str(record.get("path")), root)
     if "error" in record:
         return Failure(path, str(record.get("error")))
+    in_shell = (
+        record.get("layer") in OUTER_LAYERS
+        if "layer" in record
+        else roots.get(str(record.get("root")), False)
+    )
     return Function(
         path,
         int(str(record.get("line"))),
         str(record.get("function")),
         int(str(record.get("decisions"))),
-        roots.get(str(record.get("root")), False),
+        in_shell,
     )
+
+
+def read(
+    lines: Sequence[str], roots: Mapping[str, bool], root: str
+) -> FrozenList[Function | Failure]:
+    found = (
+        measured(line, roots, root)
+        for line in lines
+        if line.startswith("{") and ENTRY not in parse_json(line)
+    )
+    return FrozenList(dict.fromkeys(found))
 
 
 def records(
     lines: Sequence[str], metadata: Mapping[str, object]
 ) -> FrozenList[Function | Failure]:
-    roots = targets(metadata)
-    root = str(metadata.get("workspace_root"))
-    found = (
-        measured(line, roots, root) for line in lines if line.startswith("{")
-    )
-    return FrozenList(dict.fromkeys(found))
+    return read(lines, targets(metadata), str(metadata.get("workspace_root")))
+
+
+def typescript_records(lines: Sequence[str]) -> FrozenList[Function | Failure]:
+    """typescript-measure's records, whose paths are the project's."""
+    return read(lines, FrozenOrderedDict(), "")
 
 
 def functions(items: Sequence[Function | Failure]) -> FrozenList[Function]:
@@ -130,17 +152,17 @@ def findings(
 
 
 def share_findings(
-    items: Sequence[Function], exceptions: Exceptions
+    items: Sequence[Function], exceptions: Exceptions, manifest: str = CARGO
 ) -> FrozenList[str]:
     total = decisions(items)
     shell = decisions(shell_functions(items))
     return FrozenList(
         (
-            f"Cargo.toml: {SHARED} {shell} of {total} decisions (limit {SHARE:.0%}){MOVE}",
+            f"{manifest}: {SHARED} {shell} of {total} decisions (limit {SHARE:.0%}){MOVE}",
         )
         if total >= FLOOR
         and shell > SHARE * total
-        and not exceptions.covers(SHELL, "Cargo.toml")
+        and not exceptions.covers(SHELL, manifest)
         else ()
     )
 
@@ -187,17 +209,19 @@ def measures_of(
     )
 
 
-def share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    measured_functions = functions(measures_of(arguments, inputs))
+def shared_verdict(
+    items: Sequence[Function | Failure], inputs: Inputs, manifest: str
+) -> Outcome:
+    measured_functions = functions(items)
     return summarized(
-        share_findings(measured_functions, exceptions_in(inputs)),
+        share_findings(measured_functions, exceptions_in(inputs), manifest),
         passing(measured_functions),
     )
 
 
-def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    files = arguments[2]
-    items = measures_of(arguments, inputs)
+def verdict(
+    items: Sequence[Function | Failure], inputs: Inputs, files: str
+) -> Outcome:
     issues = findings(items, exceptions_in(inputs))
     measured_functions = functions(items)
     return replace(
@@ -208,3 +232,33 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             )
         }),
     )
+
+
+def share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    return shared_verdict(measures_of(arguments, inputs), inputs, CARGO)
+
+
+def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    return verdict(measures_of(arguments, inputs), inputs, arguments[2])
+
+
+def typescript_request(arguments: Sequence[str], _inputs: Inputs) -> Request:
+    return Request(FrozenList((EXCEPTIONS, arguments[0])))
+
+
+def typescript_measures(
+    arguments: Sequence[str], inputs: Inputs
+) -> FrozenList[Function | Failure]:
+    return typescript_records(
+        FrozenList(text(inputs.texts, arguments[0]).splitlines())
+    )
+
+
+def typescript_share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    return shared_verdict(
+        typescript_measures(arguments, inputs), inputs, PACKAGE
+    )
+
+
+def typescript_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    return verdict(typescript_measures(arguments, inputs), inputs, arguments[1])

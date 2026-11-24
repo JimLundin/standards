@@ -1,5 +1,5 @@
 import json
-lazy from collections.abc import Mapping
+lazy from collections.abc import Mapping, Sequence
 
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
@@ -7,6 +7,7 @@ from ordered import FrozenList, FrozenOrderedDict
 from checks.core.rust_shell import (
     Failure,
     Function,
+    functions,
     measured,
     records,
     request,
@@ -16,6 +17,8 @@ from checks.core.rust_shell import (
     share_run,
     targets,
 )
+from checks.core.tools import request as tool_request
+from checks.core.tools import run as tool_run
 from checks.core.values import Inputs, Request, parse_json
 from tests.helpers import entry
 
@@ -286,9 +289,16 @@ def compact(record: Mapping[str, object]) -> str:
     return json.dumps(record, separators=(",", ":"))
 
 
-def test_typescript_measure_records_are_read() -> None:
+def test_typescript_measure_records_are_read_without_entry_points() -> None:
     # Records as typescript-measure prints them, with the layer it adds.
     lines = (
+        compact({
+            "entry": "runMain",
+            "layer": "shell",
+            "line": 5,
+            "path": "packages/shell/main.ts",
+            "root": "packages/shell",
+        }),
         compact({
             "decisions": 3,
             "function": "View",
@@ -308,6 +318,160 @@ def test_typescript_measure_records_are_read() -> None:
         json.dumps({"workspace_root": "/work", "packages": []})
     )
     assert records(lines, metadata) == (
-        Function("packages/ui/src/view.tsx", 2, "View", 3, in_shell=False),
+        Function("packages/ui/src/view.tsx", 2, "View", 3, in_shell=True),
         Failure("packages/shell/src/gone.ts", "not in the project"),
     )
+
+
+def typescript(layer: str, path: str, line: int, decisions: int) -> str:
+    return compact({
+        "decisions": decisions,
+        "function": f"f{line}",
+        "layer": layer,
+        "line": line,
+        "path": path,
+        "root": path.rsplit("/src/", 1)[0],
+    })
+
+
+def typescript_outcome(
+    *lines: str, exceptions: str | None = None
+) -> tuple[FrozenList[str], int, str]:
+    texts = FrozenOrderedDict({"d.jsonl": "\n".join(lines)})
+    if exceptions is not None:
+        texts |= {"exceptions.toml": exceptions}
+    result = tool_run(
+        ("typescript-shell", "d.jsonl", "files.txt"), Inputs(texts)
+    )
+    return result.lines, result.status, result.writes["files.txt"]
+
+
+def typescript_shared(
+    *lines: str, exceptions: str | None = None
+) -> tuple[FrozenList[str], int]:
+    texts = FrozenOrderedDict({"d.jsonl": "\n".join(lines)})
+    if exceptions is not None:
+        texts |= {"exceptions.toml": exceptions}
+    result = tool_run(("typescript-shell-share", "d.jsonl"), Inputs(texts))
+    return result.lines, result.status
+
+
+def test_typescript_requests_read_the_exceptions_and_the_measures() -> None:
+    assert tool_request(
+        ("typescript-shell", "d.jsonl", "files.txt"), Inputs()
+    ) == Request(FrozenList(("exceptions.toml", "d.jsonl")))
+    assert tool_request(
+        ("typescript-shell-share", "d.jsonl"), Inputs()
+    ) == Request(FrozenList(("exceptions.toml", "d.jsonl")))
+
+
+def test_typescript_shell_and_ui_records_are_the_shell() -> None:
+    lines = (
+        typescript("shell", "packages/io/src/main.ts", 1, 1),
+        typescript("ui", "packages/app/src/view.tsx", 2, 1),
+        typescript("core", "packages/model/src/index.ts", 3, 1),
+    )
+    metadata = parse_json(json.dumps({"workspace_root": "/w", "packages": []}))
+    assert [item.in_shell for item in functions(records(lines, metadata))] == [
+        True,
+        True,
+        False,
+    ]
+
+
+# Each case is the decisions of the shell's functions and of the core's.
+CASES = (
+    ((2, 0), (8,)),
+    ((3, 2, 3), (9,)),
+    ((2, 2, 2), (15,)),
+    ((1,) * 5, (15,)),
+    ((1,) * 6, (14,)),
+    ((1,) * 6, (13,)),
+    ((), (4,)),
+)
+
+
+@pytest.mark.parametrize(("shell_counts", "core_counts"), CASES)
+def test_typescript_records_get_the_verdicts_of_rust_records(
+    shell_counts: Sequence[int], core_counts: Sequence[int]
+) -> None:
+    rust_lines = (
+        *(
+            shell(f"src/s{line}.rs", line, n)
+            for line, n in enumerate(shell_counts)
+        ),
+        *(core("src/lib.rs", line, n) for line, n in enumerate(core_counts)),
+    )
+    # The UI shares the shell's side.
+    layers = ("shell", "ui")
+    typescript_lines = (
+        *(
+            typescript(
+                layers[line % 2],
+                f"packages/{layers[line % 2]}/src/s{line}.rs",
+                line,
+                n,
+            )
+            for line, n in enumerate(shell_counts)
+        ),
+        *(
+            typescript("core", "packages/core/src/lib.rs", line, n)
+            for line, n in enumerate(core_counts)
+        ),
+    )
+
+    def renamed(found: FrozenList[str]) -> FrozenList[str]:
+        return FrozenList(
+            line.replace("src/s", "s").replace("Cargo.toml", "package.json")
+            for line in found
+        )
+
+    def rust_shaped(found: FrozenList[str]) -> FrozenList[str]:
+        return FrozenList(
+            line.replace("packages/shell/src/s", "s").replace(
+                "packages/ui/src/s", "s"
+            )
+            for line in found
+        )
+
+    rust_lines_found, rust_status, rust_files = outcome(*rust_lines)
+    ts_lines_found, ts_status, ts_files = typescript_outcome(*typescript_lines)
+    assert rust_shaped(ts_lines_found) == renamed(rust_lines_found)
+    assert ts_status == rust_status
+    assert len(ts_files.splitlines()) == len(rust_files.splitlines())
+    rust_share, rust_share_status = shared(*rust_lines)
+    ts_share, ts_share_status = typescript_shared(*typescript_lines)
+    assert ts_share == renamed(rust_share)
+    assert ts_share_status == rust_share_status
+
+
+def test_a_typescript_shell_exception_lifts_the_function_limit_for_its_file() -> (
+    None
+):
+    lines, status, files = typescript_outcome(
+        typescript("ui", "packages/ui/src/view.tsx", 7, 3),
+        typescript("shell", "packages/shell/src/cli.ts", 9, 3),
+        typescript("core", "packages/core/src/index.ts", 1, 3),
+        exceptions=entry("packages/ui/src/view.tsx", "shell"),
+    )
+    assert lines == (
+        f"packages/shell/src/cli.ts:9: the shell function `f9` makes 3 decisions (limit 2){MOVE}",
+        "Found 1 issues",
+    )
+    assert status == 1
+    assert files == "packages/ui/src/view.tsx\npackages/shell/src/cli.ts\n"
+
+
+def test_a_shell_exception_on_package_json_lifts_the_typescript_share() -> None:
+    lines = tuple(
+        typescript("ui", "packages/ui/src/view.tsx", line, 2)
+        for line in range(10)
+    )
+    assert typescript_shared(*lines)[1] == 1
+    assert (
+        typescript_shared(*lines, exceptions=entry("Cargo.toml", "shell"))[1]
+        == 1
+    )
+    assert typescript_shared(
+        *lines, exceptions=entry("package.json", "shell")
+    ) == (("shell makes 20 of 20 decisions",), 0)

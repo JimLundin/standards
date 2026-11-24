@@ -46,6 +46,8 @@ def test_tools_dispatch_to_each_tool() -> None:
         "rust-shell-share",
         "typescript-entry",
         "typescript-layers",
+        "typescript-shell",
+        "typescript-shell-share",
         "units",
         "ruff-config",
         "without",

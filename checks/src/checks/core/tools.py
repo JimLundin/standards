@@ -35,6 +35,14 @@ TOOLS = FrozenOrderedDict({
     "rust-shell-share": (rust_shell.request, rust_shell.share_run),
     "typescript-entry": (typescript_entry.request, typescript_entry.run),
     "typescript-layers": (typescript_layers.request, typescript_layers.run),
+    "typescript-shell": (
+        rust_shell.typescript_request,
+        rust_shell.typescript_run,
+    ),
+    "typescript-shell-share": (
+        rust_shell.typescript_request,
+        rust_shell.typescript_share_run,
+    ),
     "units": (units.request, units.run),
     **tool_config.COMMANDS,
 })
