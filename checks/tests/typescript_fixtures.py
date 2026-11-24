@@ -433,25 +433,6 @@ def test_a_break_of_each_react_and_jsx_plugin_fails_lint_naming_the_rule(
         assert path in findings, path
 
 
-# Typescript/promise-function-async makes a function returning a promise
-# async, and typescript/require-await accepts an async function that returns
-# a promise without awaiting it. Eslint's require-await, which doesn't, is off.
-RETURNED = """export const returned = async (
-	load: () => Promise<number>,
-): Promise<number> => load();
-"""
-
-
-def test_an_async_function_returning_a_promise_unawaited_passes_lint(
-    fixtures: Fixtures,
-) -> None:
-    returned = "packages/core/src/returned.ts"
-    run = fixtures.check("commit", files={returned: RETURNED})
-    lint = run.units["lint"]
-    assert lint.outcome == "ok", lint.findings
-    assert returned not in lint.findings
-
-
 FLOATING = """import { Console } from "effect";
 
 export const start = (): void => {
@@ -680,6 +661,109 @@ def test_an_exception_named_as_oxlint_prints_the_rule_clears_it(
     assert run.units["exceptions"].outcome == "ok"
     assert hooked in run.units["lint"].findings
     assert "react-hooks(rules-of-hooks)" not in run.units["lint"].findings
+
+
+LAYERS = FrozenList(("core", "shell", "ui"))
+# ADR 0004's bans, each a file with its one break and the rule that reports it.
+AWAITED = """export const awaited = async (load: () => Promise<string>): Promise<string> => {
+	const loaded = await load();
+	return loaded;
+};
+"""
+PROMISED = """export const promised = (value: string): Promise<string> =>
+	new Promise((resolve) => {
+		resolve(value);
+	});
+"""
+CHAINED = """export const chained = (load: () => Promise<string>): Promise<string> =>
+	load().then((loaded) => loaded.trim());
+"""
+THROWN = """export const thrown = (reason: string): never => {
+	throw new Error(reason);
+};
+"""
+TRIED = """export const tried = (run: () => string, fallback: string): string => {
+	try {
+		return run();
+	} catch {
+		return fallback;
+	}
+};
+"""
+PARSED = """export const parsed = (text: string): boolean =>
+	typeof JSON.parse(text) === "string";
+"""
+LOGGED = """export const logged = (text: string): void => {
+	console.log(text);
+};
+"""
+BANS = FrozenOrderedDict({
+    "awaited": ("oxc(no-async-await)", AWAITED),
+    "promised": ("promise(avoid-new)", PROMISED),
+    "chained": ("eslint(no-restricted-properties)", CHAINED),
+    "thrown": ("standards(no-throw)", THROWN),
+    "tried": ("standards(no-try)", TRIED),
+    "parsed": ("eslint(no-restricted-properties)", PARSED),
+    "dated": ("eslint(no-restricted-globals)", TIMED),
+    "rolled": (
+        "eslint(no-restricted-properties)",
+        "export const rolled = (): number => Math.random();\n",
+    ),
+    "identified": (
+        "eslint(no-restricted-globals)",
+        "export const identified = (): string => crypto.randomUUID();\n",
+    ),
+    "timed": (
+        "eslint(no-restricted-globals)",
+        "export const timed = (): number => performance.now();\n",
+    ),
+    "logged": ("eslint(no-console)", LOGGED),
+})
+# Effect's own bridge, clock and randomness.
+EFFECTFUL = """import { Clock, Effect, Random } from "effect";
+
+const loaded = (load: () => Promise<string>): Effect.Effect<string, string> =>
+	Effect.tryPromise({ catch: () => "unloaded", try: load });
+const stamped: Effect.Effect<number> = Clock.currentTimeMillis;
+const rolled: Effect.Effect<number> = Random.next;
+
+export { loaded, rolled, stamped };
+"""
+
+
+def test_each_ban_fails_lint_in_every_layer_with_one_finding(
+    fixtures: Fixtures,
+) -> None:
+    banned = FrozenOrderedDict(
+        (f"packages/{layer}/src/{name}.ts", (rule, text))
+        for layer in LAYERS
+        for name, (rule, text) in BANS.items()
+    )
+    run = fixtures.check(
+        "commit", files={path: text for path, (_, text) in banned.items()}
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    for path, (rule, _) in banned.items():
+        found = FrozenList(
+            line for line in lint.findings.splitlines() if f"{path}:" in line
+        )
+        assert len(found) == 1, (path, found)
+        assert rule in lint.findings, rule
+
+
+def test_effect_try_promise_clock_and_random_pass_lint(
+    fixtures: Fixtures,
+) -> None:
+    # The core imports no Effect module, by its layer's import override.
+    effectful = FrozenList(
+        f"packages/{layer}/src/effectful.ts" for layer in ("shell", "ui")
+    )
+    run = fixtures.check("commit", files=dict.fromkeys(effectful, EFFECTFUL))
+    lint = run.units["lint"]
+    assert lint.outcome == "ok", lint.findings
+    for path in effectful:
+        assert path not in lint.findings, path
 
 
 NODE_IMPORTS = FrozenOrderedDict({
