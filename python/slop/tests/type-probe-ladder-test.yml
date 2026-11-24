@@ -1,0 +1,15 @@
+id: type-probe-ladder
+valid:
+  - |
+    def f(x, y):
+        if isinstance(x, int):
+            g(x)
+        if isinstance(y, str):
+            h(y)
+invalid:
+  - |
+    def f(x):
+        if isinstance(x, int):
+            g(x)
+        if isinstance(x, str):
+            h(x)

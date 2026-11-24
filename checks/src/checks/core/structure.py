@@ -77,10 +77,13 @@ def names_imported(
 def imported(
     statement: ast.stmt, parts: Sequence[str]
 ) -> Iterator[tuple[str, str]]:
-    if isinstance(statement, ast.Import):
-        yield from modules_imported(statement)
-    if isinstance(statement, ast.ImportFrom):
-        yield from names_imported(statement, parts)
+    match statement:
+        case ast.Import():
+            yield from modules_imported(statement)
+        case ast.ImportFrom():
+            yield from names_imported(statement, parts)
+        case _:
+            pass
 
 
 def definitions(
@@ -122,21 +125,23 @@ def parsed(path: str, text: str, paths: Container[str]) -> Module:
 
 
 def dotted(node: ast.expr) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        base = dotted(node.value)
-        return None if base is None else f"{base}.{node.attr}"
-    return None
+    match node:
+        case ast.Name(id=name):
+            return name
+        case ast.Attribute(value=value, attr=attribute):
+            base = dotted(value)
+            return f"{base}.{attribute}" if base is not None else None
+        case _:
+            return None
 
 
 def candidates(name: str, module: Module) -> Iterator[str]:
     root, _, rest = name.partition(".")
-    origin = module.imports.get(root)
-    if origin is None:
-        yield name
-    else:
+    if root in module.imports:
+        origin = module.imports[root]
         yield f"{origin}.{rest}" if rest else origin
+    else:
+        yield name
     if not rest:
         yield f"{module.name}.{name}"
 
@@ -174,9 +179,9 @@ def calls_through(
 ) -> bool:
     name = dotted(value.func)
     target = (
-        None
-        if name is None
-        else next((c for c in candidates(name, module) if c in symbols), None)
+        next((c for c in candidates(name, module) if c in symbols), None)
+        if name is not None
+        else None
     )
     return target is not None and target != definition.name
 

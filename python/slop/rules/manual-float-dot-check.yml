@@ -1,0 +1,9 @@
+id: manual-float-dot-check
+language: python
+severity: info
+message: "`if '.' in s: float(s)` - brittle; use `ast.literal_eval` or `try: float(s) except ValueError:`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  pattern: "if '.' in $VAL:\n    $OUT = float($VAL)\n"

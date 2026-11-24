@@ -1,0 +1,12 @@
+id: wrapper-isvalid-oneliner
+valid:
+  - |
+    def is_valid_name(name: str) -> bool:
+        return name.isidentifier()
+invalid:
+  - |
+    import re
+
+
+    def is_valid_name(name: str) -> bool:
+        return bool(re.fullmatch(r"\w+", name))

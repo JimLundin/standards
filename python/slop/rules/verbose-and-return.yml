@@ -1,0 +1,20 @@
+id: verbose-and-return
+language: python
+severity: info
+message: "`if not x: return False` - combine with later condition or `return x and ...`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - has:
+      kind: not_operator
+  - has:
+      kind: block
+      has:
+        kind: return_statement
+        regex: return False
+  not:
+    has:
+      kind: else_clause

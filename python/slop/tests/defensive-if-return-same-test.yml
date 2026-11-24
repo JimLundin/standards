@@ -1,0 +1,13 @@
+id: defensive-if-return-same
+valid:
+  - |
+    def f(x):
+        if x:
+            return x + 1
+        return None
+invalid:
+  - |
+    def f(x):
+        if x:
+            return x
+        return None

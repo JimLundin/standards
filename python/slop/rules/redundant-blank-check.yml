@@ -1,0 +1,24 @@
+id: redundant-blank-check
+language: python
+severity: info
+message: "`line.isspace() or not line` then `line.strip()` `if not text` - one `if not line.strip(): continue` is enough"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  pattern: |
+    if $L.isspace() or not $L:
+        continue
+  precedes:
+    stopBy: neighbor
+    kind: expression_statement
+    has:
+      kind: assignment
+      pattern: $T = $L.strip()
+    precedes:
+      stopBy: neighbor
+      kind: if_statement
+      pattern: |
+        if not $T:
+            continue

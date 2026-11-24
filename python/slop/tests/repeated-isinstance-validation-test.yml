@@ -1,0 +1,15 @@
+id: repeated-isinstance-validation
+valid:
+  - |
+    def f(a, b):
+        if not isinstance(a, int):
+            raise TypeError
+        return a + b
+invalid:
+  - |
+    def f(a, b):
+        if not isinstance(a, int):
+            raise TypeError
+        if not isinstance(b, int):
+            raise TypeError
+        return a + b

@@ -62,24 +62,28 @@ def record(directory: str, passes: Sequence[str]) -> FrozenList[str]:
 def fetch(directory: str) -> bool:
     """Merges origin's notes into the local ones; true when there is no
     origin or its notes merged."""
-    if not has_origin(directory):
-        return True
-    if git(directory, "fetch", "-q", "origin", f"+{REF}:{FETCHED}").returncode:
-        return False
+    refspec = f"+{REF}:{FETCHED}"
     merge = ("notes", f"--ref={REF}", "merge", "-q", "-s", STRATEGY, FETCHED)
-    return git(directory, *merge).returncode == 0
+    return not has_origin(directory) or (
+        git(directory, "fetch", "-q", "origin", refspec).returncode == 0
+        and git(directory, *merge).returncode == 0
+    )
 
 
 def push(directory: str) -> bool:
     """Pushes the local notes to origin, merging and retrying when another
     run pushed first; true when there is no origin or a push landed."""
-    if not has_origin(directory):
-        return True
-    for _ in range(ATTEMPTS):
-        if git(directory, "push", "-q", "origin", REF).returncode == 0:
-            return True
+    return not has_origin(directory) or any(
+        pushed(directory) for _ in range(ATTEMPTS)
+    )
+
+
+def pushed(directory: str) -> bool:
+    """Pushes once, merging origin's notes when the push is refused."""
+    landed = git(directory, "push", "-q", "origin", REF).returncode == 0
+    if not landed:
         _ = fetch(directory)
-    return False
+    return landed
 
 
 def run(arguments: Sequence[str], directory: str) -> Outcome:

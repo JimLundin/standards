@@ -1,0 +1,15 @@
+id: defensive-function-isinstance-heavy
+valid:
+  - |
+    def f(a):
+        if not isinstance(a, int):
+            return 0
+        return 1
+invalid:
+  - |
+    def f(a, b):
+        if not isinstance(a, int):
+            return 0
+        if isinstance(b, str):
+            return 1
+        return 2

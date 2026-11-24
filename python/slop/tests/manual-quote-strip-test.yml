@@ -1,0 +1,12 @@
+id: manual-quote-strip
+valid:
+  - |
+    def f(val):
+        return val
+invalid:
+  - |
+    def f(val):
+        out = val
+        if val.startswith('"') and val.endswith('"'):
+            out = val[1:-1]
+        return out

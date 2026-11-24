@@ -1,0 +1,42 @@
+id: raise-guard-ladder
+language: python
+severity: info
+message: "Back-to-back `if <cond>: raise ...` guard clauses that raise different error messages are defensive input policing; push validation to the boundary."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: if_statement
+  all:
+    - has:
+        field: consequence
+        kind: block
+        all:
+          - has:
+              stopBy: neighbor
+              kind: raise_statement
+          - not:
+              has:
+                stopBy: neighbor
+                not:
+                  any:
+                    - kind: raise_statement
+                    - kind: comment
+    - precedes:
+        stopBy: neighbor
+        kind: if_statement
+        has:
+          field: consequence
+          kind: block
+          all:
+            - has:
+                stopBy: neighbor
+                kind: raise_statement
+            - not:
+                has:
+                  stopBy: neighbor
+                  not:
+                    any:
+                      - kind: raise_statement
+                      - kind: comment

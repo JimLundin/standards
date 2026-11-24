@@ -120,12 +120,14 @@ def suppressions(
             continue
         if language == "rust":
             yield from rust_issues(file, text, exceptions)
-            continue
-        scan = python_markers if language == "python" else typescript_markers
-        yield from (
-            Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
-            for line, marker in scan(text)
-        )
+        else:
+            scan = (
+                python_markers if language == "python" else typescript_markers
+            )
+            yield from (
+                Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
+                for line, marker in scan(text)
+            )
 
 
 def used_attributes(

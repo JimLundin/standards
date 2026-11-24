@@ -1,0 +1,13 @@
+id: update-if-present-dict
+valid:
+  - |
+    def f(updates, a):
+        if a is not None:
+            updates["a"] = a
+invalid:
+  - |
+    def f(updates, a, b):
+        if a is not None:
+            updates["a"] = a
+        if b is not None:
+            updates["b"] = b

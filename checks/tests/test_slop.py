@@ -8,6 +8,7 @@ from checks.core.values import Inputs, Outcome, Request
 from tests.helpers import entry
 
 SENTINEL = "sentinel-fallback-function"
+GUARD = "isinstance-guard-raise"
 MESSAGE = "swallows every error and returns a sentinel"
 
 
@@ -16,19 +17,21 @@ def finding(
     line: int,
     rule: str = SENTINEL,
     metadata: Mapping[str, object] | None = None,
+    severity: str = "warning",
 ) -> str:
     return json.dumps({
         "file": path,
         "range": {"start": {"line": line, "column": 4}},
         "ruleId": rule,
+        "severity": severity,
         "message": MESSAGE,
-        "metadata": {"min_file_count": 2} if metadata is None else metadata,
+        "metadata": metadata if metadata is not None else {"min_file_count": 2},
     })
 
 
 def scanned(*findings: str, exceptions: str | None = None) -> Outcome:
     texts = FrozenOrderedDict(
-        {} if exceptions is None else {"exceptions.toml": exceptions}
+        {"exceptions.toml": exceptions} if exceptions is not None else {}
     )
     return run((), Inputs(texts, "".join(f"{f}\n" for f in findings)))
 
@@ -62,6 +65,24 @@ def test_the_file_count_is_per_file_and_per_rule() -> None:
         finding("src/b.py", 5, "except-return-static-sentinel"),
     )
     assert outcome.lines == ("All checks passed",)
+
+
+def test_an_info_rule_below_its_file_count_passes() -> None:
+    outcome = scanned(finding("src/a.py", 2, GUARD, severity="info"))
+    assert outcome.lines == ("All checks passed",)
+
+
+def test_an_info_rule_at_its_file_count_gates_like_a_warning() -> None:
+    outcome = scanned(
+        finding("src/a.py", 2, GUARD, severity="info"),
+        finding("src/a.py", 9, GUARD, severity="info"),
+    )
+    assert outcome.lines == (
+        f"src/a.py:3:5: {GUARD} {MESSAGE}",
+        f"src/a.py:10:5: {GUARD} {MESSAGE}",
+        "Found 2 issues",
+    )
+    assert outcome.status == 1
 
 
 def test_a_rule_without_a_file_count_reports_its_first_finding() -> None:

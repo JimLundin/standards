@@ -1,0 +1,10 @@
+id: defensive-isinstance-return
+language: python
+severity: info
+message: "`if not isinstance(x, T): return err` - use type hints or a schema validator"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  pattern: "if not isinstance($VAR, $TYPE):\n    return $ERR\n"

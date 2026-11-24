@@ -1,0 +1,13 @@
+id: guard-return-none
+valid:
+  - |
+    def f(x):
+        if x is None:
+            return 0
+        return x.y
+invalid:
+  - |
+    def f(x):
+        if x is None:
+            return None
+        return x.y

@@ -1,0 +1,12 @@
+id: manual-float-dot-check
+valid:
+  - |
+    def f(val):
+        return float(val)
+invalid:
+  - |
+    def f(val):
+        out = 0.0
+        if '.' in val:
+            out = float(val)
+        return out

@@ -1,0 +1,11 @@
+id: repeated-dict-key-assignment
+valid:
+  - |
+    def f(d, a, b):
+        d["a"] = g(a)
+        d["b"] = h(b)
+invalid:
+  - |
+    def f(d, a, b):
+        d["a"] = g(a)
+        d["b"] = g(b)

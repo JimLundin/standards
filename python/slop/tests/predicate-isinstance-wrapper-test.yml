@@ -1,0 +1,9 @@
+id: predicate-isinstance-wrapper
+valid:
+  - |
+    def is_text(value: object) -> bool:
+        return isinstance(value, str) and bool(value)
+invalid:
+  - |
+    def is_text(value: object) -> bool:
+        return isinstance(value, str)

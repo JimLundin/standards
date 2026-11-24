@@ -87,3 +87,13 @@ reason = "parsed JSON values are typed object, and `is True` asks for the boolea
 path = "src/checks/core/rust_core.py"
 rule = "slop:is-true-false-strict"
 reason = "parsed JSON values are typed object, and `is True` asks for the boolean itself, where truthiness would also take 1 or a non-empty string"
+
+[[exception]]
+path = "src/checks/core/values.py"
+rule = "slop:isinstance-bool-exclusion"
+reason = "TOML and JSON booleans parse as bool, an int subclass, and the strict integer read must reject them rather than take true as 1"
+
+[[exception]]
+path = "src/checks/core/attribution.py"
+rule = "slop:long-tuple-unpacking"
+reason = "the command's positional operands, named once where its argv is read; a record type for them would only rename the same five values"

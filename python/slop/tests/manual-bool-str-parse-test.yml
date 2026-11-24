@@ -1,0 +1,14 @@
+id: manual-bool-str-parse
+valid:
+  - |
+    def f(val):
+        return {"true": True, "false": False}[val]
+invalid:
+  - |
+    def f(val):
+        out = None
+        if val == 'true':
+            out = True
+        elif val == 'false':
+            out = False
+        return out

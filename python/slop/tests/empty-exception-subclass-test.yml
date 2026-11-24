@@ -1,0 +1,10 @@
+id: empty-exception-subclass
+valid:
+  - |
+    class ParseError(Exception):
+        def __init__(self, line: int) -> None:
+            super().__init__(line)
+invalid:
+  - |
+    class ParseError(Exception):
+        pass

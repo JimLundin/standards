@@ -1,0 +1,11 @@
+id: go-style-err-tuple-return
+valid:
+  - |
+    def f(x):
+        return x, None
+invalid:
+  - |
+    def f(x):
+        if not x:
+            return None, "empty"
+        return x, None

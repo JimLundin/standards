@@ -1,0 +1,32 @@
+id: repeated-isinstance-validation
+language: python
+severity: info
+message: "Repeated `if not isinstance(x, T): raise` - use type hints or a schema validator"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - has:
+      kind: not_operator
+      has:
+        kind: call
+        pattern: isinstance($VAR, $TYPE)
+  - has:
+      kind: block
+      has:
+        kind: raise_statement
+  follows:
+    kind: if_statement
+    all:
+    - has:
+        kind: not_operator
+        has:
+          kind: call
+          regex: isinstance
+    - has:
+        kind: block
+        has:
+          kind: raise_statement
+    stopBy: neighbor

@@ -1,0 +1,14 @@
+id: long-tuple-unpacking
+language: python
+severity: info
+message: "Unpacking 5+ values from a tuple - use a `NamedTuple` or `@dataclass`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: assignment
+  has:
+    kind: pattern_list
+    has:
+      nthChild:
+        position: 5

@@ -1,0 +1,11 @@
+id: long-tuple-unpacking
+valid:
+  - |
+    def f(row):
+        a, b, c, d = row
+        return a + b + c + d
+invalid:
+  - |
+    def f(row):
+        a, b, c, d, e = row
+        return a + b + c + d + e

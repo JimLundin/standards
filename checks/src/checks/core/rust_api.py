@@ -71,25 +71,24 @@ class Crate:
 
 
 def problems(node: object, crate: Crate) -> Iterator[str]:
-    fields = table(node)
-    if "dyn_trait" in fields:
-        traits = entries(table(fields["dyn_trait"]).get("traits"))
-        names = ", ".join(
-            crate.trait_name(table(table(bound).get("trait")))
-            for bound in traits
-        )
-        yield f"takes a trait object `dyn {names}`"
-        return
-    if "function_pointer" in fields:
-        yield "takes a function pointer"
-        return
-    if "trait_bound" in fields:
-        reference = table(table(fields["trait_bound"]).get("trait"))
-        name = crate.trait_name(reference)
-        if name not in ALLOWED:
-            yield f"is bounded by `{name}`"
-    for value in (*fields.values(), *entries(node)):
-        yield from problems(value, crate)
+    match table(node):
+        case {"dyn_trait": dyn_trait}:
+            traits = entries(table(dyn_trait).get("traits"))
+            names = ", ".join(
+                crate.trait_name(table(table(bound).get("trait")))
+                for bound in traits
+            )
+            yield f"takes a trait object `dyn {names}`"
+        case {"function_pointer": _}:
+            yield "takes a function pointer"
+        case fields:
+            if "trait_bound" in fields:
+                reference = table(table(fields["trait_bound"]).get("trait"))
+                name = crate.trait_name(reference)
+                if name not in ALLOWED:
+                    yield f"is bounded by `{name}`"
+            for value in (*fields.values(), *entries(node)):
+                yield from problems(value, crate)
 
 
 def location(item: Mapping[str, object]) -> tuple[str, int]:

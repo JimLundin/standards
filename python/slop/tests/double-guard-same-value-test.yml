@@ -1,0 +1,17 @@
+id: double-guard-same-value
+valid:
+  - |
+    def f(x, y):
+        if not isinstance(x, str):
+            raise TypeError
+        if not y:
+            raise ValueError
+        return x
+invalid:
+  - |
+    def f(x):
+        if not isinstance(x, str):
+            raise TypeError
+        if not x:
+            raise ValueError
+        return x

@@ -1,0 +1,10 @@
+id: manual-bool-str-parse
+language: python
+severity: info
+message: "`if s == 'true': ... elif s == 'false': ...` - use `{'true': True, 'false': False}[s]` or `json.loads(s)`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  pattern: "if $VAL == 'true':\n    $OUT = True\nelif $VAL == 'false':\n    $OUT =\
+    \ False\n"

@@ -1,0 +1,17 @@
+id: return-none-guard-ladder
+valid:
+  - |
+    def f(a, b):
+        if a:
+            return None
+        if b:
+            return 0
+        return 1
+invalid:
+  - |
+    def f(a, b):
+        if a:
+            return None
+        if b:
+            return None
+        return 1

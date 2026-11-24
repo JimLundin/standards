@@ -1,0 +1,34 @@
+id: isinstance-then-bound-check
+language: python
+severity: info
+message: "`if not isinstance(x, int): raise` + `if x < N: raise` - one validator (`ensure_positive_int`) or `Annotated[int, Ge(N)]`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - has:
+      kind: not_operator
+      has:
+        kind: call
+        regex: "^isinstance\\("
+  - has:
+      kind: block
+      has:
+        kind: raise_statement
+  precedes:
+    stopBy: neighbor
+    kind: if_statement
+    all:
+    - has:
+        kind: comparison_operator
+        any:
+        - regex: "^[A-Za-z_][A-Za-z0-9_]*\\s*<\\s*"
+        - regex: "^[A-Za-z_][A-Za-z0-9_]*\\s*<=\\s*"
+        - regex: "^[A-Za-z_][A-Za-z0-9_]*\\s*>\\s*"
+        - regex: "^[A-Za-z_][A-Za-z0-9_]*\\s*>=\\s*"
+    - has:
+        kind: block
+        has:
+          kind: raise_statement

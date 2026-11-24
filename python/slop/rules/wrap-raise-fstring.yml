@@ -1,0 +1,30 @@
+id: wrap-raise-fstring
+language: python
+severity: info
+message: "`except X as e: raise MyError(f'…: {e}') from e` renames exceptions for cosmetics; let the original propagate or catch something specific."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: except_clause
+  all:
+    - regex: '^except\s+(Exception|BaseException|OSError|ValueError|TypeError|RuntimeError|KeyError|IndexError|AttributeError|ArithmeticError)(\s+as\s+\w+)?\s*:'
+    - has:
+        stopBy: neighbor
+        kind: block
+        all:
+          - has:
+              stopBy: neighbor
+              kind: raise_statement
+              has:
+                stopBy: end
+                kind: string
+                regex: '\{[^}]*\}'
+          - not:
+              has:
+                stopBy: neighbor
+                not:
+                  any:
+                    - kind: raise_statement
+                    - kind: comment

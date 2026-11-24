@@ -1,0 +1,12 @@
+id: guard-return-none
+language: python
+severity: info
+message: "`if x is None: return None` followed by another `return` - drop guard, `None` flows naturally"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  pattern: 'if $X is None: return None'
+  precedes:
+    kind: return_statement

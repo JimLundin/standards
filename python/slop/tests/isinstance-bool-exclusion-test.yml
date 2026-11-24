@@ -1,0 +1,9 @@
+id: isinstance-bool-exclusion
+valid:
+  - |
+    def f(x):
+        return isinstance(x, int)
+invalid:
+  - |
+    def f(x):
+        return isinstance(x, bool)

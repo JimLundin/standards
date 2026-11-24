@@ -1,0 +1,13 @@
+id: tuple-value-err-caller-unpack
+valid:
+  - |
+    def f(x):
+        value, rest = parse(x)
+        return value + rest
+invalid:
+  - |
+    def f(x):
+        value, error = parse(x)
+        if error:
+            return error
+        return value

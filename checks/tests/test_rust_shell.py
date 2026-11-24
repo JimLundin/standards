@@ -33,7 +33,9 @@ def package(
     return {
         "name": name,
         "targets": list(items),
-        "metadata": None if layer is None else {"standards": {"layer": layer}},
+        "metadata": {"standards": {"layer": layer}}
+        if layer is not None
+        else None,
     }
 
 

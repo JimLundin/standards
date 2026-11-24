@@ -1,0 +1,9 @@
+id: optional-param-self-getter-fallback
+language: python
+severity: info
+message: "`x = x if x is not None else self.getter()` as a default - drop the optional param and read from `self` directly"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  pattern: "$VAR = $VAR if $VAR is not None else self.$GETTER()"

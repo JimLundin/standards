@@ -1,0 +1,12 @@
+id: generic-with-any
+valid:
+  - |
+    def f(x: dict[str, int]) -> int:
+        return len(x)
+invalid:
+  - |
+    from typing import Any
+
+
+    def f(x: dict[str, Any]) -> int:
+        return len(x)

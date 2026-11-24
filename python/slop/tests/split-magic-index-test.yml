@@ -1,0 +1,9 @@
+id: split-magic-index
+valid:
+  - |
+    def f(s):
+        return s.split()[0]
+invalid:
+  - |
+    def f(s):
+        return s.split()[2]

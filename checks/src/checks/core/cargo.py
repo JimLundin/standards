@@ -59,7 +59,7 @@ def target_kinds(package: Mapping[str, object]) -> FrozenOrderedSet[str]:
 
 def layer(package: Mapping[str, object]) -> object:
     declared = lookup(package, "metadata.standards.layer")
-    return "core" if declared is None else declared
+    return declared if declared is not None else "core"
 
 
 def is_shell(package: Mapping[str, object]) -> bool:

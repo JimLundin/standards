@@ -1,0 +1,15 @@
+id: isinstance-then-bound-check
+valid:
+  - |
+    def f(x):
+        if not isinstance(x, int):
+            raise TypeError
+        return x
+invalid:
+  - |
+    def f(x):
+        if not isinstance(x, int):
+            raise TypeError
+        if x < 0:
+            raise ValueError
+        return x

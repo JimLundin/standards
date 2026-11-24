@@ -1,0 +1,15 @@
+id: raise-guard-ladder
+valid:
+  - |
+    def f(a):
+        if a:
+            raise ValueError
+        return a
+invalid:
+  - |
+    def f(a, b):
+        if a:
+            raise ValueError
+        if b:
+            raise TypeError
+        return a

@@ -1,0 +1,12 @@
+id: manual-count-loop
+valid:
+  - |
+    def f(items):
+        return len(items)
+invalid:
+  - |
+    def f(items):
+        count = 0
+        for _item in items:
+            count += 1
+        return count

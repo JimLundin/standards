@@ -1,0 +1,15 @@
+id: fetchone-none-check
+valid:
+  - |
+    def f(cursor):
+        row = cursor.fetchall()
+        if row is None:
+            return 0
+        return row[0]
+invalid:
+  - |
+    def f(cursor):
+        row = cursor.fetchone()
+        if row is None:
+            return 0
+        return row[0]

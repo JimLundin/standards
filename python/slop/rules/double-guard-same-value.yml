@@ -1,0 +1,15 @@
+id: double-guard-same-value
+language: python
+severity: info
+message: "`if not isinstance(x, T): raise` + `if not x: raise` - collapse to one guard (`or` the conditions or narrow via schema)"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  all:
+  - pattern: "if not isinstance($X, $T):\n    raise $ERR1\n"
+  - precedes:
+      stopBy: neighbor
+      kind: if_statement
+      pattern: "if not $X:\n    raise $ERR2\n"

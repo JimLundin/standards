@@ -1,0 +1,13 @@
+id: if-pass-else-action
+valid:
+  - |
+    def f(x):
+        if not x:
+            g()
+invalid:
+  - |
+    def f(x):
+        if x:
+            pass
+        else:
+            g()

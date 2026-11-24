@@ -1,0 +1,17 @@
+id: verbose-or-return
+language: python
+severity: info
+message: "`if x: return True` - combine with later condition or `return x or ...`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  has:
+    kind: block
+    has:
+      kind: return_statement
+      regex: return True
+  not:
+    has:
+      kind: else_clause

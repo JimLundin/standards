@@ -1,0 +1,18 @@
+id: wrapper-isvalid-oneliner
+language: python
+severity: info
+message: One-line is_valid_X wrapping a regex match/search/fullmatch adds no value
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: function_definition
+  all:
+  - has:
+      kind: identifier
+      regex: "^is_valid"
+  - has:
+      kind: block
+      has:
+        kind: return_statement
+        regex: "bool\\(.*\\.(match|fullmatch|search)\\("

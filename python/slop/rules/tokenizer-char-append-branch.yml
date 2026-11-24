@@ -1,0 +1,15 @@
+id: tokenizer-char-append-branch
+language: python
+severity: info
+message: "Per-char tokenizer branches with `append` + `pos += 1` - use `{char: TokenType}` lookup table"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    pattern: $OBJ.tokens.append($NEW_TOKEN)
+  precedes:
+    kind: expression_statement
+    has:
+      pattern: $OBJ.pos += 1

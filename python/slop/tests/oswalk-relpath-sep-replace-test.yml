@@ -1,0 +1,18 @@
+id: oswalk-relpath-sep-replace
+valid:
+  - |
+    from pathlib import Path
+
+
+    def f(root):
+        for path in Path(root).rglob("*"):
+            g(path.relative_to(root).as_posix())
+invalid:
+  - |
+    import os
+
+
+    def f(root):
+        for base, _dirs, files in os.walk(root):
+            for name in files:
+                g(os.path.relpath(os.path.join(base, name), root).replace(os.sep, "/"))

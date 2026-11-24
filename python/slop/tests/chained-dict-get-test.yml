@@ -1,0 +1,9 @@
+id: chained-dict-get
+valid:
+  - |
+    def f(config):
+        return config["a"]["b"]
+invalid:
+  - |
+    def f(config):
+        return config.get("a").get("b")

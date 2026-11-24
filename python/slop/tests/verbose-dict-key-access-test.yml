@@ -1,0 +1,12 @@
+id: verbose-dict-key-access
+valid:
+  - |
+    def f(d):
+        return d.get("name")
+invalid:
+  - |
+    def f(d):
+        v = None
+        if "name" in d:
+            v = d["name"]
+        return v

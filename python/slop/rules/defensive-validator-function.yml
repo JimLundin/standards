@@ -1,0 +1,34 @@
+id: defensive-validator-function
+language: python
+severity: info
+message: "Function body runs `if not isinstance(...): raise …` plus returns; this is a boundary validator living inside core logic. Validate once at the entrypoint, not per helper."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  all:
+    - has:
+        field: body
+        kind: block
+        has:
+          stopBy: end
+          kind: if_statement
+          any:
+            - pattern: |
+                if not isinstance($V, $T):
+                    raise $$$A
+            - pattern: |
+                if not isinstance($V, ($$$T)):
+                    raise $$$A
+    - has:
+        field: body
+        kind: block
+        has:
+          stopBy: end
+          kind: raise_statement
+          has:
+            stopBy: end
+            kind: string
+            regex: '\{[^}]*\}'

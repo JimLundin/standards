@@ -79,26 +79,28 @@ class Finding:
 
 
 def name_of(node: ast.expr) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    if isinstance(node, ast.Call):
-        return name_of(node.func)
-    return None
+    match node:
+        case ast.Name(id=name) | ast.Attribute(attr=name):
+            return name
+        case ast.Call(func=func):
+            return name_of(func)
+        case _:
+            return None
 
 
 def is_unfrozen_dataclass(decorator: ast.expr) -> bool:
     if name_of(decorator) != "dataclass":
         return False
-    if not isinstance(decorator, ast.Call):
-        return True
-    return not any(
-        keyword.arg == "frozen"
-        and isinstance(keyword.value, ast.Constant)
-        and keyword.value.value is True
-        for keyword in decorator.keywords
-    )
+    match decorator:
+        case ast.Call(keywords=keywords):
+            return not any(
+                keyword.arg == "frozen"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is True
+                for keyword in keywords
+            )
+        case _:
+            return True
 
 
 def mutable_type(annotation: ast.expr) -> ast.expr | None:
@@ -132,18 +134,24 @@ def parameters(arguments: ast.arguments) -> FrozenList[ast.arg]:
 
 def annotations(tree: ast.Module) -> Iterator[ast.expr]:
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            yield from (
-                parameter.annotation
-                for parameter in parameters(node.args)
-                if parameter.annotation is not None
-            )
-        if isinstance(node, ast.ClassDef):
-            yield from (
-                statement.annotation
-                for statement in node.body
-                if isinstance(statement, ast.AnnAssign)
-            )
+        match node:
+            case (
+                ast.FunctionDef(args=arguments)
+                | ast.AsyncFunctionDef(args=arguments)
+            ):
+                yield from (
+                    parameter.annotation
+                    for parameter in parameters(arguments)
+                    if parameter.annotation is not None
+                )
+            case ast.ClassDef(body=body):
+                yield from (
+                    statement.annotation
+                    for statement in body
+                    if isinstance(statement, ast.AnnAssign)
+                )
+            case _:
+                pass
 
 
 def node_annotations(node: ast.AST) -> Iterator[ast.expr]:
@@ -194,17 +202,16 @@ def annotation_node(
 
 
 def is_homogeneous_tuple(node: ast.expr) -> bool:
-    if not (
-        isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Tuple)
-    ):
-        return False
-    elements = node.slice.elts
-    return (
-        name_of(node.value) == "tuple"
-        and len(elements) == ITEM_AND_ELLIPSIS
-        and isinstance(last := elements[-1], ast.Constant)
-        and last.value is Ellipsis
-    )
+    match node:
+        case ast.Subscript(value=value, slice=ast.Tuple(elts=elements)):
+            return (
+                name_of(value) == "tuple"
+                and len(elements) == ITEM_AND_ELLIPSIS
+                and isinstance(last := elements[-1], ast.Constant)
+                and last.value is Ellipsis
+            )
+        case _:
+            return False
 
 
 def membership_sets(tree: ast.Module) -> FrozenOrderedSet[int]:

@@ -1,0 +1,17 @@
+id: manual-find-return-none
+language: python
+severity: info
+message: "`for x in it: if c: return r; return None` - use `next((r for x in it if c), None)`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: for_statement
+  pattern: |
+    for $ITEM in $ITER:
+        if $COND:
+            return $RET
+  precedes:
+    kind: return_statement
+    pattern: return None
+    stopBy: neighbor

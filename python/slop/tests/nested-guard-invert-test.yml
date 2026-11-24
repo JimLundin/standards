@@ -1,0 +1,16 @@
+id: nested-guard-invert
+valid:
+  - |
+    def f(items):
+        for item in items:
+            if not item:
+                continue
+            g(item)
+invalid:
+  - |
+    def f(items):
+        for item in items:
+            if item:
+                if item.done:
+                    continue
+                g(item)

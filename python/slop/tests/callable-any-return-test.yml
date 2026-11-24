@@ -1,0 +1,16 @@
+id: callable-any-return
+valid:
+  - |
+    from collections.abc import Callable
+
+
+    def f(g: Callable[..., int]) -> None:
+        g()
+invalid:
+  - |
+    from collections.abc import Callable
+    from typing import Any
+
+
+    def f(g: Callable[..., Any]) -> None:
+        g()

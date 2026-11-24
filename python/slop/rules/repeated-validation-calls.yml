@@ -1,0 +1,17 @@
+id: repeated-validation-calls
+language: python
+severity: info
+message: "Repeated `validate_*()` calls - loop over a list of validators"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: expression_statement
+  has:
+    kind: call
+    regex: ^validate_
+  follows:
+    kind: expression_statement
+    has:
+      kind: call
+      regex: ^validate_

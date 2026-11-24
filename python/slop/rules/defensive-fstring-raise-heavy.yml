@@ -1,0 +1,11 @@
+id: defensive-fstring-raise-heavy
+language: python
+severity: info
+message: "Function body has 3+ `raise ...(f'...{var}...')` statements; dense per-field validation belongs at the boundary, not in a helper."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  regex: 'raise\s+\w+[^)]*f"[^"]*\{[^}]*\}[\s\S]*raise\s+\w+[^)]*f"[^"]*\{[^}]*\}[\s\S]*raise\s+\w+[^)]*f"[^"]*\{[^}]*\}'

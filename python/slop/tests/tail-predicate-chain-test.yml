@@ -1,0 +1,15 @@
+id: tail-predicate-chain
+valid:
+  - |
+    def f(a, b):
+        if not a:
+            return False
+        return a == b
+invalid:
+  - |
+    def f(a, b):
+        if not a:
+            return False
+        if not b:
+            return False
+        return a == b

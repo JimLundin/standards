@@ -1,0 +1,15 @@
+id: triple-attr-none-default-chain
+language: python
+severity: info
+message: "`x = data.get(k, d1) or d2` double-guards a `.get` miss; pick one default path."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: assignment
+  any:
+    - pattern: |
+        $X = $DATA.get($KEY, $D1) or $D2
+    - pattern: |
+        $X = $DATA.get($KEY) or $DATA.get($KEY2) or $FALLBACK

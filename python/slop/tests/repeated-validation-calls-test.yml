@@ -1,0 +1,11 @@
+id: repeated-validation-calls
+valid:
+  - |
+    def f(x):
+        validate_name(x)
+        check_size(x)
+invalid:
+  - |
+    def f(x):
+        validate_name(x)
+        validate_size(x)

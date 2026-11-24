@@ -1,0 +1,44 @@
+id: return-none-guard-ladder
+language: python
+severity: info
+message: "Back-to-back `if …: return None` guard clauses treat Optional as a pervasive escape hatch; normalize nullability at the boundary."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: if_statement
+  all:
+    - has:
+        field: consequence
+        kind: block
+        all:
+          - has:
+              stopBy: neighbor
+              kind: return_statement
+              regex: '^return\s+None\s*$'
+          - not:
+              has:
+                stopBy: neighbor
+                not:
+                  any:
+                    - kind: return_statement
+                    - kind: comment
+    - precedes:
+        stopBy: neighbor
+        kind: if_statement
+        has:
+          field: consequence
+          kind: block
+          all:
+            - has:
+                stopBy: neighbor
+                kind: return_statement
+                regex: '^return\s+None\s*$'
+            - not:
+                has:
+                  stopBy: neighbor
+                  not:
+                    any:
+                      - kind: return_statement
+                      - kind: comment

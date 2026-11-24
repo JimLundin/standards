@@ -1,0 +1,9 @@
+id: repeated-function-or-chain
+valid:
+  - |
+    def f(a, b, c, d):
+        return any(g(x) for x in (a, b, c, d))
+invalid:
+  - |
+    def f(a, b, c, d):
+        return g(a) or g(b) or g(c) or g(d)

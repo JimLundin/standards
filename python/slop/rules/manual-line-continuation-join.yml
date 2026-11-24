@@ -1,0 +1,9 @@
+id: manual-line-continuation-join
+language: python
+severity: info
+message: "`line += ' ' + part` in loop - collect parts into a list then `' '.join(parts)`"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  pattern: $LINE += " " + $PART

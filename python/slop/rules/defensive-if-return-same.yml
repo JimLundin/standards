@@ -1,0 +1,10 @@
+id: defensive-if-return-same
+language: python
+severity: info
+message: "`if x: return x` - use `return x or None` (or just `return x`)"
+metadata:
+  weight: 1
+  category: slop
+rule:
+  kind: if_statement
+  pattern: "if $X:\n    return $X\n"

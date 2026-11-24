@@ -1,0 +1,10 @@
+id: materialize-then-sort-return
+valid:
+  - |
+    def f(items):
+        return sorted(item.name for item in items)
+invalid:
+  - |
+    def f(items):
+        names = [item.name for item in items]
+        return sorted(names)

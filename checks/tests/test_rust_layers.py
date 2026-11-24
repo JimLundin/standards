@@ -22,7 +22,9 @@ def package(
         "id": f"path+file:///C:/work/{name}#0.1.0",
         "manifest_path": f"C:\\work\\{name}\\Cargo.toml",
         "targets": [{"kind": list(kinds)}],
-        "metadata": None if layer is None else {"standards": {"layer": layer}},
+        "metadata": {"standards": {"layer": layer}}
+        if layer is not None
+        else None,
     }
 
 

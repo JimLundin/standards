@@ -1,0 +1,13 @@
+id: defensive-isinstance-return
+valid:
+  - |
+    def f(x):
+        if isinstance(x, int):
+            return x
+        return "error"
+invalid:
+  - |
+    def f(x):
+        if not isinstance(x, int):
+            return "error"
+        return x

@@ -1,0 +1,17 @@
+id: isinstance-guard-raise
+language: python
+severity: info
+message: "Inline `if not isinstance(x, T): raise …` guards police caller types in core logic; validate at the boundary and trust the type."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: if_statement
+  any:
+    - pattern: |
+        if not isinstance($VALUE, $TYPE):
+            raise $$$ARGS
+    - pattern: |
+        if not isinstance($VALUE, ($$$TYPES)):
+            raise $$$ARGS

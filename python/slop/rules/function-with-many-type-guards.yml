@@ -1,0 +1,34 @@
+id: function-with-many-type-guards
+language: python
+severity: info
+message: "Function has 3+ `if not isinstance / if x is None: raise` guard clauses before doing work; validate at the boundary and trust the type downstream."
+metadata:
+  weight: 1
+  category: slop
+  min_file_count: 2
+rule:
+  kind: function_definition
+  has:
+    field: body
+    kind: block
+    all:
+      - has:
+          stopBy: neighbor
+          kind: if_statement
+          any:
+            - pattern: |
+                if not isinstance($V1, $T1):
+                    raise $$$A1
+            - pattern: |
+                if not isinstance($V1, ($$$T1)):
+                    raise $$$A1
+      - has:
+          stopBy: neighbor
+          kind: if_statement
+          any:
+            - pattern: |
+                if not isinstance($V2, $T2):
+                    raise $$$A2
+            - pattern: |
+                if not isinstance($V2, ($$$T2)):
+                    raise $$$A2
