@@ -3,7 +3,8 @@ lazy from collections.abc import Sequence
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.purity import core_modules, request, run, source
+from checks.core.purity import core_modules, request, run
+from checks.core.python_source import source
 from checks.core.values import Inputs, Request
 from tests.helpers import entry
 

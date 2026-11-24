@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
+from checks.core.python_source import Finding, describe
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -24,12 +25,9 @@ NO_THRESHOLD = 0
 
 
 @dataclass(frozen=True, slots=True)
-class Finding:
-    rule: str
+class Match:
     path: str
-    line: int
-    column: int
-    message: str
+    finding: Finding
     min_file_count: int
 
 
@@ -39,49 +37,49 @@ def min_file_count(record: Mapping[str, object]) -> int:
     return required_integer(record, "metadata.min_file_count")
 
 
-def parse_finding(record: Mapping[str, object]) -> Finding:
-    return Finding(
-        required_string(record, "ruleId"),
-        posix(required_string(record, "file")),
+def parse_match(record: Mapping[str, object]) -> Match:
+    finding = Finding(
         required_integer(record, "range.start.line") + 1,
-        required_integer(record, "range.start.column") + 1,
+        required_integer(record, "range.start.column"),
+        required_string(record, "ruleId"),
         required_string(record, "message"),
-        min_file_count(record),
     )
+    path = posix(required_string(record, "file"))
+    return Match(path, finding, min_file_count(record))
 
 
-def findings(stdin: str, exceptions: Exceptions) -> FrozenList[Finding]:
+def matches(stdin: str, exceptions: Exceptions) -> FrozenList[Match]:
     parsed = (
-        parse_finding(json_object(line))
+        parse_match(json_object(line))
         for line in stdin.splitlines()
         if line.strip()
     )
     return FrozenList(
-        finding
-        for finding in parsed
-        if not exceptions.covers(f"slop:{finding.rule}", finding.path)
+        match
+        for match in parsed
+        if not exceptions.covers(f"slop:{match.finding.rule}", match.path)
     )
 
 
-def reported(found: Sequence[Finding]) -> FrozenList[Finding]:
+def reported(found: Sequence[Match]) -> FrozenList[Match]:
     in_file = FrozenOrderedDict[tuple[str, str], int](
-        Counter((finding.rule, finding.path) for finding in found)
+        Counter((match.finding.rule, match.path) for match in found)
     )
     return FrozenList(
         sorted(
             (
-                finding
-                for finding in found
-                if in_file[finding.rule, finding.path] >= finding.min_file_count
+                match
+                for match in found
+                if in_file[match.finding.rule, match.path]
+                >= match.min_file_count
             ),
-            key=lambda finding: (finding.path, finding.line, finding.column),
+            key=lambda match: (
+                match.path,
+                match.finding.line,
+                match.finding.column,
+            ),
         )
     )
-
-
-def describe(finding: Finding) -> str:
-    location = f"{finding.path}:{finding.line}:{finding.column}"
-    return f"{location}: {finding.rule} {finding.message}"
 
 
 def request(_arguments: Sequence[str], _inputs: Inputs) -> Request:
@@ -89,5 +87,7 @@ def request(_arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 
 def run(_arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    found = findings(inputs.stdin, exceptions_in(inputs))
-    return summarized(FrozenList(describe(f) for f in reported(found)))
+    found = matches(inputs.stdin, exceptions_in(inputs))
+    return summarized(
+        FrozenList(describe(m.path, m.finding) for m in reported(found))
+    )

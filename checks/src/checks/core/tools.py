@@ -8,6 +8,7 @@ from checks.core import (
     immutability,
     policy,
     purity,
+    python_source,
     rust_api,
     rust_core,
     rust_layers,
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 TOOLS = FrozenOrderedDict({
     "core-clippy": (rust_core.clippy_request, rust_core.clippy_run),
     "core-libraries": (rust_layers.request, rust_layers.run),
-    "immutability": (immutability.request, immutability.run),
+    "immutability": (python_source.request, immutability.run),
     "passed": (attribution.request, attribution.run),
     "policy": (policy.request, policy.run),
     "purity": (purity.request, purity.run),
@@ -34,7 +35,7 @@ TOOLS = FrozenOrderedDict({
     "rust-shell": (rust_shell.request, rust_shell.run),
     "rust-shell-share": (rust_shell.request, rust_shell.share_run),
     "slop": (slop.request, slop.run),
-    "structure": (structure.request, structure.run),
+    "structure": (python_source.request, structure.run),
     "units": (units.request, units.run),
     **tool_config.COMMANDS,
 })

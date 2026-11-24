@@ -1,13 +1,21 @@
 import ast
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
-from checks.core.immutability import parameters
-from checks.core.values import Inputs, Outcome, Request, posix, summarized
+from checks.core.exceptions import exceptions_in
+from checks.core.python_source import (
+    Finding,
+    Rule,
+    Source,
+    dotted,
+    parameters,
+    reported,
+    resolve,
+    source,
+)
+from checks.core.values import Inputs, Outcome, summarized
 
 if TYPE_CHECKING:
     from collections.abc import Container, Iterator, Sequence
@@ -15,12 +23,6 @@ if TYPE_CHECKING:
 type Function = ast.FunctionDef | ast.AsyncFunctionDef
 
 RECEIVERS = FrozenOrderedSet(("self", "cls"))
-
-
-@dataclass(frozen=True, slots=True)
-class Rule:
-    code: str
-    advice: str
 
 
 TRIVIAL_WRAPPER = Rule("STR001", "adds no behaviour; inline it")
@@ -44,20 +46,6 @@ class Module:
     definitions: FrozenList[Definition]
 
 
-@dataclass(frozen=True, slots=True)
-class Finding:
-    line: int
-    column: int
-    rule: Rule
-    message: str
-
-
-def package(directory: PurePosixPath, paths: Container[str]) -> FrozenList[str]:
-    if not directory.name or str(directory / "__init__.py") not in paths:
-        return FrozenList()
-    return FrozenList((*package(directory.parent, paths), directory.name))
-
-
 def modules_imported(statement: ast.Import) -> Iterator[tuple[str, str]]:
     for alias in statement.names:
         root = alias.name.split(".", 1)[0]
@@ -65,23 +53,20 @@ def modules_imported(statement: ast.Import) -> Iterator[tuple[str, str]]:
 
 
 def names_imported(
-    statement: ast.ImportFrom, parts: Sequence[str]
+    statement: ast.ImportFrom, origin: Source
 ) -> Iterator[tuple[str, str]]:
-    base = parts[: len(parts) + 1 - statement.level] if statement.level else ()
-    origin = ".".join((*base, *filter(None, (statement.module,))))
+    resolved = resolve(statement, origin)
     for alias in statement.names:
-        name = f"{origin}.{alias.name}" if origin else alias.name
+        name = f"{resolved}.{alias.name}" if resolved else alias.name
         yield alias.asname or alias.name, name
 
 
-def imported(
-    statement: ast.stmt, parts: Sequence[str]
-) -> Iterator[tuple[str, str]]:
+def imported(statement: ast.stmt, origin: Source) -> Iterator[tuple[str, str]]:
     match statement:
         case ast.Import():
             yield from modules_imported(statement)
         case ast.ImportFrom():
-            yield from names_imported(statement, parts)
+            yield from names_imported(statement, origin)
         case _:
             pass
 
@@ -109,30 +94,14 @@ def definitions(
             yield from definitions(statement.body, name)
 
 
-def parsed(path: str, text: str, paths: Container[str]) -> Module:
+def parsed(path: str, text: str) -> Module:
     tree = ast.parse(text, filename=path)
-    file = PurePosixPath(posix(path))
-    parts = package(file.parent, paths)
-    name = (
-        ".".join(parts) or file.parent.name
-        if file.name == "__init__.py"
-        else ".".join((*parts, file.stem))
-    )
+    origin = source(path)
     imports = FrozenOrderedDict(
-        pair for statement in tree.body for pair in imported(statement, parts)
+        pair for statement in tree.body for pair in imported(statement, origin)
     )
+    name = origin.module
     return Module(path, name, imports, FrozenList(definitions(tree.body, name)))
-
-
-def dotted(node: ast.expr) -> str | None:
-    match node:
-        case ast.Name(id=name):
-            return name
-        case ast.Attribute(value=value, attr=attribute):
-            base = dotted(value)
-            return f"{base}.{attribute}" if base is not None else None
-        case _:
-            return None
 
 
 def candidates(name: str, module: Module) -> Iterator[str]:
@@ -224,7 +193,7 @@ def trivial_wrapper(
         return None
     rule = TRIVIAL_WRAPPER
     message = f"`{function.name}` {rule.advice}"
-    return Finding(function.lineno, function.col_offset, rule, message)
+    return Finding(function.lineno, function.col_offset, rule.code, message)
 
 
 def scored(nodes: Sequence[ast.AST], nesting: int) -> int:
@@ -313,7 +282,7 @@ def cognitive_complexity(function: Function) -> Finding | None:
         f"`{function.name}` has cognitive complexity {score},"
         f" above {COGNITIVE_LIMIT}; {rule.advice}"
     )
-    return Finding(function.lineno, function.col_offset, rule, message)
+    return Finding(function.lineno, function.col_offset, rule.code, message)
 
 
 def function_findings(
@@ -331,36 +300,17 @@ def function_findings(
     )
 
 
-def check(
-    module: Module, symbols: Container[str], exceptions: Exceptions
-) -> FrozenList[Finding]:
-    findings = (
+def findings(module: Module, symbols: Container[str]) -> FrozenList[Finding]:
+    return FrozenList(
         finding
         for definition in module.definitions
         for finding in function_findings(definition, module, symbols)
     )
-    return FrozenList(
-        finding
-        for finding in sorted(findings, key=lambda f: (f.line, f.column))
-        if not exceptions.covers(finding.rule.code, module.path)
-    )
-
-
-def describe(path: str, finding: Finding) -> str:
-    location = f"{path}:{finding.line}:{finding.column + 1}"
-    return f"{location}: {finding.rule.code} {finding.message}"
-
-
-def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(FrozenList((EXCEPTIONS, *arguments)))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     exceptions = exceptions_in(inputs)
-    paths = FrozenOrderedSet(posix(path) for path in arguments)
-    modules = FrozenList(
-        parsed(path, inputs.texts[path], paths) for path in arguments
-    )
+    modules = FrozenList(parsed(path, inputs.texts[path]) for path in arguments)
     symbols = FrozenOrderedSet(
         definition.name
         for module in modules
@@ -368,8 +318,10 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
     return summarized(
         FrozenList(
-            describe(module.path, finding)
+            line
             for module in modules
-            for finding in check(module, symbols, exceptions)
+            for line in reported(
+                module.path, findings(module, symbols), exceptions
+            )
         )
     )

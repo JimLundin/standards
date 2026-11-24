@@ -1,20 +1,21 @@
 import ast
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
-from checks.core.values import Inputs, Outcome, Request, summarized
+from checks.core.exceptions import exceptions_in
+from checks.core.python_source import (
+    Finding,
+    Rule,
+    name_of,
+    parameters,
+    reported,
+    unquoted,
+)
+from checks.core.values import Inputs, Outcome, summarized
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-
-
-@dataclass(frozen=True, slots=True)
-class Rule:
-    code: str
-    advice: str
 
 
 UNFROZEN_DATACLASS = Rule("IMM001", "dataclass is not frozen=True")
@@ -70,24 +71,6 @@ MUTABLE_VALUES = (ast.List, ast.Dict, ast.ListComp, ast.DictComp)
 MUTABLE_CONSTRUCTORS = FrozenOrderedSet(("list", "dict", "bytearray"))
 
 
-@dataclass(frozen=True, slots=True)
-class Finding:
-    line: int
-    column: int
-    rule: Rule
-    message: str
-
-
-def name_of(node: ast.expr) -> str | None:
-    match node:
-        case ast.Name(id=name) | ast.Attribute(attr=name):
-            return name
-        case ast.Call(func=func):
-            return name_of(func)
-        case _:
-            return None
-
-
 def is_unfrozen_dataclass(decorator: ast.expr) -> bool:
     if name_of(decorator) != "dataclass":
         return False
@@ -121,15 +104,6 @@ def is_mutable_value(value: ast.expr | None) -> bool:
         and isinstance(value.func, ast.Name)
         and value.func.id in MUTABLE_CONSTRUCTORS
     )
-
-
-def parameters(arguments: ast.arguments) -> FrozenList[ast.arg]:
-    return FrozenList((
-        *arguments.posonlyargs,
-        *arguments.args,
-        *arguments.kwonlyargs,
-        *filter(None, (arguments.vararg, arguments.kwarg)),
-    ))
 
 
 def annotations(tree: ast.Module) -> Iterator[ast.expr]:
@@ -174,14 +148,6 @@ def node_annotations(node: ast.AST) -> Iterator[ast.expr]:
 def every_annotation(tree: ast.Module) -> Iterator[ast.expr]:
     for node in ast.walk(tree):
         yield from node_annotations(node)
-
-
-def unquoted(text: str) -> Iterator[ast.expr]:
-    try:
-        parsed = ast.parse(text, mode="eval")
-    except SyntaxError:
-        return
-    yield parsed.body
 
 
 def annotation_nodes(
@@ -249,7 +215,7 @@ def hash_ordered_sets(tree: ast.Module) -> Iterator[Finding]:
         built = built_set(node)
         if built:
             message = f"{built} {rule.advice}; use FrozenOrderedSet"
-            yield Finding(node.lineno, node.col_offset, rule, message)
+            yield Finding(node.lineno, node.col_offset, rule.code, message)
 
 
 def unordered_annotation(node: ast.expr, place: ast.expr) -> Finding | None:
@@ -265,7 +231,7 @@ def unordered_annotation(node: ast.expr, place: ast.expr) -> Finding | None:
         message = f"`tuple[T, ...]` {rule.advice}; use FrozenList[T]"
     else:
         return None
-    return Finding(place.lineno, place.col_offset, rule, message)
+    return Finding(place.lineno, place.col_offset, rule.code, message)
 
 
 def unordered_annotations(tree: ast.Module) -> Iterator[Finding]:
@@ -285,7 +251,10 @@ def unfrozen_dataclasses(tree: ast.Module) -> Iterator[Finding]:
         if isinstance(node, ast.ClassDef):
             yield from (
                 Finding(
-                    decorator.lineno, decorator.col_offset, rule, rule.advice
+                    decorator.lineno,
+                    decorator.col_offset,
+                    rule.code,
+                    rule.advice,
                 )
                 for decorator in node.decorator_list
                 if is_unfrozen_dataclass(decorator)
@@ -298,51 +267,36 @@ def mutable_annotations(tree: ast.Module) -> Iterator[Finding]:
         found = mutable_type(annotation)
         if found is not None:
             message = f"mutable type `{name_of(found)}` {rule.advice}"
-            yield Finding(found.lineno, found.col_offset, rule, message)
+            yield Finding(found.lineno, found.col_offset, rule.code, message)
 
 
 def mutable_globals(tree: ast.Module) -> Iterator[Finding]:
     rule = MUTABLE_GLOBAL
     yield from (
-        Finding(statement.lineno, statement.col_offset, rule, rule.advice)
+        Finding(statement.lineno, statement.col_offset, rule.code, rule.advice)
         for statement in tree.body
         if isinstance(statement, ast.Assign | ast.AnnAssign)
         and is_mutable_value(statement.value)
     )
 
 
-def check(path: str, text: str, exceptions: Exceptions) -> FrozenList[Finding]:
-    tree = ast.parse(text, filename=path)
-    findings = (
+def findings(tree: ast.Module) -> FrozenList[Finding]:
+    return FrozenList((
         *unfrozen_dataclasses(tree),
         *mutable_annotations(tree),
         *mutable_globals(tree),
         *hash_ordered_sets(tree),
         *unordered_annotations(tree),
-    )
-    return FrozenList(
-        finding
-        for finding in sorted(findings, key=lambda f: (f.line, f.column))
-        if not exceptions.covers(finding.rule.code, path)
-    )
-
-
-def describe(path: str, finding: Finding) -> str:
-    rule = finding.rule
-    location = f"{path}:{finding.line}:{finding.column + 1}"
-    return f"{location}: {rule.code} {finding.message}"
-
-
-def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(FrozenList((EXCEPTIONS, *arguments)))
+    ))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     exceptions = exceptions_in(inputs)
     return summarized(
         FrozenList(
-            describe(path, finding)
+            line
             for path in arguments
-            for finding in check(path, inputs.texts[path], exceptions)
+            for tree in (ast.parse(inputs.texts[path], filename=path),)
+            for line in reported(path, findings(tree), exceptions)
         )
     )

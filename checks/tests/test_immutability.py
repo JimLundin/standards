@@ -1,7 +1,8 @@
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.immutability import request, run
+from checks.core.immutability import run
+from checks.core.python_source import request
 from checks.core.values import Inputs, Request
 from tests.helpers import entry
 

@@ -79,7 +79,6 @@ def push(directory: str) -> bool:
 
 
 def pushed(directory: str) -> bool:
-    """Pushes once, merging origin's notes when the push is refused."""
     landed = git(directory, "push", "-q", "origin", REF).returncode == 0
     if not landed:
         _ = fetch(directory)

@@ -1,13 +1,20 @@
 import ast
 import re
-from dataclasses import dataclass
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.exceptions import EXCEPTIONS, Exceptions, exceptions_in
-from checks.core.immutability import unquoted
+from checks.core.python_source import (
+    Finding,
+    Source,
+    name_of,
+    parameters,
+    reported,
+    resolve,
+    source,
+    unquoted,
+)
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -114,20 +121,6 @@ IMPORTS = "it may import itself, pure standard modules and a PUR001:<module> exc
 ONLY_DATA = "the core's public API takes only data"
 
 
-@dataclass(frozen=True, slots=True)
-class Source:
-    module: str
-    package: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class Finding:
-    line: int
-    column: int
-    rule: str
-    message: str
-
-
 def core_modules(pyproject: str | None) -> FrozenList[str]:
     data = parse_toml(pyproject)
     contracts = entries(
@@ -143,23 +136,6 @@ def core_modules(pyproject: str | None) -> FrozenList[str]:
         for found in LAYER.finditer(str(layers[-1]))
         for name in (found[0],)
     )
-
-
-def source(path: str) -> Source:
-    parts = PurePosixPath(path).with_suffix("").parts
-    if parts and parts[0] == "src":
-        parts = parts[1:]
-    package = bool(parts) and parts[-1] == "__init__"
-    return Source(".".join(parts[:-1] if package else parts), package=package)
-
-
-def resolve(node: ast.ImportFrom, origin: Source) -> str:
-    if node.level == 0:
-        return str(node.module)
-    base = origin.module if origin.package else origin.module.rpartition(".")[0]
-    for _ in range(node.level - 1):
-        base = base.rpartition(".")[0]
-    return ".".join(part for part in (base, node.module) if part)
 
 
 def imported(
@@ -209,22 +185,16 @@ def builtin_findings(tree: ast.Module) -> Iterator[Finding]:
     )
 
 
-def base_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    return node.id if isinstance(node, ast.Name) else None
-
-
 def ports(tree: ast.Module) -> FrozenOrderedSet[str]:
     return FrozenOrderedSet(
         node.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef)
         and (
-            any(base_name(base) in PORT_BASES for base in node.bases)
+            any(name_of(base) in PORT_BASES for base in node.bases)
             or any(
                 keyword.arg == "metaclass"
-                and base_name(keyword.value) == "ABCMeta"
+                and name_of(keyword.value) == "ABCMeta"
                 for keyword in node.keywords
             )
         )
@@ -238,7 +208,7 @@ def names(annotation: ast.expr | None) -> Iterator[str]:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             for parsed in unquoted(node.value):
                 yield from names(parsed)
-        name = base_name(node)
+        name = name_of(node)
         if name:
             yield name
 
@@ -249,13 +219,8 @@ def is_public(name: str) -> bool:
     )
 
 
-def parameters(node: ast.FunctionDef) -> Iterator[ast.expr | None]:
-    arguments = node.args
-    every = (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
-    yield from (argument.annotation for argument in every)
-    for extra in (arguments.vararg, arguments.kwarg):
-        if extra is not None:
-            yield extra.annotation
+def parameter_annotations(node: ast.FunctionDef) -> Iterator[ast.expr | None]:
+    yield from (argument.annotation for argument in parameters(node.args))
 
 
 def bounds(node: ast.FunctionDef | ast.ClassDef) -> Iterator[ast.expr | None]:
@@ -276,7 +241,11 @@ def api_inputs(
 
 def api_input(node: ast.stmt, *, in_class: bool) -> Iterator[ApiInput]:
     if isinstance(node, ast.FunctionDef) and is_public(node.name):
-        yield node.name, node, iter((*parameters(node), *bounds(node)))
+        yield (
+            node.name,
+            node,
+            iter((*parameter_annotations(node), *bounds(node))),
+        )
     elif isinstance(node, ast.ClassDef) and is_public(node.name):
         yield node.name, node, bounds(node)
         yield from api_inputs(node.body, in_class=True)
@@ -332,11 +301,7 @@ def check(
             *builtin_findings(tree),
             *api_findings(tree, local_ports),
         )
-        yield from (
-            f"{path}:{finding.line}:{finding.column + 1}: {finding.rule.partition(':')[0]} {finding.message}"
-            for finding in sorted(findings, key=lambda f: (f.line, f.column))
-            if not exceptions.covers(finding.rule, path)
-        )
+        yield from reported(path, findings, exceptions)
 
 
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:

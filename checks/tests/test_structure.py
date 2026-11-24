@@ -3,7 +3,8 @@ lazy from collections.abc import Mapping
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.structure import request, run
+from checks.core.python_source import request
+from checks.core.structure import run
 from checks.core.values import Inputs, Request
 from tests.helpers import entry
 
@@ -61,6 +62,14 @@ def test_a_wrapper_of_a_function_imported_from_the_scanned_sources() -> None:
         "pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
         "pkg/c.py": "from . import a\n\ndef f(x):\n    return a.g(x)\n",
     }) == (f"pkg/b.py:3:1: {WRAPS}", f"pkg/c.py:3:1: {WRAPS}")
+
+
+def test_a_wrapper_of_a_function_in_a_namespace_package_under_src() -> None:
+    assert findings({
+        "src/pkg/a.py": TARGET,
+        "src/pkg/b.py": "from pkg.a import g\n\ndef f(x):\n    return g(x)\n",
+        "src/pkg/c.py": "from .a import g\n\ndef f(x):\n    return g(x)\n",
+    }) == (f"src/pkg/b.py:3:1: {WRAPS}", f"src/pkg/c.py:3:1: {WRAPS}")
 
 
 @pytest.mark.parametrize(
