@@ -7,6 +7,9 @@ const ambient =
 const boundary = "side effect: keep I/O at the boundary";
 const nondeterministic =
 	"nondeterministic: pass the value in from the boundary";
+const promise = "a Promise: bridge a Promise library with Effect.tryPromise";
+const unvalidated =
+	"unvalidated input: decode it with Schema.decodeUnknown over Schema.fromJsonString";
 const tests = ["**/*.test.{ts,tsx}", "**/test/**"] as const;
 
 export default defineConfig({
@@ -97,6 +100,8 @@ export default defineConfig({
 		"no-restricted-properties": [
 			"error",
 			{ message: nondeterministic, object: "Math", property: "random" },
+			{ message: promise, property: "then" },
+			{ message: unvalidated, object: "JSON", property: "parse" },
 		],
 		// Contradicts unicorn/prefer-ternary.
 		"no-ternary": "off",
@@ -105,9 +110,10 @@ export default defineConfig({
 		// Its default, "always", merges every declaration of a scope into one; each stands alone.
 		"one-var": ["error", "never"],
 		// These forbid syntax for older engines than the standard's target, esnext.
-		"oxc/no-async-await": "off",
 		"oxc/no-optional-chaining": "off",
 		"oxc/no-rest-spread-properties": "off",
+		// Its message asks for await, which oxc/no-async-await bans, and it reports Effect.catch; no-restricted-properties bans then.
+		"promise/prefer-await-to-then": "off",
 		// Its default, a function declaration, contradicts func-style.
 		"react/function-component-definition": [
 			"error",
@@ -120,10 +126,12 @@ export default defineConfig({
 		"react/jsx-filename-extension": ["error", { extensions: [".tsx"] }],
 		// The automatic JSX runtime imports what JSX compiles to, so React needn't be in scope.
 		"react/react-in-jsx-scope": "off",
-		// Contradicts typescript/promise-function-async; typescript/require-await knows a returned promise.
+		// Typescript/require-await, which knows a returned promise, checks async functions in its place.
 		"require-await": "off",
 		// Contradicts typescript/no-non-null-assertion.
 		"typescript/non-nullable-type-assertion-style": "off",
+		// It asks for async, which oxc/no-async-await bans.
+		"typescript/promise-function-async": "off",
 		// A callback's parameter takes its type from the API it's passed to, such as an Effect service, which carries mutable markers.
 		"typescript/prefer-readonly-parameter-types": [
 			"error",
