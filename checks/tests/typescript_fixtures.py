@@ -519,7 +519,7 @@ EXTENDING = """import standard from "#standards/oxlint";
 const config = {
 	extends: [standard],
 	rules: {rules},
-};
+} as const;
 
 export default config;
 """
