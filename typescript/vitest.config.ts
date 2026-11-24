@@ -22,7 +22,8 @@ export default defineConfig(({ mode }: Readonly<ConfigEnv>) => {
       bail,
       coverage: { enabled: full, provider: "v8" as const, reporter: ["text"] },
       provide: { arbitrary },
-      setupFiles: ["./vitest.setup.ts"],
+      // The setup file beside this config, here or in check.sh's copy of it.
+      setupFiles: [new URL("vitest.setup.ts", import.meta.url).href],
       tags: [{ description: "runs only in the full mode", name: "slow" }],
       tagsFilter: full ? [] : ["!slow"],
     },

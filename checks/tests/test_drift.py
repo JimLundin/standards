@@ -723,20 +723,28 @@ def test_an_oxlint_config_left_unresolved_is_checked_for_extends_alone() -> (
 
 
 def test_typescript_project_without_config() -> None:
-    found = tuple(typescript_drift(snapshot({}, TYPESCRIPT_STANDARDS)))
+    # Without its own vitest config, a project's tests run on the standard's.
+    assert tuple(typescript_drift(snapshot({}, TYPESCRIPT_STANDARDS))) == ()
+
+
+def test_a_vite_config_without_the_modes_runs_fewer_cases() -> None:
+    # vitest reads vite.config.ts without a vitest.config.ts, so it is the
+    # project's own vitest config.
+    project = {"vite.config.ts": "export default { test: {} };\n"}
+    found = tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS)))
     assert found == issues(
         (
-            "vitest.config.ts",
+            "vite.config.ts",
             "arbitrary.fast",
             "arbitrary `fast` runs fewer than 10 cases",
         ),
         (
-            "vitest.config.ts",
+            "vite.config.ts",
             "arbitrary.full",
             "arbitrary `full` runs fewer than 1000 cases",
         ),
         (
-            "vitest.config.ts",
+            "vite.config.ts",
             "arbitrary.mutation",
             "arbitrary `mutation` runs fewer than 10 cases",
         ),
