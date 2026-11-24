@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { GreetingJson, greet } from "./index.ts";
 import { describe, expect, it } from "@effect/vitest";
 
@@ -21,6 +21,15 @@ describe("the greeting contract", () => {
 			Schema.decodeUnknownEffect(GreetingJson)('{"name":"Ada"}'),
 			(greeting) => {
 				expect(greeting).toStrictEqual({ name: "Ada" });
+			},
+		),
+	);
+
+	it.effect("rejects a greeting without a name", () =>
+		Effect.map(
+			Effect.exit(Schema.decodeUnknownEffect(GreetingJson)("{}")),
+			(exit) => {
+				expect(Exit.isFailure(exit)).toBe(true);
 			},
 		),
 	);

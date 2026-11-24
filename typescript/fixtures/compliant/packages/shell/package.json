@@ -5,7 +5,7 @@
 	"engines": {
 		"node": ">=26"
 	},
-	"main": "./src/main.ts",
+	"main": "./main.ts",
 	"standards": {
 		"layer": "shell"
 	},
