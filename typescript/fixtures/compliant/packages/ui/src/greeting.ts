@@ -8,13 +8,11 @@ const runtime = Atom.runtime(BrowserKeyValueStore.layerLocalStorage);
 
 // The greeting stored under "greeting", or one for the UI.
 const greeting = runtime.atom(
-	Effect.gen(function* readGreeting() {
-		const store = yield* KeyValueStore.KeyValueStore;
-		const stored = yield* KeyValueStore.toSchemaStore(store, Greeting).get(
-			"greeting",
-		);
-		return greet(Option.getOrElse(stored, () => ({ name: "UI" })));
-	}),
+  Effect.gen(function* readGreeting() {
+    const store = yield* KeyValueStore.KeyValueStore;
+    const stored = yield* KeyValueStore.toSchemaStore(store, Greeting).get("greeting");
+    return greet(Option.getOrElse(stored, () => ({ name: "UI" })));
+  }),
 );
 
 export { greeting, runtime };

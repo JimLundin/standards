@@ -11,9 +11,11 @@ max_line_length = 80
 indent_style = space
 indent_size = 4
 
+# oxfmt's defaults, which it reads from here unless its config sets them.
 [*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css,html}]
-indent_style = tab
-indent_size = 4
+indent_style = space
+indent_size = 2
+max_line_length = 100
 
 [*.{yml,yaml,md}]
 indent_style = space
