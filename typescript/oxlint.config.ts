@@ -27,6 +27,8 @@ export default defineConfig({
 			files: [...tests],
 			rules: {
 				"no-magic-numbers": "off",
+				// A test file's top-level setup belongs in a hook; see require-hook off below.
+				"vitest/require-hook": "error",
 			},
 		},
 		{
@@ -66,6 +68,11 @@ export default defineConfig({
 		"import/no-named-export": "off",
 		// Contradicts import/no-default-export.
 		"import/prefer-default-export": "off",
+		// Effect's constructors are capitalised members of a capitalised module, such as Schema.Struct and Config.String.
+		"new-cap": [
+			"error",
+			{ capIsNewExceptionPattern: String.raw`^[A-Z]\w*\.[A-Z]` },
+		],
 		// Cloudflare's import/consistent-type-specifier-style puts type imports in their own declaration.
 		"no-duplicate-imports": ["error", { allowSeparateTypeImports: true }],
 		"no-restricted-globals": [
@@ -110,6 +117,13 @@ export default defineConfig({
 		"require-await": "off",
 		// Contradicts typescript/no-non-null-assertion.
 		"typescript/non-nullable-type-assertion-style": "off",
+		// A callback's parameter takes its type from the API it's passed to, such as an Effect service, which carries mutable markers.
+		"typescript/prefer-readonly-parameter-types": [
+			"error",
+			{ ignoreInferredTypes: true },
+		],
+		// Effect's data-first combinators, such as Effect.map(self, f), look to it like a callback with a thisArg.
+		"unicorn/no-array-method-this-argument": "off",
 		"vitest/consistent-test-it": ["error", { fn: "it", withinDescribe: "it" }],
 		// Contradicts vitest/require-hook.
 		"vitest/no-hooks": "off",
@@ -120,6 +134,8 @@ export default defineConfig({
 			"error",
 			{ additionalTestBlockFunctions: ["it.effect", "it.prop"] },
 		],
+		// Outside test files a top-level call is an entry point, such as NodeRuntime.runMain; test files turn it on.
+		"vitest/require-hook": "off",
 		// Vitest's testTimeout bounds every test; a test sets its own only to need another.
 		"vitest/require-test-timeout": "off",
 		// Vitest/prefer-describe-function-title names a describe by its function, not a string.
