@@ -338,17 +338,9 @@ def test_a_break_of_each_react_and_jsx_plugin_fails_lint_naming_the_rule(
     # Rules-of-hooks prints under react-hooks, though configured under react.
     # No-array-index-key is a perf rule of react that cloudflare doesn't enable.
     breaks = FrozenList((
-        (
-            "packages/core/src/hooked.tsx",
-            "react-hooks(rules-of-hooks)",
-            HOOKED,
-        ),
+        ("packages/core/src/hooked.tsx", "react-hooks(rules-of-hooks)", HOOKED),
         ("packages/core/src/pictured.tsx", "jsx-a11y(alt-text)", PICTURED),
-        (
-            "packages/core/src/indexed.tsx",
-            "react(no-array-index-key)",
-            INDEXED,
-        ),
+        ("packages/core/src/indexed.tsx", "react(no-array-index-key)", INDEXED),
         (
             "packages/core/src/pressed.tsx",
             "react-perf(jsx-no-new-function-as-prop)",
