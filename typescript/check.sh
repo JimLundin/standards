@@ -30,6 +30,7 @@ versions=(
 	"--tool=api=${pins[TS_MEASURE]}"
 	"--tool=shell=${pins[TS_MEASURE]}"
 	"--tool=shell-share=${pins[TS_MEASURE]}"
+	"--tool=entry=${pins[TS_MEASURE]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
 	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
 )
@@ -52,7 +53,7 @@ if full; then
 fi
 release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
-	--project=exceptions,format,lint,types,unused,api,shell,shell-share,test,test-release,mutation,duplication,volume
+	--project=exceptions,format,lint,types,unused,api,shell,shell-share,entry,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
 # oxfmt finds a project's own config itself, and is given the standard's
@@ -189,6 +190,13 @@ shell_share() {
 	checks typescript-shell-share "$(native "$logs/share.jsonl")"
 }
 
+# A project starts one Node runtime and each ui package one React root, as
+# typescript-measure finds their calls.
+entry() {
+	measured "$logs/entry.jsonl" || return
+	checks typescript-entry "$(native "$logs/entry.jsonl")"
+}
+
 exceptions_unit oxlint_policy
 unit format "last 'Format issues found in above [0-9]+ files?|All matched files use the correct format|No files found'" \
 	oxfmt_format
@@ -214,9 +222,11 @@ fi
 tools_of[api]=typescript-measure
 tools_of[shell]=typescript-measure
 tools_of[shell-share]=typescript-measure
+tools_of[entry]=typescript-measure
 unit api "last 'Found [0-9]+ issues|All checks passed'" api
 unit shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
 unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
+unit entry "last 'Found [0-9]+ issues|[0-9]+ runMain, [0-9]+ createRoot'" entry
 # Vitest runs in the mode of vitest.config.ts that the tier names: fast at
 # step, full, with coverage and the slow tests, at release.
 if [ -f package.json ] && at_least step; then

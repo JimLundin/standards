@@ -6,6 +6,7 @@ type Kind =
   | "case"
   | "cases"
   | "class"
+  | "clause"
   | "closure"
   | "coalesce"
   | "conditional"
@@ -14,15 +15,19 @@ type Kind =
   | "function"
   | "identifier"
   | "if"
+  | "import"
   | "loop"
   | "member"
+  | "namespace"
   | "or"
   | "other"
   | "property"
+  | "specifier"
+  | "string"
   | "switch"
   | "variable";
 
-// A node of a source file's syntax tree, with its children in source order. An identifier's name is its text, and every other node's is "".
+// A node of a source file's syntax tree, with its children in source order. An identifier's or a string literal's name is its text, and every other node's is "".
 interface Syntax {
   readonly kind: Kind;
   readonly name: string;

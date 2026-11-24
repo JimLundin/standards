@@ -290,9 +290,16 @@ def compact(record: Mapping[str, object]) -> str:
     return json.dumps(record, separators=(",", ":"))
 
 
-def test_typescript_measure_records_are_read() -> None:
+def test_typescript_measure_records_are_read_without_entry_points() -> None:
     # Records as typescript-measure prints them, with the layer it adds.
     lines = (
+        compact({
+            "entry": "runMain",
+            "layer": "shell",
+            "line": 5,
+            "path": "packages/shell/main.ts",
+            "root": "packages/shell",
+        }),
         compact({
             "decisions": 3,
             "function": "View",

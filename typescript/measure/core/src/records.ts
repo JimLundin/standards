@@ -1,3 +1,4 @@
+import type { Entry } from "./entries.ts";
 import type { Export } from "./api.ts";
 import type { Measured } from "./decisions.ts";
 import { Schema } from "effect";
@@ -33,8 +34,12 @@ const apiRecords = ({ layer, path, root }: Placement, found: Export): ReadonlyAr
     JSON.stringify({ api, export: found.name, layer, line: found.line, path, root }),
   );
 
+// The record of an entry point a file calls, named by its call; its root is its package.
+const entry = ({ layer, path, root }: Placement, { call, line }: Entry): string =>
+  JSON.stringify({ entry: call, layer, line, path, root });
+
 // The record of a file that couldn't be measured.
 const failure = ({ layer, path, root }: Placement, error: string): string =>
   JSON.stringify({ error, layer, path, root });
 
-export { LayerMap, Placement, apiRecords, failure, fields, record };
+export { LayerMap, Placement, apiRecords, entry, failure, fields, record };

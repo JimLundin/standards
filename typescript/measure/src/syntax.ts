@@ -1,6 +1,6 @@
 import type { Kind, Syntax } from "@standards/measure-core";
 import type { Node, SourceFile } from "typescript/unstable/ast";
-import { isIdentifier, isPrivateIdentifier } from "typescript/unstable/ast/is";
+import { isIdentifier, isPrivateIdentifier, isStringLiteral } from "typescript/unstable/ast/is";
 import { SyntaxKind } from "typescript/unstable/ast";
 
 const LINE_BASE = 1;
@@ -27,12 +27,17 @@ const KINDS: ReadonlyMap<SyntaxKind, Kind> = new Map([
   [SyntaxKind.GetAccessor, "member"],
   [SyntaxKind.Identifier, "identifier"],
   [SyntaxKind.IfStatement, "if"],
+  [SyntaxKind.ImportClause, "clause"],
+  [SyntaxKind.ImportDeclaration, "import"],
+  [SyntaxKind.ImportSpecifier, "specifier"],
   [SyntaxKind.MethodDeclaration, "member"],
+  [SyntaxKind.NamespaceImport, "namespace"],
   [SyntaxKind.PrivateIdentifier, "identifier"],
   [SyntaxKind.PropertyAccessExpression, "property"],
   [SyntaxKind.PropertyDeclaration, "member"],
   [SyntaxKind.QuestionQuestionToken, "coalesce"],
   [SyntaxKind.SetAccessor, "member"],
+  [SyntaxKind.StringLiteral, "string"],
   [SyntaxKind.SwitchStatement, "switch"],
   [SyntaxKind.VariableDeclaration, "variable"],
   [SyntaxKind.WhileStatement, "loop"],
@@ -47,7 +52,7 @@ const childrenOf = (node: Node): ReadonlyArray<Node> => {
 };
 
 const nameOf = (node: Node): string =>
-  isIdentifier(node) || isPrivateIdentifier(node) ? node.text : "";
+  isIdentifier(node) || isPrivateIdentifier(node) || isStringLiteral(node) ? node.text : "";
 
 const converted = (file: SourceFile, node: Node): Syntax => ({
   children: childrenOf(node).map((child) => converted(file, child)),

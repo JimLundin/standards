@@ -14,6 +14,7 @@ from checks.core import (
     rust_shell,
     tool_config,
     typescript_api,
+    typescript_entry,
     typescript_layers,
     units,
 )
@@ -34,6 +35,7 @@ TOOLS = FrozenOrderedDict({
     "rust-shell": (rust_shell.request, rust_shell.run),
     "rust-shell-share": (rust_shell.request, rust_shell.share_run),
     "typescript-api": (typescript_api.request, typescript_api.run),
+    "typescript-entry": (typescript_entry.request, typescript_entry.run),
     "typescript-layers": (typescript_layers.request, typescript_layers.run),
     "typescript-shell": (
         rust_shell.typescript_request,

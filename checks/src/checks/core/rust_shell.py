@@ -36,6 +36,9 @@ COMPLEX = "the shell function"
 SHARED = "the shell makes"
 MOVE = "; move the decisions into the core"
 UNMEASURED = "cannot be measured"
+# typescript-measure's record of an entry point, which the entry unit reads.
+ENTRY = "entry"
+API_RECORD = "api"
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,12 +101,12 @@ def measured(
 def read(
     lines: Sequence[str], roots: Mapping[str, bool], root: str
 ) -> FrozenList[Function | Failure]:
-    # typescript-measure's api records, of the core's exports, are not
-    # functions.
+    # typescript-measure's entry and api records are not functions.
     found = (
         measured(line, roots, root)
         for line in lines
-        if line.startswith("{") and "api" not in parse_json(line)
+        if line.startswith("{")
+        and parse_json(line).keys().isdisjoint((ENTRY, API_RECORD))
     )
     return FrozenList(dict.fromkeys(found))
 
