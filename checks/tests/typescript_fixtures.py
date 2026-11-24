@@ -319,6 +319,45 @@ def test_a_break_of_each_standards_rule_fails_lint_naming_the_rule(
         assert path in findings, path
 
 
+PLAIN_CLASS = """export class Greeter {}
+"""
+# Max-classes-per-file holds each to its own file.
+EFFECT_CLASSES = FrozenOrderedDict({
+    "packages/shell/src/person.ts": (
+        'import { Schema } from "effect";\n\n'
+        'export class Person extends Schema.Class<Person>("Person")({\n'
+        "\tname: Schema.String,\n"
+        "}) {}\n"
+    ),
+    "packages/shell/src/missing.ts": (
+        'import { Data } from "effect";\n\n'
+        'export class Missing extends Data.TaggedError("Missing")<{\n'
+        "\treadonly path: string;\n"
+        "}> {}\n"
+    ),
+    "packages/shell/src/clock.ts": (
+        'import { Context } from "effect";\n\n'
+        "export class Clock extends Context.Service<\n"
+        "\tClock,\n"
+        "\t{ readonly now: number }\n"
+        '>()("Clock") {}\n'
+    ),
+})
+
+
+def test_a_plain_class_fails_lint_and_an_effect_class_passes(
+    fixtures: Fixtures,
+) -> None:
+    plain = "packages/shell/src/greeter.ts"
+    run = fixtures.check("commit", files={plain: PLAIN_CLASS, **EFFECT_CLASSES})
+    findings = run.units["lint"].findings
+    assert run.units["lint"].outcome == "FAIL"
+    assert findings.count("standards(no-plain-class)") == 1
+    assert plain in findings
+    for path in EFFECT_CLASSES:
+        assert path not in findings, findings
+
+
 HOOKED = """import type { ReactElement } from "react";
 import { useState } from "react";
 
