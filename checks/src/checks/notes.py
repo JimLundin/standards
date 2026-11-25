@@ -3,36 +3,19 @@ unit's key, travelling with origin. Fetched notes merge by union, so two
 runs that record at once keep both; a project without origin keeps its
 notes local."""
 
-import subprocess
 lazy from collections.abc import Sequence
 
 from ordered import FrozenList
 
 from checks.core.values import Outcome
+from checks.git import git
 
 REF = "refs/notes/checks"
 FETCHED = "refs/notes/origin/checks"
 STRATEGY = "cat_sort_uniq"
-# Notes commits carry the standards' own identity, so recording needs no
-# git config, as on a CI runner.
-IDENTITY = FrozenList((
-    "-c",
-    "user.name=standards",
-    "-c",
-    "user.email=checks@standards.invalid",
-))
 # A push that origin rejects because another run pushed first is retried
 # after merging that run's notes.
 ATTEMPTS = 3
-
-
-def git(directory: str, *arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ("git", "-C", directory, *IDENTITY, *arguments),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
 
 
 def has_origin(directory: str) -> bool:
@@ -41,7 +24,7 @@ def has_origin(directory: str) -> bool:
 
 def lookup(directory: str) -> FrozenList[str]:
     """The keys with a recorded pass."""
-    listed = git(directory, "notes", f"--ref={REF}", "list").stdout
+    listed = git(directory, "notes", f"--ref={REF}").stdout
     return FrozenList(line.split()[1] for line in listed.splitlines())
 
 
@@ -64,7 +47,7 @@ def fetch(directory: str) -> bool:
     origin or its notes merged."""
     if not has_origin(directory):
         return True
-    if git(directory, "fetch", "-q", "origin", f"+{REF}:{FETCHED}").returncode:
+    if git(directory, "fetch", "origin", f"+{REF}:{FETCHED}").returncode:
         return False
     merge = ("notes", f"--ref={REF}", "merge", "-q", "-s", STRATEGY, FETCHED)
     return git(directory, *merge).returncode == 0
@@ -76,7 +59,7 @@ def push(directory: str) -> bool:
     if not has_origin(directory):
         return True
     for _ in range(ATTEMPTS):
-        if git(directory, "push", "-q", "origin", REF).returncode == 0:
+        if git(directory, "push", "origin", REF).returncode == 0:
             return True
         _ = fetch(directory)
     return False

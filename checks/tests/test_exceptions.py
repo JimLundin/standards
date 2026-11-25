@@ -144,9 +144,15 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
         ("rust", "clippy::shadow_reuse", "attribute"),
         ("rust", "dead_code", "attribute"),
         ("rust", "Dead-Code", ""),
-        ("typescript", "lint/style/noVar", "biome"),
-        ("typescript", "style/noVar", ""),
-        ("go", "lint/x", ""),
+        ("typescript", "lint/typescript/no-floating-promises", "oxlint"),
+        ("typescript", "lint/eslint/no-bitwise", "oxlint"),
+        ("typescript", "lint/standards/no-module-state", "oxlint"),
+        ("typescript", "lint/@nkzw/no-instanceof", "oxlint"),
+        ("typescript", "lint/@scope/plugin/a-rule", "oxlint"),
+        ("typescript", "lint/@/no-instanceof", ""),
+        ("typescript", "lint/no-bitwise", ""),
+        ("typescript", "typescript/no-floating-promises", ""),
+        ("go", "lint/eslint/no-bitwise", ""),
     ],
 )
 def test_kind(language: str, rule: str, expected: str) -> None:

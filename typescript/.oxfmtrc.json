@@ -1,0 +1,5 @@
+{
+  "$schema": "https://unpkg.com/oxfmt@0.80.0/configuration_schema.json",
+  "printWidth": 100,
+  "sortPackageJson": true
+}

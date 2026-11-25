@@ -7,16 +7,16 @@ import os
 import signal
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import IO
 lazy from collections.abc import Sequence
+lazy from pathlib import Path
 
 import pytest
 from ordered import FrozenList
 
 from checks.core.units import pins_of
+from tests.helpers import STANDARDS
 
-STANDARDS = Path(__file__).resolve().parents[2]
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
 # marker, first reading a line from the fifo `HOLD` when set and leaving a

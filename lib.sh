@@ -464,9 +464,14 @@ release_versions() {
 	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
 }
 
+policy() {
+	checks policy "$language" "$(native "$home")" "$@" "${tracked[@]}"
+}
+
+# The exceptions unit runs policy, or the language's command named first,
+# which runs policy with the options it needs.
 exceptions_unit() {
-	unit exceptions "last 'Found [0-9]+ issues|All checks passed'" \
-		checks policy "$language" "$(native "$home")" "${tracked[@]}"
+	unit exceptions "last 'Found [0-9]+ issues|All checks passed'" "${1:-policy}"
 }
 
 # The duplication and volume units of a release, over jscpd's formats and

@@ -29,22 +29,27 @@ rule = "banned-api"
 reason = "lib.sh is tested by running it in fixture workspaces, which only a subprocess can"
 
 [[exception]]
-path = "src/checks/notes.py"
+path = "src/checks/git.py"
+rule = "mutation"
+reason = "its one call runs git with check=False, which equals the default, so mutating that argument can never be caught; ruff requires it written out"
+
+[[exception]]
+path = "src/checks/git.py"
 rule = "banned-api"
 reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
 
 [[exception]]
-path = "src/checks/notes.py"
+path = "src/checks/git.py"
 rule = "suspicious-subprocess-import"
 reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
 
 [[exception]]
-path = "src/checks/notes.py"
+path = "src/checks/git.py"
 rule = "subprocess-without-shell-equals-true"
 reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
 
 [[exception]]
-path = "src/checks/notes.py"
+path = "src/checks/git.py"
 rule = "start-process-with-partial-path"
 reason = "the notes are git refs, which only git can fetch, merge, record and push; it runs git by name from PATH with fixed arguments"
 
@@ -67,3 +72,23 @@ reason = "drives git in fixture repositories by name from PATH, with fixed argum
 path = "tests/test_notes.py"
 rule = "start-process-with-partial-path"
 reason = "drives git in fixture repositories by name from PATH, with fixed arguments"
+
+[[exception]]
+path = "tests/typescript_fixtures.py"
+rule = "suspicious-subprocess-import"
+reason = "drives typescript/check.sh, npm and git in fixture workspaces by name from PATH, as a suite does, with fixed arguments"
+
+[[exception]]
+path = "tests/typescript_fixtures.py"
+rule = "subprocess-without-shell-equals-true"
+reason = "drives typescript/check.sh, npm and git in fixture workspaces by name from PATH, as a suite does, with fixed arguments"
+
+[[exception]]
+path = "tests/typescript_fixtures.py"
+rule = "start-process-with-partial-path"
+reason = "drives typescript/check.sh, npm and git in fixture workspaces by name from PATH, as a suite does, with fixed arguments"
+
+[[exception]]
+path = "tests/typescript_fixtures.py"
+rule = "banned-api"
+reason = "typescript/check.sh is tested by running it on fixture workspaces, which only a subprocess can"

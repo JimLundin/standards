@@ -1,10 +1,10 @@
 import json
-from pathlib import PurePosixPath
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.drift import plugin_paths
 from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
@@ -12,6 +12,7 @@ from checks.core.exceptions import (
     ExceptionEntry,
     exceptions_in,
     kind,
+    oxlint_rule,
 )
 from checks.core.values import (
     Inputs,
@@ -19,14 +20,14 @@ from checks.core.values import (
     Request,
     absolute,
     listing,
-    matches,
-    normalized,
     parse_json,
+    posix,
     strings,
+    table,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 
 def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
@@ -56,46 +57,52 @@ def globs(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return listing(exceptions_in(inputs).paths(arguments[0]))
 
 
-def biome_skips(
-    file: str, entries: Sequence[ExceptionEntry]
-) -> FrozenList[str]:
-    return FrozenList(
-        sorted(
-            entry.rule.removeprefix("lint/")
-            for entry in entries
-            if entry.rule.startswith("lint/")
-            and not entry.rule.startswith("lint/plugin/")
-            and matches(file, entry.path)
-        )
+OXLINT_CONFIG = "node_modules/.cache/standards/oxlint.config.mjs"
+
+
+def oxlint_override(root: str, entry: ExceptionEntry) -> str:
+    rule = oxlint_rule(entry.rule)
+    if not rule:
+        return ""
+    files, key = json.dumps([f"{root}/{entry.path}"]), json.dumps(rule)
+    return f'\t\t{{ files: {files}, rules: {{ {key}: "off" }} }},\n'
+
+
+# A file URL of an absolute path, which Node imports on any platform, such as
+# file:///C:/work/a.ts for a Windows path.
+def file_url(path: str) -> str:
+    drive, rest = (
+        ("", path) if path.startswith("/") else (f"/{path[:2]}", path[2:])
     )
+    return f"file://{drive}{quote(rest)}"
 
 
-def biome_groups(files: Sequence[str], inputs: Inputs) -> Outcome:
-    entries = exceptions_in(inputs).entries
-    groups: FrozenOrderedDict[FrozenList[str], FrozenList[str]] = (
-        FrozenOrderedDict()
+# Oxlint resolves an override's globs against its config's folder, which
+# here is not the project root, and matches a file outside that folder by
+# its absolute path, so each glob is anchored at the project root.
+def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    *flags, path = arguments
+    root = posix(inputs.cwd)
+    config = json.dumps(file_url(absolute(path, inputs.cwd)))
+    options = (
+        "\toptions: { ...config.options, typeAware: false },\n"
+        if "--untyped" in flags
+        else ""
     )
-    for file in files:
-        skips = biome_skips(file, entries)
-        known = groups.get(skips, FrozenList())
-        groups |= {skips: FrozenList((*known, file))}
-    return listing(
-        FrozenList(
-            "|".join((" ".join(skips), *members))
-            for skips, members in groups.items()
-        )
+    overrides = "".join(
+        oxlint_override(root, entry) for entry in exceptions_in(inputs).entries
     )
-
-
-def biome_plugins(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    folder = PurePosixPath(absolute(arguments[0], inputs.cwd)).parent
-    return listing(
-        FrozenList(
-            f"{PurePosixPath(plugin).stem}|{normalized(f'{folder}/{plugin}')}"
-            for plugin in plugin_paths(
-                parse_json(inputs.texts.get(arguments[0]))
-            )
-        )
+    text = (
+        f"import config from {config};\n\n"
+        "export default {\n"
+        "\textends: [config],\n"
+        f"{options}"
+        f"\toverrides: [\n{overrides}\t],\n"
+        "};\n"
+    )
+    return Outcome(
+        FrozenList((OXLINT_CONFIG,)),
+        writes=FrozenOrderedDict({OXLINT_CONFIG: text}),
     )
 
 
@@ -122,17 +129,46 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class StrykerConfig:
+    fields: Mapping[str, object]
+    mutate: FrozenList[str]
+    vitest: Mapping[str, object]
+
+
+def stryker_config_of(text: str | None) -> StrykerConfig:
+    fields = parse_json(text)
+    return StrykerConfig(
+        fields, strings(fields.get("mutate")), table(fields.get("vitest"))
+    )
+
+
 def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     excepted = exceptions_in(inputs).paths(MUTATION)
     if not excepted:
         return Outcome()
-    config = parse_json(inputs.texts.get(arguments[0]))
+    config = stryker_config_of(inputs.texts.get(arguments[0]))
     return listing((
-        ",".join((
-            *strings(config.get("mutate")),
-            *(f"!{glob}" for glob in excepted),
-        )),
+        ",".join((*config.mutate, *(f"!{glob}" for glob in excepted))),
     ))
+
+
+STRYKER_CONFIG = "node_modules/.cache/standards/stryker.config.json"
+
+
+# Stryker's vitest runner reads the vitest config that `vitest.configFile`
+# names, so a copy of the config names the one that applies.
+def stryker_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    path, vitest_config = arguments
+    config = stryker_config_of(inputs.texts.get(path))
+    copy = {
+        **config.fields,
+        "vitest": {**config.vitest, "configFile": vitest_config},
+    }
+    return Outcome(
+        FrozenList((STRYKER_CONFIG,)),
+        writes=FrozenOrderedDict({STRYKER_CONFIG: json.dumps(copy)}),
+    )
 
 
 def nextest_config(_: Sequence[str], inputs: Inputs) -> Outcome:
@@ -168,10 +204,10 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "ruff-config": (exceptions_only, ruff_config),
         "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
-        "biome-groups": (exceptions_only, biome_groups),
-        "biome-plugins": (with_named, biome_plugins),
+        "oxlint-config": (exceptions_only, oxlint_config),
         "filter-mutmut": (with_stdin, filter_mutmut),
         "stryker-mutate": (with_named, stryker_mutate),
+        "stryker-config": (with_named, stryker_config),
         "nextest-config": (exceptions_only, nextest_config),
     })
 )

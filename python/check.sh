@@ -42,7 +42,10 @@ mutants() {
 		awk '{ printf "%s%s %s", s, $2, $1; s = ", " }'
 }
 
+# mutmut keeps a mutant's result while its function is unchanged, even when
+# the tests changed, so each run starts without the last one's mutants.
 mutate() {
+	rm -rf mutants
 	uv run --frozen -q mutmut run || return
 	local remaining
 	remaining=$(uv run --frozen -q mutmut results | checks filter-mutmut)

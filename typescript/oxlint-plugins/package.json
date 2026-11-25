@@ -1,0 +1,18 @@
+{
+  "name": "@standards/oxlint-plugins",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "devDependencies": {
+    "@effect/platform-node": "4.1.5",
+    "@effect/vitest": "4.1.5",
+    "@oxlint/plugins": "1.95.0",
+    "@vitest/coverage-v8": "5.1.1",
+    "effect": "4.1.5",
+    "oxlint": "1.95.0",
+    "vitest": "5.1.1"
+  },
+  "engines": {
+    "node": ">=26"
+  }
+}

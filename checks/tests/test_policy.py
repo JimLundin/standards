@@ -90,6 +90,53 @@ def test_flaky_tests_are_named_not_tracked_paths() -> None:
     )
 
 
+def test_policy_rejects_an_oxlint_exception_for_no_tracked_file() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.ts", "lint/eslint/no-bitwise")
+        + entry("gone/*.ts", "lint/typescript/no-floating-promises")
+    }
+    outcome = run(("typescript", STD, "src/a.ts"), inputs(texts))
+    assert lines(outcome) == (
+        "exceptions.toml (gone/*.ts, lint/typescript/no-floating-promises): path matches no tracked file",
+        "Found 1 issues",
+    )
+
+
+RESOLVED = (
+    "--resolved=oxlint.config.ts=/logs/project.json",
+    "--resolved=typescript/oxlint.config.ts=/logs/standard.json",
+)
+
+
+def test_request_lists_the_resolved_configs() -> None:
+    paths = request(("typescript", STD, *RESOLVED, "a.ts"), Inputs()).paths
+    assert paths[-2:] == ("/logs/project.json", "/logs/standard.json")
+    assert "a.ts" in paths
+    assert not any(path.startswith("--") for path in paths)
+
+
+def test_policy_reports_drift_between_resolved_oxlint_configs() -> None:
+    texts = {
+        "oxlint.config.ts": (
+            'import standard from "#standards/oxlint";\n'
+            "export default { extends: [standard] };\n"
+        ),
+        "/logs/project.json": '{"rules": {"no-bitwise": "warn"}}',
+        "/logs/standard.json": '{"rules": {"no-bitwise": "deny"}}',
+    }
+    outcome = run(("typescript", STD, *RESOLVED), inputs(texts))
+    assert lines(outcome)[0] == (
+        "oxlint.config.ts: rules.eslint/no-bitwise is `warn`, weaker than"
+        " `deny` (exception rule `drift:rules.eslint/no-bitwise`)"
+    )
+
+
+def test_a_resolved_config_s_file_may_hold_an_equals_sign() -> None:
+    resolved = ("--resolved=oxlint.config.ts=/logs/a=b.json",)
+    paths = request(("typescript", STD, *resolved), Inputs()).paths
+    assert paths[-1] == "/logs/a=b.json"
+
+
 def test_policy_ignores_attributes_outside_rust() -> None:
     texts = {
         "exceptions.toml": entry("a.ts", "lint/style/noVar"),

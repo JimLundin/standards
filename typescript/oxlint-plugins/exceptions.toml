@@ -1,0 +1,9 @@
+[[exception]]
+path = "index.ts"
+rule = "lint/import/no-default-export"
+reason = "Oxlint loads a JS plugin from its module's default export"
+
+[[exception]]
+path = "rules/*.ts"
+rule = "lint/typescript/prefer-readonly-parameter-types"
+reason = "a rule's context and AST nodes are @oxlint/plugins' mutable types, which a rule can't narrow to readonly"

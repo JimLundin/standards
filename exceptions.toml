@@ -1,7 +1,7 @@
 # The only place to relax a check. Suppression comments in code and weakened
 # tool configs fail the exceptions step. Each entry needs a path glob, a rule
 # and a reason. Rules are tool rule names (banned-api, IMM002,
-# clippy::shadow_reuse, lint/style/noRestrictedGlobals, PUR003 or PUR001:attrs
+# clippy::shadow_reuse, lint/eslint/no-restricted-globals, PUR003 or PUR001:attrs
 # for one module), "mutation", "unused", "api" (a Rust file whose public
 # items may take more than data), "shell" (a Rust shell file whose functions
 # may make more decisions, or Cargo.toml for the shell's share of them),
