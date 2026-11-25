@@ -4,7 +4,6 @@ from ordered import FrozenOrderedDict
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import (
     attribute_lints,
-    is_source,
     python_markers,
     rust_attributes,
     suppressions,
@@ -13,29 +12,6 @@ from checks.core.suppressions import (
 )
 
 INSTEAD = "; add an entry to exceptions.toml instead"
-
-
-@pytest.mark.parametrize(
-    ("language", "file", "expected"),
-    [
-        ("python", "a.py", True),
-        ("python", "a.pyw", True),
-        ("python", "a.pyi", False),
-        ("rust", "a.rs", True),
-        ("rust", "a.py", False),
-        ("typescript", "a.ts", True),
-        ("typescript", "a.tsx", True),
-        ("typescript", "a.mts", True),
-        ("typescript", "a.cts", True),
-        ("typescript", "a.js", True),
-        ("typescript", "a.jsx", True),
-        ("typescript", "a.mjs", True),
-        ("typescript", "a.json", False),
-        ("go", "a.go", False),
-    ],
-)
-def test_is_source(language: str, file: str, *, expected: bool) -> None:
-    assert is_source(language, file) is expected
 
 
 @pytest.mark.parametrize(

@@ -92,3 +92,18 @@ reason = "drives typescript/check.sh, npm and git in fixture workspaces by name 
 path = "tests/typescript_fixtures.py"
 rule = "banned-api"
 reason = "typescript/check.sh is tested by running it on fixture workspaces, which only a subprocess can"
+
+[[exception]]
+path = "src/checks/core/comments.py"
+rule = "PUR001:tree_sitter"
+reason = "tree-sitter parses source text into a syntax tree and does no I/O; it is how the core tells a Rust or TypeScript comment from a string"
+
+[[exception]]
+path = "src/checks/core/comments.py"
+rule = "PUR001:tree_sitter_rust"
+reason = "the Rust grammar for tree-sitter, a pure parser that does no I/O"
+
+[[exception]]
+path = "src/checks/core/comments.py"
+rule = "PUR001:tree_sitter_typescript"
+reason = "the TypeScript and TSX grammars for tree-sitter, a pure parser that does no I/O"

@@ -2,9 +2,10 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks.core.comments import is_source
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
 from checks.core.exceptions import EXCEPTIONS, exceptions_in, validate
-from checks.core.suppressions import is_source, suppressions, used_attributes
+from checks.core.suppressions import suppressions, used_attributes
 from checks.core.values import (
     Inputs,
     Outcome,
