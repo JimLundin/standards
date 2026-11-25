@@ -355,6 +355,16 @@ def rust_lint_drift(
                     f"{key}.{name} is weaker than `{level(value)}`",
                     f"set it to `{level(value)}`",
                 )
+            elif needed == RANKS["allow"] and current != needed:
+                yield drift(
+                    "Cargo.toml",
+                    f"{key}.{name}",
+                    (
+                        f"{key}.{name} is stricter than the standard's `allow`,"
+                        " which the comment ban needs"
+                    ),
+                    "set it to `allow`",
+                )
         yield from (
             drift(
                 "Cargo.toml",
