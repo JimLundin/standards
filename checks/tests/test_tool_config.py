@@ -267,21 +267,25 @@ def test_globs_lists_the_paths_an_exception_of_the_rule_covers() -> None:
     )
 
 
-def test_stryker_mutate_skips_the_shell_files_it_is_given() -> None:
+def test_stryker_mutate_skips_the_shell_and_ui_files_of_the_layer_map() -> None:
     texts = {
         "exceptions.toml": entry("src/skip.ts", "mutation"),
         "stryker.json": json.dumps({"mutate": ["src/**"]}),
-        "shell.txt": "packages/shell/main.ts\npackages/ui/src/view.tsx\n",
+        "layers.tsv": (
+            "shell\tpackages/shell\tpackages/shell/main.ts\n"
+            "core\tpackages/core\tpackages/core/src/index.ts\n"
+            "ui\tpackages/ui\tpackages/ui/src/view.tsx\n"
+        ),
     }
     assert request(
-        ("stryker-mutate", "stryker.json", "shell.txt"), Inputs()
-    ) == Request(FrozenList(("exceptions.toml", "stryker.json", "shell.txt")))
+        ("stryker-mutate", "stryker.json", "layers.tsv"), Inputs()
+    ) == Request(FrozenList(("exceptions.toml", "stryker.json", "layers.tsv")))
     assert lines(
-        run(("stryker-mutate", "stryker.json", "shell.txt"), inputs(texts))
+        run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
     ) == (
         "src/**,!src/skip.ts,!packages/shell/main.ts,!packages/ui/src/view.tsx",
     )
     del texts["exceptions.toml"]
     assert lines(
-        run(("stryker-mutate", "stryker.json", "shell.txt"), inputs(texts))
+        run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
     ) == ("src/**,!packages/shell/main.ts,!packages/ui/src/view.tsx",)

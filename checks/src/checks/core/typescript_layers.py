@@ -24,6 +24,9 @@ LAYERS = FrozenOrderedSet(("core", "shell", "ui"))
 UNDECLARED = "core"
 LAYER = "standards.layer"
 USE = 'use "core", "shell" or "ui"'
+# The layers outside the core, whose files the thin-shell rules measure and
+# mutation testing skips.
+OUTER_LAYERS = FrozenOrderedSet(("shell", "ui"))
 
 PURE = FrozenList((
     "Array",
@@ -93,6 +96,16 @@ class Package:
 class Placement:
     file: str
     package: Package
+
+
+@dataclass(frozen=True, slots=True)
+class Mapped:
+    """A line of the layer map: a file's layer, its package's folder ("." at
+    the root) and its path."""
+
+    layer: str
+    root: str
+    path: str
 
 
 def folders(file: str) -> FrozenList[str]:
@@ -220,6 +233,28 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             ))
             for placement in placed
         )
+    )
+
+
+def mapped_line(line: str) -> Mapped | None:
+    match line.split("\t"):
+        case [layer, root, path]:
+            return Mapped(layer, root, path)
+        case _:
+            return None
+
+
+def layer_map(text: str) -> FrozenList[Mapped]:
+    return FrozenList(
+        item
+        for line in text.splitlines()
+        if (item := mapped_line(line)) is not None
+    )
+
+
+def outer_files(text: str) -> FrozenList[str]:
+    return FrozenList(
+        item.path for item in layer_map(text) if item.layer in OUTER_LAYERS
     )
 
 

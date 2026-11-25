@@ -170,15 +170,19 @@ oxfmt_format() {
 		"${oxfmt_config[@]}" "${formatted[@]}"
 }
 
-# typescript-measure counts the decisions of each function of the layer map
-# of the project's code, without its tests and tool configs, into `$2`. The
-# shell's and the UI's files, which mutation testing skips, are written to
-# shell-files.txt.
-measured() {
+# The layer map of the project's code, without its tests and tool configs,
+# into layers.tsv.
+layer_map() {
 	checks typescript-layers --code "${scripts[@]}" >"$logs/layers.tsv" || {
 		cat "$logs/layers.tsv"
 		return 1
 	}
+}
+
+# typescript-measure counts the decisions of each function of the layer map
+# into `$1`.
+measured() {
+	layer_map || return
 	typescript-measure . "$(native "$logs/layers.tsv")" >"$1"
 }
 
@@ -190,7 +194,7 @@ api() {
 
 shell() {
 	measured "$logs/decisions.jsonl" || return
-	checks typescript-shell "$(native "$logs/decisions.jsonl")" "$(native "$logs/shell-files.txt")"
+	checks typescript-shell "$(native "$logs/decisions.jsonl")"
 }
 
 shell_share() {
@@ -295,10 +299,10 @@ if full; then
 		stryker_config=$standards/stryker.config.json
 		stryker_given=$stryker_config
 	fi
-	if ! dry && [ ! -f "$logs/shell-files.txt" ] && command -v typescript-measure >/dev/null; then
-		shell >/dev/null 2>&1
-	fi
-	mutate=$(checks stryker-mutate "$(native "$stryker_config")" "$(native "$logs/shell-files.txt")")
+	# Mutation testing skips the shell's and the UI's files, from the layer
+	# map.
+	layer_map >/dev/null
+	mutate=$(checks stryker-mutate "$(native "$stryker_config")" "$(native "$logs/layers.tsv")")
 	if [ -n "$mutate" ]; then
 		mutation+=(--mutate "$mutate")
 	fi

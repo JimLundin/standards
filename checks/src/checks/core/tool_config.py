@@ -162,11 +162,12 @@ def stryker_config_of(text: str | None) -> StrykerConfig:
 
 def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     """Stryker's mutate globs without the files of mutation exceptions and,
-    from the file the second argument names, the shell's files."""
+    from the layer map the second argument names, the shell's and the UI's
+    files."""
     excepted = (
         *exceptions_in(inputs).paths(MUTATION),
         *(
-            inputs.texts.get(arguments[1], "").splitlines()
+            typescript_layers.outer_files(inputs.texts.get(arguments[1], ""))
             if len(arguments) > 1
             else ()
         ),
