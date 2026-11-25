@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
+from checks.core.comments import UNSAFE
 from checks.core.exceptions import COMMENT, Exceptions, Issue
 from checks.core.suppressions import is_suppression
 
@@ -21,7 +22,6 @@ TYPE_COMMENT = re.compile(r"#\s*type\s*:")
 DIRECTIVE = re.compile(r"///\s*<reference\b")
 LICENCE = re.compile(r"SPDX-License-Identifier|Copyright")
 SAFETY = re.compile(r"(?://|/\*)\s*SAFETY:")
-UNSAFE = "unsafe_block"
 
 
 def blocks(found: FrozenList[Comment]) -> Iterator[FrozenList[Comment]]:

@@ -83,10 +83,8 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     language = operands(arguments)[0]
     snapshot = snapshot_of(arguments, inputs)
     exceptions = exceptions_in(inputs)
-    libraries = library_files(
-        parse_json(inputs.texts.get(option(arguments, "--metadata="))),
-        snapshot.files,
-    )
+    metadata = (inputs.texts.get(file) for file in metadata_file(arguments))
+    libraries = library_files(parse_json(next(metadata, None)), snapshot.files)
     parsed = sources(language, snapshot.project, libraries)
     attributes = used_attributes(parsed)
     drifted = FrozenList(
