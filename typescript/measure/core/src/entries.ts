@@ -1,4 +1,4 @@
-import { refersTo, resolver } from "./imports.ts";
+import { bindings, refersTo, resolved } from "./imports.ts";
 import type { Reference } from "./imports.ts";
 import type { Syntax } from "./syntax.ts";
 
@@ -38,9 +38,9 @@ const expressions = (node: Syntax): ReadonlyArray<Syntax> => {
 
 // Each use of an entry point in a source file, through the imports of its top level, in source order.
 const entries = (file: Syntax): ReadonlyArray<Entry> => {
-  const resolve = resolver(file);
+  const known = bindings(file);
   return expressions(file).flatMap((node) => {
-    const reference = resolve(node);
+    const reference = resolved(known, node);
     return reference === undefined
       ? []
       : ENTRIES.flatMap(([call, entry]) =>

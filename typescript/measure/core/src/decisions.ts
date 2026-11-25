@@ -1,6 +1,6 @@
+import type { Binding, Reference } from "./imports.ts";
 import type { Kind, Syntax } from "./syntax.ts";
-import type { Reference, Resolve } from "./imports.ts";
-import { refersTo, resolver } from "./imports.ts";
+import { bindings, refersTo, resolved } from "./imports.ts";
 
 // A function, or a module's own statements, with the decisions written in it and its closures.
 interface Measured {
@@ -57,8 +57,8 @@ const begins = (node: Syntax): boolean => {
 };
 
 // Whether a call's callee names a combinator that branches, through the file's imports.
-const branches = ({ children: [target] }: Syntax, resolve: Resolve): boolean => {
-  const reference = target === undefined ? undefined : resolve(target);
+const branches = ({ children: [target] }: Syntax, known: ReadonlyArray<Binding>): boolean => {
+  const reference = target === undefined ? undefined : resolved(known, target);
   return (
     reference !== undefined && COMBINATORS.some((combinator) => refersTo(reference, combinator))
   );
@@ -70,11 +70,11 @@ const cases = (node: Syntax): number =>
     .flatMap((block) => block.children)
     .filter((child) => child.kind === "case").length;
 
-const own = (node: Syntax, resolve: Resolve): boolean =>
+const own = (node: Syntax, known: ReadonlyArray<Binding>): boolean =>
   WRITTEN.has(node.kind) ||
   (node.kind === "switch" && cases(node) >= MANY) ||
   (node.kind === "binary" && begins(node)) ||
-  (node.kind === "call" && branches(node, resolve));
+  (node.kind === "call" && branches(node, known));
 
 const opens = (node: Syntax, parent: Kind, top: boolean): boolean =>
   node.kind === "function" ||
@@ -98,14 +98,14 @@ const summed = (tallies: ReadonlyArray<Tally>, decisions: number): Tally => ({
 // The decisions a node leaves to the function it's in, and the functions it opens, outermost first, with the combinators its file imports.
 type Visit = (node: Syntax, parent: Kind, top: boolean) => Tally;
 
-const visitor = (resolve: Resolve): Visit => {
+const visitor = (known: ReadonlyArray<Binding>): Visit => {
   const visited: Visit = (node, parent, top) => {
     const opened = opens(node, parent, top);
     const inner = summed(
       node.children.map((child) =>
         visited(child, node.kind, top && !opened && !ENCLOSED.has(child.kind)),
       ),
-      Number(own(node, resolve)),
+      Number(own(node, known)),
     );
     return opened
       ? { decisions: NONE, functions: [named(node, inner.decisions), ...inner.functions] }
@@ -116,7 +116,7 @@ const visitor = (resolve: Resolve): Visit => {
 
 // Each function of a source file with its decisions, after its module's own statements if they make any.
 const functions = (file: Syntax): ReadonlyArray<Measured> => {
-  const { decisions, functions: found } = visitor(resolver(file))(file, "other", true);
+  const { decisions, functions: found } = visitor(bindings(file))(file, "other", true);
   const module: ReadonlyArray<Measured> =
     decisions > NONE ? [{ decisions, line: FIRST_LINE, name: MODULE }] : [];
   return [...module, ...found];

@@ -59,20 +59,19 @@ const spelled = (node: Syntax): ReadonlyArray<string> => {
   return first !== undefined && name !== undefined ? [...head, name.name] : [];
 };
 
-type Resolve = (node: Syntax) => Reference | undefined;
-
-// The export an identifier or a property access names through the imports of a file's top level, called or not, or undefined for any other expression and for a name no import binds.
-const resolver = (file: Syntax): Resolve => {
-  const bindings = file.children
+// The names the imports of a file's top level bind.
+const bindings = (file: Syntax): ReadonlyArray<Binding> =>
+  file.children
     .filter((child) => child.kind === "import")
     .flatMap((declaration) => imported(declaration));
-  return (node) => {
-    const [local, ...rest] = spelled(node);
-    const binding = bindings.find((each) => each.local === local);
-    return binding === undefined
-      ? undefined
-      : { module: binding.module, path: [...binding.names, ...rest] };
-  };
+
+// The export an identifier or a property access names through a file's bindings, called or not, or undefined for any other expression and for a name no import binds.
+const resolved = (known: ReadonlyArray<Binding>, node: Syntax): Reference | undefined => {
+  const [local, ...rest] = spelled(node);
+  const binding = known.find((each) => each.local === local);
+  return binding === undefined
+    ? undefined
+    : { module: binding.module, path: [...binding.names, ...rest] };
 };
 
 const dotted = (path: ReadonlyArray<string>): string => path.join(".");
@@ -81,5 +80,5 @@ const dotted = (path: ReadonlyArray<string>): string => path.join(".");
 const refersTo = (reference: Reference, { module, path }: Reference): boolean =>
   reference.module === module && dotted(reference.path) === dotted(path);
 
-export { refersTo, resolver };
-export type { Reference, Resolve };
+export { bindings, refersTo, resolved };
+export type { Binding, Reference };
