@@ -17,9 +17,13 @@ from checks.core.rust_shell import (
     targets,
 )
 from checks.core.values import Inputs, Request, parse_json
-from tests.helpers import entry
+from tests.helpers import assert_findings_name_the_fix, entry
 
-MOVE = "; move the decisions into the core"
+MOVE = (
+    "; fix: move the decisions into pure functions of the core and call them"
+    " from the shell, or, if it can't apply, a `shell` exception with its"
+    " reason"
+)
 ROOT = "C:\\work"
 
 
@@ -81,6 +85,7 @@ def outcome(
     if exceptions is not None:
         texts |= {"exceptions.toml": exceptions}
     result = run(("m.json", "d.jsonl", "files.txt"), Inputs(texts))
+    assert_findings_name_the_fix(result)
     return result.lines, result.status, result.writes["files.txt"]
 
 
@@ -91,6 +96,7 @@ def shared(
     if exceptions is not None:
         texts |= {"exceptions.toml": exceptions}
     result = share_run(("m.json", "d.jsonl"), Inputs(texts))
+    assert_findings_name_the_fix(result)
     return result.lines, result.status
 
 
@@ -224,7 +230,11 @@ def test_unmeasured_files_fail_unless_excepted() -> None:
     broken = failure(f"{ROOT}\\src\\gen.rs", "No such file")
     lines, status, _ = outcome(broken, shell("src/main.rs", 1, 1))
     assert lines == (
-        "src/gen.rs: cannot be measured: No such file",
+        (
+            "src/gen.rs: cannot be measured: No such file; fix: make the file"
+            " parse as Rust so rust-decisions measures it, or, if it can't"
+            " apply, a `shell` exception with its reason"
+        ),
         "Found 1 issues",
     )
     assert status == 1

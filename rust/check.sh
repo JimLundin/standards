@@ -215,7 +215,7 @@ batch lint "last '[0-9]+ previous errors?|Finished'" lint "${members[@]}"
 if ((listed != 0)); then
 	line core FAIL "${layering:-cargo metadata failed}"
 	failed+=(core)
-	skipped api "no libraries"
+	skipped api "no libraries, as cargo metadata failed" "make cargo metadata pass"
 elif ((${#libraries[@]} == 0)); then
 	line core ok "no libraries"
 	line api ok "no libraries"

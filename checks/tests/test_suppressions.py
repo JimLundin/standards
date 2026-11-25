@@ -1,16 +1,39 @@
 import pytest
-from ordered import FrozenOrderedDict
+from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.comments import Attribute, parse, sources
-from checks.core.exceptions import Issue, load
+from checks.core.exceptions import Exceptions, Issue, load
 from checks.core.suppressions import (
     attribute_lints,
     markers,
     suppressions,
     used_attributes,
 )
+from tests.helpers import assert_each_names_the_fix
 
-INSTEAD = "; add an entry to exceptions.toml instead"
+ALLOW = (
+    " silences a lint; fix: change the code so the lint passes, or, if it"
+    " can't apply, `#[expect]` it with an exception for the lint and its"
+    " reason"
+)
+
+
+def silences(marker: str, tool: str) -> str:
+    return (
+        f"`{marker}` silences {tool}; fix: change the code so {tool} passes,"
+        " or, if the rule can't apply, an exception for that rule with its"
+        " reason"
+    )
+
+
+def found(
+    language: str, texts: FrozenOrderedDict[str, str], exceptions: Exceptions
+) -> FrozenList[Issue]:
+    issues = FrozenList(
+        suppressions(language, sources(language, texts), exceptions)
+    )
+    assert_each_names_the_fix(issues)
+    return issues
 
 
 @pytest.mark.parametrize(
@@ -134,12 +157,32 @@ def test_rust_suppressions() -> None:
     exceptions = load(
         '[[exception]]\npath = "src/*.rs"\nrule = "clippy::a"\nreason = "r"\n'
     )
-    assert tuple(suppressions("rust", sources("rust", texts), exceptions)) == (
-        Issue("src/lib.rs:1", "#[expect(clippy::b)] is not in exceptions.toml"),
-        Issue("src/lib.rs:3", f"#[allow(dead_code)]{INSTEAD}"),
-        Issue("src/lib.rs:4", f"#[mutants::skip]{INSTEAD}"),
-        Issue("src/lib.rs:5", f"#[rustfmt::skip]{INSTEAD}"),
-        Issue("src/lib.rs:6", f"#[cfg_attr(test, allow(unused))]{INSTEAD}"),
+    assert found("rust", texts, exceptions) == (
+        Issue(
+            "src/lib.rs:1",
+            (
+                "`#[expect(clippy::b)]` silences `clippy::b`; fix: change the code"
+                " so `clippy::b` passes and drop it, or, if the lint can't apply,"
+                " a `clippy::b` exception with its reason"
+            ),
+        ),
+        Issue("src/lib.rs:3", f"`#[allow(dead_code)]`{ALLOW}"),
+        Issue(
+            "src/lib.rs:4",
+            (
+                "`#[mutants::skip]` hides code from cargo-mutants; fix: test the"
+                " code so its mutants die, or, if they can't, a `mutation`"
+                " exception with its reason"
+            ),
+        ),
+        Issue(
+            "src/lib.rs:5",
+            (
+                "`#[rustfmt::skip]` hides code from rustfmt; fix: drop it and let"
+                " rustfmt format the code"
+            ),
+        ),
+        Issue("src/lib.rs:6", f"`#[cfg_attr(test, allow(unused))]`{ALLOW}"),
     )
 
 
@@ -149,15 +192,11 @@ def test_python_and_typescript_suppressions_skip_other_files() -> None:
         "b.ts": "// oxlint-disable-next-line x\n",
         "c.txt": "# noqa\n",
     })
-    assert tuple(
-        suppressions("python", sources("python", texts), load(None))
-    ) == (Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),)
-    assert tuple(
-        suppressions("typescript", sources("typescript", texts), load(None))
-    ) == (
-        Issue(
-            "b.ts:1", f"suppression `// oxlint-disable-next-line x`{INSTEAD}"
-        ),
+    assert found("python", texts, load(None)) == (
+        Issue("a.py:1", silences("# noqa", "ruff")),
+    )
+    assert found("typescript", texts, load(None)) == (
+        Issue("b.ts:1", silences("// oxlint-disable-next-line x", "oxlint")),
     )
 
 
@@ -179,16 +218,46 @@ def test_scanning_continues_past_other_files() -> None:
         "b.rs": "#[allow(x)]\n",
         "c.rs": "\n#[allow(y)]\n",
     })
-    assert tuple(
-        suppressions("python", sources("python", texts), load(None))
-    ) == (Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),)
-    assert tuple(suppressions("rust", sources("rust", texts), load(None))) == (
-        Issue("b.rs:1", f"#[allow(x)]{INSTEAD}"),
-        Issue("c.rs:2", f"#[allow(y)]{INSTEAD}"),
+    assert found("python", texts, load(None)) == (
+        Issue("a.py:1", silences("# noqa", "ruff")),
+    )
+    assert found("rust", texts, load(None)) == (
+        Issue("b.rs:1", f"`#[allow(x)]`{ALLOW}"),
+        Issue("c.rs:2", f"`#[allow(y)]`{ALLOW}"),
     )
 
 
 def test_rust_attribute_lines_count_from_the_start() -> None:
     assert parse("a.rs", "\n\n#[allow(x)]\n").attributes == (
         Attribute(3, "allow", "(x)"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("file", "comment", "tool"),
+    [
+        ("a.py", "# noqa: E501", "ruff"),
+        ("a.py", "# NOQA", "ruff"),
+        ("a.py", "#ruff: noqa", "ruff"),
+        ("a.py", "# type: ignore", "basedpyright"),
+        ("a.py", "# basedpyright: ignore", "basedpyright"),
+        ("a.py", "# pragma: no cover", "coverage"),
+        ("a.py", "# pragma: no mutate", "mutmut"),
+        ("a.py", "# fmt: skip", "ruff format"),
+        ("a.py", "# isort: skip", "ruff"),
+        ("a.ts", "// @ts-expect-error", "tsc"),
+        ("a.ts", "// Stryker disable all", "Stryker"),
+        ("a.ts", "/* c8 ignore next */", "coverage"),
+        ("a.ts", "/* istanbul ignore next */", "coverage"),
+        ("a.ts", "// eslint-disable no-console", "oxlint"),
+        ("a.ts", "// prettier-ignore", "oxfmt"),
+    ],
+)
+def test_a_suppression_names_the_tool_it_silences(
+    file: str, comment: str, tool: str
+) -> None:
+    language = "python" if file.endswith(".py") else "typescript"
+    texts = FrozenOrderedDict({file: f"x\n{comment}\n"})
+    assert found(language, texts, load(None)) == (
+        Issue(f"{file}:2", silences(comment, tool)),
     )

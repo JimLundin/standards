@@ -17,21 +17,23 @@ class Rule:
     advice: str
 
 
-UNFROZEN_DATACLASS = Rule("IMM001", "dataclass is not frozen=True")
+UNFROZEN_DATACLASS = Rule(
+    "IMM001", "dataclass is not frozen=True; fix: pass `frozen=True` to it"
+)
 MUTABLE_ANNOTATION = Rule(
     "IMM002",
-    "in a parameter or field; use Sequence, Mapping, an Ordered type from ordered, or FrozenList, FrozenOrderedSet or FrozenOrderedDict",
+    "in a parameter or field; fix: use Sequence, Mapping, an Ordered type from ordered, or FrozenList, FrozenOrderedSet or FrozenOrderedDict",
 )
 MUTABLE_GLOBAL = Rule(
     "IMM003",
-    "mutable module-level value; use a tuple, FrozenList or FrozenOrderedDict",
+    "mutable module-level value; fix: use a tuple, FrozenList or FrozenOrderedDict",
 )
 HASH_ORDERED_SET = Rule(
     "IMM004", "iterates in hash order, which changes per process"
 )
 UNORDERED_ANNOTATION = Rule(
     "IMM005",
-    "promises no order; use OrderedSet or OrderedCollection from ordered, or Container for membership only",
+    "promises no order; fix: use OrderedSet or OrderedCollection from ordered, or Container for membership only",
 )
 UNNAMED_COLLECTION = Rule("IMM006", "has a name in ordered")
 UNORDERED_TYPES = FrozenOrderedSet((
@@ -228,7 +230,7 @@ def hash_ordered_sets(tree: ast.Module) -> Iterator[Finding]:
             else ""
         )
         if built:
-            message = f"{built} {rule.advice}; use FrozenOrderedSet"
+            message = f"{built} {rule.advice}; fix: use FrozenOrderedSet"
             yield Finding(node.lineno, node.col_offset, rule, message)
 
 
@@ -246,13 +248,13 @@ def unordered_annotations(tree: ast.Module) -> Iterator[Finding]:
                 yield Finding(place.lineno, place.col_offset, rule, message)
             elif name is not None and name in NAMED_COLLECTIONS:
                 rule = UNNAMED_COLLECTION
-                message = (
-                    f"`{name}` {rule.advice}; use {NAMED_COLLECTIONS[name]}"
-                )
+                message = f"`{name}` {rule.advice}; fix: use {NAMED_COLLECTIONS[name]}"
                 yield Finding(place.lineno, place.col_offset, rule, message)
             elif is_homogeneous_tuple(node):
                 rule = UNNAMED_COLLECTION
-                message = f"`tuple[T, ...]` {rule.advice}; use FrozenList[T]"
+                message = (
+                    f"`tuple[T, ...]` {rule.advice}; fix: use FrozenList[T]"
+                )
                 yield Finding(place.lineno, place.col_offset, rule, message)
 
 

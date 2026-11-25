@@ -6,6 +6,7 @@ from ordered import FrozenList
 
 from checks import notes
 from checks.core.values import Outcome
+from tests.helpers import assert_names_the_fix
 
 FIRST = "1" * 40
 SECOND = "2" * 40
@@ -156,9 +157,17 @@ def test_the_command_dispatches_to_each_operation(origin: Path) -> None:
     assert notes.run(("lookup",), project) == Outcome(FrozenList((FIRST,)))
     assert notes.run(("push",), project) == Outcome()
     assert notes.run(("fetch",), project) == Outcome()
-    assert notes.run(("move",), project) == Outcome(
-        FrozenList(("unknown notes command move",)), 2
+    unknown = notes.run(("move",), project)
+    assert unknown == Outcome(
+        FrozenList((
+            (
+                "unknown notes command move; fix: use `lookup`, `record`,"
+                " `fetch` or `push`"
+            ),
+        )),
+        2,
     )
+    assert_names_the_fix(unknown.lines[0])
 
 
 def test_a_failed_fetch_and_push_fail_the_command(origin: Path) -> None:

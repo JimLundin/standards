@@ -39,14 +39,27 @@ POINTERS = FrozenList((
     "alloc::sync::Arc",
     "alloc::sync::Weak",
 ))
-PLAIN = "the core holds plain values: keep a recursive type's parts in a Vec and refer to them by index"
+KEEP_PLAIN = (
+    "keep a recursive type's parts in a `Vec` and refer to them by index"
+)
+PLAIN = f"the core holds plain values; fix: {KEEP_PLAIN}"
+NO_POINTER = (
+    f"{KEEP_PLAIN}, or, if it can't apply, a `box` exception with its reason"
+)
+BUILDS_NO_STD = "make the core build under `#![no_std]`, moving what needs std into the shell"
 DISALLOWED = "clippy::disallowed_types"
 QUOTED = re.compile(r"`([^`]+)`")
 NO_STD = re.compile(r"#!\[(?:no_std|cfg_attr\(not\(test\),\s*no_std\))\]")
 STD = re.compile(r"\bextern\s+crate\s+std\b")
 TEST_ONLY = "#[cfg(test)]"
-UNCONDITIONAL = "declare `#![no_std]` unconditionally; the core does no I/O"
-TESTS_ONLY = f"`extern crate std` outside `{TEST_ONLY}`; the core does no I/O"
+UNCONDITIONAL = (
+    "the root doesn't declare `#![no_std]` unconditionally; fix: put"
+    " `#![no_std]` at the top of the root"
+)
+TESTS_ONLY = (
+    f"`extern crate std` outside `{TEST_ONLY}`; fix: put `{TEST_ONLY}` on"
+    " the line before it, and move the I/O into the shell"
+)
 UNESCAPED_TOML_BASIC_STRING = json.JSONEncoder(ensure_ascii=False)
 
 
@@ -188,7 +201,9 @@ def diagnostic_finding(
     target = str(table(record.get("target")).get("src_path"))
     if message.get("level") == "error":
         located = sourceless_at_target_root(where, relative(target, root))
-        return replace(located, message=str(message.get("message")))
+        return replace(
+            located, message=f"{message.get('message')}; fix: {BUILDS_NO_STD}"
+        )
     pointer = pointer_of(message)
     source = normalized(target)
     if (
@@ -197,7 +212,7 @@ def diagnostic_finding(
         or exceptions.covers(BOX, where.path)
     ):
         return None
-    return replace(where, message=f"uses `{pointer}`; {PLAIN}")
+    return replace(where, message=f"uses `{pointer}`; fix: {NO_POINTER}")
 
 
 def diagnostic_findings(

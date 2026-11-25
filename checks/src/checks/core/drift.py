@@ -97,16 +97,28 @@ class Snapshot:
         return parse_json(self.standards.get(path))
 
 
-def drift(path: str, key: str, problem: str) -> Issue:
+def drift(path: str, key: str, problem: str, fix: str) -> Issue:
     rule = f"drift:{key}"
-    return Issue(path, f"{problem} (exception rule `{rule}`)", rule)
+    return Issue(
+        path,
+        (
+            f"{problem}; fix: {fix}, or, if it can't apply, a `{rule}` exception"
+            " with its reason"
+        ),
+        rule,
+    )
 
 
 def missing(
     path: str, key: str, standard: Sequence[str], project: Sequence[str]
 ) -> Iterator[Issue]:
     yield from (
-        drift(path, f"{key}:{item}", f"{key} lacks `{item}`")
+        drift(
+            path,
+            f"{key}:{item}",
+            f"{key} lacks `{item}`",
+            f"add `{item}` to {key}",
+        )
         for item in standard
         if item not in project
     )
@@ -116,7 +128,12 @@ def extra(
     path: str, key: str, project: Sequence[str], standard: Sequence[str]
 ) -> Iterator[Issue]:
     yield from (
-        drift(path, f"{key}:{item}", f"{key} adds `{item}`")
+        drift(
+            path,
+            f"{key}:{item}",
+            f"{key} adds `{item}`",
+            f"remove `{item}` from {key}",
+        )
         for item in project
         if item not in standard
     )
@@ -126,7 +143,12 @@ def present(
     path: str, data: Mapping[str, object], keys: Sequence[str], prefix: str
 ) -> Iterator[Issue]:
     yield from (
-        drift(path, f"{prefix}.{key}", f"{prefix}.{key} hides code from checks")
+        drift(
+            path,
+            f"{prefix}.{key}",
+            f"{prefix}.{key} hides code from checks",
+            f"remove {prefix}.{key}",
+        )
         for key in keys
         if data.get(key)
     )
@@ -173,7 +195,12 @@ def ruff_drift(
         path, project, FrozenList(("exclude", "extend-exclude")), "tool.ruff"
     )
     if standard.get("preview") is True and project.get("preview") is not True:
-        yield drift(path, "tool.ruff.preview", "tool.ruff.preview is off")
+        yield drift(
+            path,
+            "tool.ruff.preview",
+            "tool.ruff.preview is off",
+            "set it to true",
+        )
 
 
 def basedpyright_drift(
@@ -182,11 +209,20 @@ def basedpyright_drift(
     path, key = "pyproject.toml", "tool.basedpyright"
     mode = "typeCheckingMode"
     if project.get(mode) != standard.get(mode):
+        wanted = standard.get(mode)
         yield drift(
-            path, f"{key}.{mode}", f"{key}.{mode} is not `{standard.get(mode)}`"
+            path,
+            f"{key}.{mode}",
+            f"{key}.{mode} is not `{wanted}`",
+            f"set it to `{wanted}`",
         )
     yield from (
-        drift(path, f"{key}.{name}", f"{key}.{name} weakens a check")
+        drift(
+            path,
+            f"{key}.{name}",
+            f"{key}.{name} weakens a check",
+            f"remove {key}.{name}",
+        )
         for name, value in project.items()
         if name not in standard
         and (value is False or (isinstance(value, str) and value in WEAK))
@@ -214,7 +250,11 @@ def hypothesis_profiles(text: str | None) -> FrozenOrderedDict[str, int]:
 
 
 def intensity(
-    path: str, key: str, standard: Mapping[str, int], project: Mapping[str, int]
+    path: str,
+    key: str,
+    setting: str,
+    standard: Mapping[str, int],
+    project: Mapping[str, int],
 ) -> Iterator[Issue]:
     for name, value in standard.items():
         actual = project.get(name)
@@ -223,6 +263,7 @@ def intensity(
                 path,
                 f"{key}.{name}",
                 f"{key} `{name}` runs fewer than {value} cases",
+                f"set its {setting} to at least {value}",
             )
 
 
@@ -270,6 +311,7 @@ def python_drift(snapshot: Snapshot) -> Iterator[Issue]:
             path,
             "tool.importlinter.layers",
             "tool.importlinter lacks an exhaustive layers contract",
+            "add a `layers` contract with `exhaustive = true`",
         )
     conftests = FrozenList(
         file for file in snapshot.files if file.endswith("conftest.py")
@@ -284,6 +326,7 @@ def python_drift(snapshot: Snapshot) -> Iterator[Issue]:
     yield from intensity(
         conftests[0] if conftests else "tests/conftest.py",
         "hypothesis",
+        "max_examples",
         hypothesis_profiles(snapshot.standards.get("python/conftest.py")),
         profiles,
     )
@@ -310,9 +353,15 @@ def rust_lint_drift(
                     "Cargo.toml",
                     f"{key}.{name}",
                     f"{key}.{name} is weaker than `{level(value)}`",
+                    f"set it to `{level(value)}`",
                 )
         yield from (
-            drift("Cargo.toml", f"{key}.{name}", f"{key}.{name} relaxes a lint")
+            drift(
+                "Cargo.toml",
+                f"{key}.{name}",
+                f"{key}.{name} relaxes a lint",
+                "remove it",
+            )
             for name, value in actual.items()
             if name not in wanted
             and (
@@ -375,10 +424,14 @@ def rust_drift(snapshot: Snapshot) -> Iterator[Issue]:
         "mutants",
     )
     if retries(snapshot.toml(".config/nextest.toml")):
-        yield drift(
+        yield Issue(
             ".config/nextest.toml",
-            "nextest.retries",
-            "retries hide failing tests; list each flaky test in exceptions.toml",
+            (
+                "retries hide failing tests; fix: remove them and make each test"
+                " deterministic, or, if one can't be, a `flaky` exception naming"
+                " it with its reason"
+            ),
+            "drift:nextest.retries",
         )
     cases = proptest_cases(snapshot.toml(".cargo/config.toml"))
     if cases is not None and cases < PROPTEST_CASES:
@@ -386,6 +439,7 @@ def rust_drift(snapshot: Snapshot) -> Iterator[Issue]:
             ".cargo/config.toml",
             "env.PROPTEST_CASES",
             f"PROPTEST_CASES is below {PROPTEST_CASES}",
+            f"set it to at least {PROPTEST_CASES}",
         )
 
 
@@ -434,7 +488,10 @@ def weaker(
         if OXLINT_RANKS.get(actual, 0) < OXLINT_RANKS.get(wanted, 0):
             label = f"{key}.{name}"
             yield drift(
-                path, label, f"{label} is `{actual}`, weaker than `{wanted}`"
+                path,
+                label,
+                f"{label} is `{actual}`, weaker than `{wanted}`",
+                f"set it to `{wanted}`",
             )
 
 
@@ -513,6 +570,7 @@ def oxlint_drift(
             path,
             f"overrides.{files}.{printed(rule)}",
             f"override for {files} sets {printed(rule)} to `{setting}`",
+            f"remove {printed(rule)} from that override",
         )
         for files, rule, setting in oxlint_overrides(project)
         if (files, rule, setting) not in standard_overrides
@@ -524,7 +582,11 @@ def oxlint_drift(
         drift(
             path,
             f"options.{name}",
-            f"options.{name} is `{json.dumps(options.get(name))}`, not `{json.dumps(value)}`",
+            (
+                f"options.{name} is `{json.dumps(options.get(name))}`,"
+                f" not `{json.dumps(value)}`"
+            ),
+            f"set it to `{json.dumps(value)}`",
         )
         for name, value in table(standard.get("options")).items()
         if options.get(name) != value
@@ -549,7 +611,8 @@ def typescript_oxlint_drift(snapshot: Snapshot) -> Iterator[Issue]:
         yield drift(
             path,
             "extends",
-            f"{path} doesn't extend the standard's, imported from `{STANDARD_OXLINT}`",
+            f"{path} doesn't extend the standard's",
+            f"import it from `{STANDARD_OXLINT}` and list it in `extends`",
         )
     project = parse_json(snapshot.resolved.get(path))
     if project:
@@ -578,7 +641,10 @@ def stryker_drift(
         isinstance(actual, int) and actual >= wanted
     ):
         yield drift(
-            path, "thresholds.break", f"thresholds.break is below {wanted}"
+            path,
+            "thresholds.break",
+            f"thresholds.break is below {wanted}",
+            f"set it to at least {wanted}",
         )
     yield from extra(
         path,
@@ -609,7 +675,10 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         switched_off = FrozenList(("strict", *switched_off))
     yield from (
         drift(
-            "tsconfig.json", f"{compiler}.{name}", f"{compiler}.{name} is false"
+            "tsconfig.json",
+            f"{compiler}.{name}",
+            f"{compiler}.{name} is false",
+            "set it to true",
         )
         for name in switched_off
     )
@@ -630,6 +699,7 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         yield from intensity(
             vitest,
             "arbitrary",
+            "runs",
             vitest_runs(text(snapshot.standards, f"{folder}vitest.config.ts")),
             vitest_runs(snapshot.project[vitest]),
         )

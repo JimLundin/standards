@@ -99,7 +99,7 @@ def test_main_prints_lines_and_returns_the_status(
     assert status == 1
     assert out == (
         "a.py:1:5: IMM004 a set literal iterates in hash order, which changes "
-        "per process; use FrozenOrderedSet\nFound 1 issues\n"
+        "per process; fix: use FrozenOrderedSet\nFound 1 issues\n"
     )
 
 

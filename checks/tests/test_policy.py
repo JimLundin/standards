@@ -5,6 +5,15 @@ from checks.core.values import Inputs, Outcome, Request
 from tests.helpers import entry, inputs, lines
 
 STD = "C:/standards"
+NEEDS = (
+    "needs a path, a rule and a reason; fix: give it a non-empty `path`,"
+    " `rule` and `reason`"
+)
+UNTRACKED = (
+    "path matches no tracked file; fix: point the path at a tracked file,"
+    " or remove the entry"
+)
+UNKNOWN = "unknown rule for rust; fix: name a rule the rust checks print, or remove the entry"
 
 
 def test_request_lists_project_then_standard_files() -> None:
@@ -41,10 +50,18 @@ def test_policy_reports_problems_exceptions_suppressions_and_drift_in_order() ->
     }
     outcome = run(("python", STD, "src/a.py", "pyproject.toml"), inputs(texts))
     assert lines(outcome) == (
-        "exceptions.toml: exception 5 needs a path, a rule and a reason",
-        "exceptions.toml (gone/**, F401): path matches no tracked file",
-        "src/a.py:1: suppression `# noqa`; add an entry to exceptions.toml instead",
-        "pyproject.toml: tool.pytest.addopts lacks `--a` (exception rule `drift:tool.pytest.addopts:--a`)",
+        f"exceptions.toml: exception 5 {NEEDS}",
+        f"exceptions.toml (gone/**, F401): {UNTRACKED}",
+        (
+            "src/a.py:1: `# noqa` silences ruff; fix: change the code so ruff"
+            " passes, or, if the rule can't apply, an exception for that rule"
+            " with its reason"
+        ),
+        (
+            "pyproject.toml: tool.pytest.addopts lacks `--a`; fix: add `--a` to"
+            " tool.pytest.addopts, or, if it can't apply, a"
+            " `drift:tool.pytest.addopts:--a` exception with its reason"
+        ),
         "Found 4 issues",
     )
     assert outcome.status == 1
@@ -63,10 +80,13 @@ def test_policy_validates_rust_exceptions() -> None:
     }
     outcome = run(("rust", STD, "Cargo.toml", "src/lib.rs"), inputs(texts))
     assert lines(outcome) == (
-        "exceptions.toml (src/lib.rs, Bad-Rule): unknown rule for rust",
-        "exceptions.toml (src/lib.rs, Worse-Rule): unknown rule for rust",
-        "exceptions.toml (gone/**, dead_code): path matches no tracked file",
-        "exceptions.toml (src/lib.rs, clippy::b): no matching #[expect] attribute; remove the entry",
+        f"exceptions.toml (src/lib.rs, Bad-Rule): {UNKNOWN}",
+        f"exceptions.toml (src/lib.rs, Worse-Rule): {UNKNOWN}",
+        f"exceptions.toml (gone/**, dead_code): {UNTRACKED}",
+        (
+            "exceptions.toml (src/lib.rs, clippy::b): no matching #[expect]"
+            " attribute; fix: remove the entry"
+        ),
         "Found 4 issues",
     )
 
@@ -79,15 +99,13 @@ def test_flaky_tests_are_named_not_tracked_paths() -> None:
     }
     outcome = run(("rust", STD, "Cargo.toml"), inputs(texts))
     assert lines(outcome) == (
-        "exceptions.toml: exception 2 needs a path, a rule and a reason",
+        f"exceptions.toml: exception 2 {NEEDS}",
         "Found 1 issues",
     )
     python = run(
         ("python", STD), inputs({"exceptions.toml": entry("test_x", "flaky")})
     )
-    assert lines(python)[0] == (
-        "exceptions.toml (test_x, flaky): path matches no tracked file"
-    )
+    assert lines(python)[0] == (f"exceptions.toml (test_x, flaky): {UNTRACKED}")
 
 
 def test_policy_rejects_an_oxlint_exception_for_no_tracked_file() -> None:
@@ -97,7 +115,10 @@ def test_policy_rejects_an_oxlint_exception_for_no_tracked_file() -> None:
     }
     outcome = run(("typescript", STD, "src/a.ts"), inputs(texts))
     assert lines(outcome) == (
-        "exceptions.toml (gone/*.ts, lint/typescript/no-floating-promises): path matches no tracked file",
+        (
+            "exceptions.toml (gone/*.ts, lint/typescript/no-floating-promises):"
+            f" {UNTRACKED}"
+        ),
         "Found 1 issues",
     )
 
@@ -127,7 +148,8 @@ def test_policy_reports_drift_between_resolved_oxlint_configs() -> None:
     outcome = run(("typescript", STD, *RESOLVED), inputs(texts))
     assert lines(outcome)[0] == (
         "oxlint.config.ts: rules.eslint/no-bitwise is `warn`, weaker than"
-        " `deny` (exception rule `drift:rules.eslint/no-bitwise`)"
+        " `deny`; fix: set it to `deny`, or, if it can't apply, a"
+        " `drift:rules.eslint/no-bitwise` exception with its reason"
     )
 
 

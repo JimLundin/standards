@@ -63,4 +63,8 @@ def run(arguments: Sequence[str], directory: str) -> Outcome:
         case "push":
             return Outcome(status=0 if push(directory) else 1)
         case _:
-            return Outcome(FrozenList((f"unknown notes command {command}",)), 2)
+            unknown = (
+                f"unknown notes command {command}; fix: use `lookup`, `record`,"
+                " `fetch` or `push`"
+            )
+            return Outcome(FrozenList((unknown,)), 2)

@@ -170,18 +170,34 @@ def test_a_licence_naming_comment_after_the_first_block_fails() -> None:
 
 
 @pytest.mark.parametrize(
-    ("language", "file", "text", "marker"),
+    ("language", "file", "text", "marker", "tool"),
     [
-        ("python", "a.py", "x = 1  # noqa\n", "# noqa"),
-        ("typescript", "a.ts", "// eslint-disable\n", "// eslint-disable"),
-        ("typescript", "a.ts", "// oxlint-disable\n", "// oxlint-disable"),
+        ("python", "a.py", "x = 1  # noqa\n", "# noqa", "ruff"),
+        (
+            "typescript",
+            "a.ts",
+            "// eslint-disable\n",
+            "// eslint-disable",
+            "oxlint",
+        ),
+        (
+            "typescript",
+            "a.ts",
+            "// oxlint-disable\n",
+            "// oxlint-disable",
+            "oxlint",
+        ),
     ],
 )
 def test_a_suppression_is_reported_once_as_a_suppression(
-    language: str, file: str, text: str, marker: str
+    language: str, file: str, text: str, marker: str, tool: str
 ) -> None:
     assert checked(language, {file: text}) == (
-        f"{file}:1: suppression `{marker}`; add an entry to exceptions.toml instead",
+        (
+            f"{file}:1: `{marker}` silences {tool}; fix: change the code so"
+            f" {tool} passes, or, if the rule can't apply, an exception for that"
+            " rule with its reason"
+        ),
         "Found 1 issues",
     )
 
@@ -208,7 +224,10 @@ def test_a_comment_exception_without_a_reason_fails() -> None:
         "a.py": "x = 1\n",
     }
     assert checked("python", texts) == (
-        "exceptions.toml: exception 1 needs a path, a rule and a reason",
+        (
+            "exceptions.toml: exception 1 needs a path, a rule and a reason;"
+            " fix: give it a non-empty `path`, `rule` and `reason`"
+        ),
         "Found 1 issues",
     )
 
@@ -253,10 +272,7 @@ def test_a_python_type_comment_fails_naming_annotations() -> None:
     )
 
 
-DIRECTIVE = (
-    "triple-slash directive; fix: name it in `compilerOptions.types`"
-    " in tsconfig.json"
-)
+DIRECTIVE = "triple-slash directive; fix: name it in `compilerOptions.types` in tsconfig.json"
 
 
 def test_a_triple_slash_directive_fails_naming_compiler_options_types() -> None:

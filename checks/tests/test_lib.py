@@ -15,9 +15,14 @@ import pytest
 from ordered import FrozenList
 
 from checks.core.units import pins_of
-from tests.helpers import STANDARDS, entry
+from tests.helpers import STANDARDS, assert_names_the_fix, entry
 
 MISSING = "no-such-tool-of-the-standards"
+SKIPPED = (
+    f"skip {MISSING} not installed; fix: install {MISSING}, or leave the unit"
+    " to CI, which runs every unit"
+)
+FAILED_IN_CI = f"FAIL {MISSING} not installed; fix: install {MISSING} in CI, which runs every unit"
 DRIVER = f"""\
 set -uo pipefail
 PATH="$ROOT/bin:$PATH"
@@ -176,16 +181,17 @@ def test_a_unit_whose_tool_is_missing_is_skipped_outside_ci(
 ) -> None:
     run = workspace.run("commit")
     assert run.status == 0
-    assert outcome(run, "absent") == (f"skip {MISSING} not installed",)
-    assert outcome(run, "absent-suite") == (f"skip {MISSING} not installed",)
+    assert outcome(run, "absent") == (SKIPPED,)
+    assert outcome(run, "absent-suite") == (SKIPPED,)
+    assert_names_the_fix(SKIPPED.removeprefix("skip "))
 
 
 def test_in_ci_a_unit_whose_tool_is_missing_fails(workspace: Workspace) -> None:
     run = workspace.run("commit", ci=True)
     assert run.status == 1
-    failure = f"FAIL {MISSING} not installed; CI runs every unit"
-    assert outcome(run, "absent") == (failure,)
-    assert outcome(run, "absent-suite") == (failure,)
+    assert outcome(run, "absent") == (FAILED_IN_CI,)
+    assert outcome(run, "absent-suite") == (FAILED_IN_CI,)
+    assert_names_the_fix(FAILED_IN_CI.removeprefix("FAIL "))
     assert outcome(run, "present") == ("ok",)
 
 
@@ -237,9 +243,7 @@ def test_a_unit_needs_its_declared_tool_only_to_run(
         "commit", ci=True, only_present=True, present_tool=MISSING
     )
     assert missing.status == 1
-    assert outcome(missing, "present") == (
-        f"FAIL {MISSING} not installed; CI runs every unit",
-    )
+    assert outcome(missing, "present") == (FAILED_IN_CI,)
     assert workspace.run("commit", only_present=True).status == 0
     recorded = workspace.run(
         "commit", ci=True, only_present=True, present_tool=MISSING
@@ -457,6 +461,29 @@ lint() { echo ran >>"$MARKER"; }
 batch lint ending lint "${members[@]}"
 finish
 """
+
+
+UNITLESS = """\
+set -uo pipefail
+source "$STANDARDS/lib.sh"
+arguments "$@"
+cd "$project" || exit 2
+begin python
+units --toolchain=fixture
+finish
+"""
+
+
+def test_a_failed_units_check_names_its_log(workspace: Workspace) -> None:
+    _ = (workspace.project / "checks.toml").unlink()
+    _ = (workspace.root / "driver.sh").write_text(UNITLESS, newline="\n")
+    run = workspace.run("commit")
+    assert run.status == 1
+    (failure,) = outcome(run, "units")
+    wrong, _, log = failure.partition("; fix: read ")
+    assert wrong == "FAIL the units check failed"
+    assert log.endswith("/units.log")
+    assert_names_the_fix(failure)
 
 
 @pytest.fixture

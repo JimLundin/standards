@@ -1,7 +1,7 @@
 import re
 from typing import TYPE_CHECKING
 
-from ordered import FrozenList, FrozenOrderedSet
+from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.exceptions import Exceptions, Issue
 
@@ -10,27 +10,30 @@ if TYPE_CHECKING:
 
     from checks.core.comments import Attribute, Comment, Source
 
-PYTHON_MARKERS = FrozenList((
-    r"noqa\b",
-    r"ruff\s*:",
-    r"type\s*:\s*ignore",
-    r"(?:based)?pyright\s*:",
-    r"pragma\s*:\s*no\s+(?:mutate|cover)",
-    r"fmt\s*:\s*(?:off|skip)",
-    r"isort\s*:\s*skip",
-))
-TYPESCRIPT_MARKERS = FrozenList((
-    r"@ts-(?:ignore|expect-error|nocheck)",
-    r"Stryker\s+(?:disable|restore)",
-    r"(?:c8|istanbul|node:coverage)\s+ignore",
-    r"(?:es|ox)lint-(?:disable|enable)",
-    r"prettier-ignore",
-))
+PYTHON_MARKERS = FrozenOrderedDict({
+    r"noqa\b": "ruff",
+    r"ruff\s*:": "ruff",
+    r"type\s*:\s*ignore": "basedpyright",
+    r"(?:based)?pyright\s*:": "basedpyright",
+    r"pragma\s*:\s*no\s+mutate": "mutmut",
+    r"pragma\s*:\s*no\s+cover": "coverage",
+    r"fmt\s*:\s*(?:off|skip)": "ruff format",
+    r"isort\s*:\s*skip": "ruff",
+})
+TYPESCRIPT_MARKERS = FrozenOrderedDict({
+    r"@ts-(?:ignore|expect-error|nocheck)": "tsc",
+    r"Stryker\s+(?:disable|restore)": "Stryker",
+    r"(?:c8|istanbul|node:coverage)\s+ignore": "coverage",
+    r"(?:es|ox)lint-(?:disable|enable)": "oxlint",
+    r"prettier-ignore": "oxfmt",
+})
+PYTHON_OPENING = r"#\s*"
+TYPESCRIPT_OPENING = r"(?://|/\*)\s*"
 PYTHON_MARKER = re.compile(
-    rf"#\s*(?:{'|'.join(PYTHON_MARKERS)})", re.IGNORECASE
+    rf"{PYTHON_OPENING}(?:{'|'.join(PYTHON_MARKERS)})", re.IGNORECASE
 )
 TYPESCRIPT_MARKER = re.compile(
-    rf"(?://|/\*)\s*(?:{'|'.join(TYPESCRIPT_MARKERS)})"
+    rf"{TYPESCRIPT_OPENING}(?:{'|'.join(TYPESCRIPT_MARKERS)})"
 )
 REASON = re.compile(r'reason\s*=\s*"(?:[^"\\]|\\.)*"')
 SUPPRESSING = re.compile(r"\b(allow|expect|skip)\b")
@@ -39,7 +42,20 @@ FORBIDDEN_ATTRIBUTES = FrozenOrderedSet((
     "mutants::skip",
     "rustfmt::skip",
 ))
-INSTEAD = "; add an entry to exceptions.toml instead"
+LINT_FIX = (
+    "silences a lint; fix: change the code so the lint passes, or, if it"
+    " can't apply, `#[expect]` it with an exception for the lint and its"
+    " reason"
+)
+ATTRIBUTE_FIXES = FrozenOrderedDict({
+    "mutants::skip": (
+        "hides code from cargo-mutants; fix: test the code so its mutants"
+        " die, or, if they can't, a `mutation` exception with its reason"
+    ),
+    "rustfmt::skip": (
+        "hides code from rustfmt; fix: drop it and let rustfmt format the code"
+    ),
+})
 
 
 def is_suppression(language: str, comment: Comment) -> bool:
@@ -49,6 +65,25 @@ def is_suppression(language: str, comment: Comment) -> bool:
         )
     return language == "typescript" and bool(
         TYPESCRIPT_MARKER.search(comment.text)
+    )
+
+
+def silenced_tool(language: str, marker: str) -> str:
+    if language == "python":
+        opening, tools, flags = PYTHON_OPENING, PYTHON_MARKERS, re.IGNORECASE
+    else:
+        opening, tools, flags = TYPESCRIPT_OPENING, TYPESCRIPT_MARKERS, 0
+    return next(
+        tool
+        for pattern, tool in tools.items()
+        if re.search(rf"{opening}(?:{pattern})", marker, flags)
+    )
+
+
+def silences(tool: str) -> str:
+    return (
+        f"silences {tool}; fix: change the code so {tool} passes, or, if the"
+        " rule can't apply, an exception for that rule with its reason"
     )
 
 
@@ -72,14 +107,22 @@ def attribute_issue(
     arguments = attribute.arguments
     if name == "expect":
         yield from (
-            Issue(where, f"#[expect({lint})] is not in exceptions.toml")
+            Issue(
+                where,
+                (
+                    f"`#[expect({lint})]` silences `{lint}`; fix: change the code"
+                    f" so `{lint}` passes and drop it, or, if the lint can't"
+                    f" apply, a `{lint}` exception with its reason"
+                ),
+            )
             for lint in attribute_lints(arguments)
             if not exceptions.covers(lint, file)
         )
     elif name in FORBIDDEN_ATTRIBUTES or (
         name == "cfg_attr" and SUPPRESSING.search(arguments)
     ):
-        yield Issue(where, f"#[{name}{arguments}]{INSTEAD}")
+        fix = ATTRIBUTE_FIXES.get(name, LINT_FIX)
+        yield Issue(where, f"`#[{name}{arguments}]` {fix}")
 
 
 def suppressions(
@@ -89,7 +132,10 @@ def suppressions(
         for attribute in source.attributes:
             yield from attribute_issue(file, attribute, exceptions)
         yield from (
-            Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
+            Issue(
+                f"{file}:{line}",
+                f"`{marker}` {silences(silenced_tool(language, marker))}",
+            )
             for line, marker in markers(language, source)
         )
 
