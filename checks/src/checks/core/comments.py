@@ -10,7 +10,7 @@ from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 from tree_sitter import Language, Node, Parser
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
 
 type Kind = Literal["line", "block", "doc", "docstring"]
 
@@ -37,6 +37,7 @@ DOC_MARKERS = FrozenOrderedSet((
     "inner_doc_comment_marker",
 ))
 BODIES = FrozenOrderedSet(("declaration_list", "block"))
+ATTRIBUTES = FrozenOrderedSet(("attribute_item", "inner_attribute_item"))
 SKIPPED = FrozenOrderedSet((*RUST_COMMENTS, "attribute_item"))
 PUBLIC_MEMBERS = FrozenOrderedDict({
     "enum_variant_list": "enum_item",
@@ -44,6 +45,7 @@ PUBLIC_MEMBERS = FrozenOrderedDict({
 })
 STATEMENTS = FrozenOrderedSet(("expression_statement", "let_declaration"))
 UNSAFE = "unsafe_block"
+NO_LIBRARIES: FrozenOrderedSet[str] = FrozenOrderedSet()
 DOCUMENTED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
@@ -62,6 +64,21 @@ class Comment:
     text: str
     item: Item | None = None
     precedes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Attribute:
+    line: int
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True, slots=True)
+class Source:
+    text: str
+    library: bool
+    comments: FrozenList[Comment]
+    attributes: FrozenList[Attribute]
 
 
 def is_source(language: str, file: str) -> bool:
@@ -192,12 +209,31 @@ def rust_comment(node: Node, *, library: bool) -> Comment:
     return Comment(line, "doc", text, found)
 
 
-def rust_comments(text: str, *, library: bool) -> Iterator[Comment]:
+def rust_attribute(node: Node) -> Attribute:
+    attribute = next(
+        child for child in node.named_children if child.type == "attribute"
+    )
+    path, *rest = attribute.named_children
+    arguments = "".join(
+        node_text(child) for child in rest if child.type == "token_tree"
+    )
+    return Attribute(node.start_point.row + 1, node_text(path), arguments)
+
+
+def rust_source(text: str, *, library: bool) -> Source:
     tree = Parser(RUST).parse(text.encode())
-    yield from (
-        rust_comment(node, library=library)
-        for node in named_children(tree.root_node)
-        if node.type in RUST_COMMENTS
+    nodes = FrozenList(named_children(tree.root_node))
+    return Source(
+        text,
+        library,
+        FrozenList(
+            rust_comment(node, library=library)
+            for node in nodes
+            if node.type in RUST_COMMENTS
+        ),
+        FrozenList(
+            rust_attribute(node) for node in nodes if node.type in ATTRIBUTES
+        ),
     )
 
 
@@ -216,15 +252,35 @@ def typescript_comments(file: str, text: str) -> Iterator[Comment]:
             yield Comment(node.start_point.row + 1, typescript_kind(body), body)
 
 
+def parse(file: str, text: str, *, library: bool = False) -> Source:
+    if is_source("rust", file):
+        return rust_source(text, library=library)
+    found: FrozenList[Comment] = FrozenList()
+    if is_source("python", file):
+        found = FrozenList(
+            sorted(
+                (*python_comments(text), *python_docstrings(text)),
+                key=lambda comment: comment.line,
+            )
+        )
+    elif is_source("typescript", file):
+        found = FrozenList(typescript_comments(file, text))
+    return Source(text, library, found, FrozenList())
+
+
 def comments(
     file: str, text: str, *, library: bool = False
 ) -> Iterator[Comment]:
-    if is_source("python", file):
-        yield from sorted(
-            (*python_comments(text), *python_docstrings(text)),
-            key=lambda comment: comment.line,
-        )
-    elif is_source("rust", file):
-        yield from rust_comments(text, library=library)
-    elif is_source("typescript", file):
-        yield from typescript_comments(file, text)
+    yield from parse(file, text, library=library).comments
+
+
+def sources(
+    language: str,
+    texts: Mapping[str, str],
+    libraries: FrozenOrderedSet[str] = NO_LIBRARIES,
+) -> FrozenOrderedDict[str, Source]:
+    return FrozenOrderedDict(
+        (file, parse(file, text, library=file in libraries))
+        for file, text in texts.items()
+        if is_source(language, file)
+    )

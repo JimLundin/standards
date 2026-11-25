@@ -4,12 +4,13 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.comments import Comment, comments, is_source
 from checks.core.exceptions import COMMENT, Exceptions, Issue
 from checks.core.suppressions import is_suppression
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
+
+    from checks.core.comments import Comment, Source
 
 RESHAPE = (
     "fix: name, type or restructure the code so it needs none,"
@@ -112,29 +113,21 @@ def failure(language: str, comment: Comment, *, library: bool) -> str:
     return f"comment; {RESHAPE}"
 
 
-def file_issues(
-    language: str, file: str, text: str, *, library: bool
-) -> Iterator[Issue]:
-    found = FrozenList(comments(file, text, library=library))
-    allowed = FrozenOrderedSet(kept(language, text, found))
+def file_issues(language: str, file: str, source: Source) -> Iterator[Issue]:
+    allowed = FrozenOrderedSet(kept(language, source.text, source.comments))
     yield from (
         Issue(
             f"{file}:{comment.line}",
-            failure(language, comment, library=library),
+            failure(language, comment, library=source.library),
         )
-        for comment in found
+        for comment in source.comments
         if comment not in allowed
     )
 
 
 def comment_issues(
-    language: str,
-    texts: Mapping[str, str],
-    exceptions: Exceptions,
-    libraries: FrozenOrderedSet[str],
+    language: str, sources: Mapping[str, Source], exceptions: Exceptions
 ) -> Iterator[Issue]:
-    for file, text in texts.items():
-        if is_source(language, file) and not exceptions.covers(COMMENT, file):
-            yield from file_issues(
-                language, file, text, library=file in libraries
-            )
+    for file, source in sources.items():
+        if not exceptions.covers(COMMENT, file):
+            yield from file_issues(language, file, source)

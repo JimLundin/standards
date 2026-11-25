@@ -4,7 +4,7 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.cargo import library_files
 from checks.core.comment_rule import comment_issues
-from checks.core.comments import is_source
+from checks.core.comments import is_source, sources
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
 from checks.core.exceptions import EXCEPTIONS, exceptions_in, validate
 from checks.core.suppressions import suppressions, used_attributes
@@ -83,11 +83,12 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     language = operands(arguments)[0]
     snapshot = snapshot_of(arguments, inputs)
     exceptions = exceptions_in(inputs)
-    attributes = used_attributes(snapshot.project)
     libraries = library_files(
         parse_json(inputs.texts.get(option(arguments, "--metadata="))),
         snapshot.files,
     )
+    parsed = sources(language, snapshot.project, libraries)
+    attributes = used_attributes(parsed)
     drifted = FrozenList(
         issue
         for issue in DRIFT[language](snapshot)
@@ -95,8 +96,8 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
     issues = (
         *validate(language, exceptions, snapshot.files, attributes),
-        *suppressions(language, snapshot.project, exceptions),
-        *comment_issues(language, snapshot.project, exceptions, libraries),
+        *suppressions(language, parsed, exceptions),
+        *comment_issues(language, parsed, exceptions),
         *drifted,
     )
     return summarized(

@@ -3,11 +3,12 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.comments import Comment, comments, is_source
 from checks.core.exceptions import Exceptions, Issue
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
+
+    from checks.core.comments import Attribute, Comment, Source
 
 PYTHON_MARKERS = FrozenList((
     r"noqa\b",
@@ -31,9 +32,6 @@ PYTHON_MARKER = re.compile(
 TYPESCRIPT_MARKER = re.compile(
     rf"(?://|/\*)\s*(?:{'|'.join(TYPESCRIPT_MARKERS)})"
 )
-RUST_ATTRIBUTE = re.compile(
-    r"#!?\[\s*(?P<name>[a-z_]+(?:::[a-z_]+)?)\s*(?P<args>\((?:[^()]|\([^()]*\))*\))?\s*\]"
-)
 REASON = re.compile(r'reason\s*=\s*"(?:[^"\\]|\\.)*"')
 SUPPRESSING = re.compile(r"\b(allow|expect|skip)\b")
 FORBIDDEN_ATTRIBUTES = FrozenOrderedSet((
@@ -54,10 +52,10 @@ def is_suppression(language: str, comment: Comment) -> bool:
     )
 
 
-def markers(language: str, file: str, text: str) -> Iterator[tuple[int, str]]:
+def markers(language: str, source: Source) -> Iterator[tuple[int, str]]:
     yield from (
         (comment.line, comment.text)
-        for comment in comments(file, text)
+        for comment in source.comments
         if is_suppression(language, comment)
     )
 
@@ -67,52 +65,42 @@ def attribute_lints(arguments: str) -> FrozenList[str]:
     return FrozenList(part.strip() for part in inner.split(",") if part.strip())
 
 
-def rust_attributes(text: str) -> Iterator[tuple[int, str, str]]:
-    for match in RUST_ATTRIBUTE.finditer(text):
-        line = text[: match.start()].count("\n") + 1
-        yield line, match["name"], match["args"] or ""
-
-
-def rust_issues(
-    file: str, text: str, exceptions: Exceptions
+def attribute_issue(
+    file: str, attribute: Attribute, exceptions: Exceptions
 ) -> Iterator[Issue]:
-    for line, name, arguments in rust_attributes(text):
-        where = f"{file}:{line}"
-        if name == "expect":
-            yield from (
-                Issue(where, f"#[expect({lint})] is not in exceptions.toml")
-                for lint in attribute_lints(arguments)
-                if not exceptions.covers(lint, file)
-            )
-        elif name in FORBIDDEN_ATTRIBUTES or (
-            name == "cfg_attr" and SUPPRESSING.search(arguments)
-        ):
-            yield Issue(where, f"#[{name}{arguments}]{INSTEAD}")
+    where, name = f"{file}:{attribute.line}", attribute.name
+    arguments = attribute.arguments
+    if name == "expect":
+        yield from (
+            Issue(where, f"#[expect({lint})] is not in exceptions.toml")
+            for lint in attribute_lints(arguments)
+            if not exceptions.covers(lint, file)
+        )
+    elif name in FORBIDDEN_ATTRIBUTES or (
+        name == "cfg_attr" and SUPPRESSING.search(arguments)
+    ):
+        yield Issue(where, f"#[{name}{arguments}]{INSTEAD}")
 
 
 def suppressions(
-    language: str, texts: Mapping[str, str], exceptions: Exceptions
+    language: str, sources: Mapping[str, Source], exceptions: Exceptions
 ) -> Iterator[Issue]:
-    for file, text in texts.items():
-        if not is_source(language, file):
-            continue
-        if language == "rust":
-            yield from rust_issues(file, text, exceptions)
-            continue
+    for file, source in sources.items():
+        for attribute in source.attributes:
+            yield from attribute_issue(file, attribute, exceptions)
         yield from (
             Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
-            for line, marker in markers(language, file, text)
+            for line, marker in markers(language, source)
         )
 
 
 def used_attributes(
-    texts: Mapping[str, str],
+    sources: Mapping[str, Source],
 ) -> FrozenOrderedSet[tuple[str, str]]:
     return FrozenOrderedSet(
         (file, lint)
-        for file, text in texts.items()
-        if file.endswith(".rs")
-        for _, name, arguments in rust_attributes(text)
-        if name == "expect"
-        for lint in attribute_lints(arguments)
+        for file, source in sources.items()
+        for attribute in source.attributes
+        if attribute.name == "expect"
+        for lint in attribute_lints(attribute.arguments)
     )

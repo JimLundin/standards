@@ -235,6 +235,16 @@ def test_a_docstring_naming_copyright_is_no_licence_header() -> None:
     )
 
 
+def test_an_attribute_inside_a_rust_comment_is_reported_once() -> None:
+    text = "fn f() {}\n// #[allow(x)] was here\n"
+    assert checked("rust", {"a.rs": text}) == failed("a.rs:2")
+
+
+def test_an_attribute_inside_a_rust_string_is_not_reported() -> None:
+    text = 'const A: &str = "#[allow(x)]";\n'
+    assert checked("rust", {"a.rs": text}) == ("All checks passed",)
+
+
 def test_a_python_type_comment_fails_naming_annotations() -> None:
     text = "def f(a):\n    # type: (int) -> None\n    return a\n"
     assert checked("python", {"a.py": text}) == (

@@ -1,7 +1,7 @@
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.comments import Comment, Item, comments, is_source
+from checks.core.comments import Comment, Item, comments, is_source, sources
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import suppressions
 
@@ -202,9 +202,9 @@ def test_a_lint_disable_inside_a_typescript_string_is_no_suppression() -> None:
     texts = FrozenOrderedDict({
         "a.ts": 'const a = "// eslint-disable";\n// eslint-disable\n'
     })
-    assert tuple(suppressions("typescript", texts, load(None))) == (
-        Issue("a.ts:2", f"suppression `// eslint-disable`{INSTEAD}"),
-    )
+    assert tuple(
+        suppressions("typescript", sources("typescript", texts), load(None))
+    ) == (Issue("a.ts:2", f"suppression `// eslint-disable`{INSTEAD}"),)
 
 
 def test_a_typescript_type_assertion_is_no_comment() -> None:
