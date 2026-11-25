@@ -60,7 +60,7 @@ def test_a_comment_marker_inside_a_literal_passes(
     assert checked(language, {file: text}) == ("All checks passed",)
 
 
-def test_a_doc_comment_on_a_public_function_of_a_library_fails() -> None:
+def test_a_rust_doc_comment_fails() -> None:
     text = "/// Public.\npub fn a() {}\n"
     assert checked("rust", {"src/lib.rs": text}) == failed(
         "src/lib.rs:1", why="doc comment"
