@@ -6,12 +6,16 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_api import documents, request, run
 from checks.core.values import Inputs, Request, parse_json
-from tests.helpers import entry
+from tests.helpers import assert_findings_name_the_fix, entry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-ONLY_DATA = "; the core's public API takes only data"
+ONLY_DATA = (
+    "; fix: take the plain values it would give, and keep the trait, closure"
+    " or future in the shell, or, if it can't apply, an `api` exception with"
+    " its reason"
+)
 PATHS = json.dumps({
     "1": {"path": ["demo", "Store"], "crate_id": 0},
     "2": {"path": ["core", "clone", "Clone"], "crate_id": 1},
@@ -113,7 +117,9 @@ def check(
         DOC: document(index, version),
         "exceptions.toml": exceptions,
     })
-    return run(("m.json", "demo-core"), Inputs(texts)).lines
+    outcome = run(("m.json", "demo-core"), Inputs(texts))
+    assert_findings_name_the_fix(outcome)
+    return outcome.lines
 
 
 def test_documents_for_the_named_library_packages() -> None:
@@ -320,6 +326,6 @@ def test_no_exceptions_file_covers_nothing() -> None:
 
 def test_untested_format() -> None:
     assert check({}, version=62) == (
-        f"rust_api.py:0: rustdoc JSON format 62 is untested; check rust_api.py against it and add it to FORMATS{ONLY_DATA}",
+        "rust_api.py:0: rustdoc JSON format 62 is untested; fix: check rust_api.py against it and add 62 to FORMATS",
         "Found 1 issues",
     )

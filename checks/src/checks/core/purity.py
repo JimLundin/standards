@@ -109,8 +109,12 @@ EFFECT_TYPES = FrozenOrderedSet((
 ))
 PORT_BASES = FrozenOrderedSet(("ABC", "Protocol"))
 LAYER = re.compile(r"[\w.]+")
-IMPORTS = "it may import itself, pure standard modules and a PUR001:<module> exception"
-ONLY_DATA = "the core's public API takes only data"
+AWAIT_IN_THE_SHELL = "make it a plain `def` and await in the shell"
+SHELL_EFFECT = "call it in the shell and pass its result into the core"
+ONLY_DATA = (
+    "fix: take the plain values it would give, and keep it in the shell, or,"
+    " if it can't apply, a `PUR003` exception with its reason"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,7 +189,11 @@ def import_findings(
             node.lineno,
             node.col_offset,
             f"PUR001:{name}",
-            f"the core imports `{name}`; {IMPORTS}",
+            (
+                f"the core imports `{name}`; fix: import it in the shell and"
+                f" pass its results into the core, or, if `{name}` is pure, a"
+                f" `PUR001:{name}` exception with its reason"
+            ),
         )
         for node, name, members in imported(tree, origin)
         if not within(name, (*PURE_MODULES, *cores))
@@ -199,7 +207,7 @@ def builtin_findings(tree: ast.Module) -> Iterator[Finding]:
             node.lineno,
             node.col_offset,
             "PUR002",
-            f"the core uses the builtin `{node.id}`; keep I/O at the boundary",
+            f"the core uses the builtin `{node.id}`; fix: {SHELL_EFFECT}",
         )
         for node in ast.walk(tree)
         if isinstance(node, ast.Name)
@@ -305,7 +313,10 @@ def api_findings(
         )
     yield from (
         Finding(
-            node.lineno, node.col_offset, "PUR003", f"`{node.name}` is async"
+            node.lineno,
+            node.col_offset,
+            "PUR003",
+            f"`{node.name}` is async; fix: {AWAIT_IN_THE_SHELL}",
         )
         for node in ast.walk(tree)
         if isinstance(node, ast.AsyncFunctionDef)

@@ -209,7 +209,7 @@ if [ -f package.json ] && at_least step; then
 		unit "$test_check" "last 'Tests +[0-9]+ [a-z]+( \| [0-9]+ [a-z]+)*'" \
 			vitest_run --mode "$mode" --reporter=verbose
 	else
-		skipped "$test_check" "vitest not installed"
+		skipped "$test_check" "vitest not installed" "install it with npm install -D vitest"
 	fi
 fi
 # Stryker's vitest runner is given the standard's vitest config, when that
@@ -242,7 +242,7 @@ if full; then
 		unit mutation "last 'mutation score (of )?[0-9.]+'" \
 			stryker_run "${mutation[@]}"
 	else
-		skipped mutation "@stryker-mutator/core not installed"
+		skipped mutation "@stryker-mutator/core not installed" "install it with npm install -D @stryker-mutator/core @stryker-mutator/vitest-runner"
 	fi
 	release_units typescript,javascript,css ts,tsx,js,mjs,jsx,css
 fi

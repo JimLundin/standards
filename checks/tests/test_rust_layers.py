@@ -5,9 +5,13 @@ from ordered import FrozenList
 
 from checks.core.rust_layers import request, run
 from checks.core.values import Inputs, Outcome, Request
-from tests.helpers import inputs
+from tests.helpers import assert_lines_name_the_fix, inputs
 
-CORELESS = "has binaries but no no_std library to hold the pure core"
+CORELESS = (
+    "has binaries but no no_std library to hold the pure core; fix: add a"
+    " `#![no_std]` library package for the core, or set"
+    ' package.metadata.standards.layer = "shell" on this package'
+)
 
 
 def test_request_reads_the_metadata() -> None:
@@ -32,7 +36,9 @@ def metadata(*packages: Mapping[str, object]) -> str:
 
 def core_libraries(*packages: Mapping[str, object]) -> Outcome:
     texts = {"m.json": metadata(*packages)}
-    return run(("m.json",), inputs(texts))
+    outcome = run(("m.json",), inputs(texts))
+    assert_lines_name_the_fix(outcome.lines if outcome.status else ())
+    return outcome
 
 
 def test_undeclared_libraries_are_core() -> None:
@@ -54,9 +60,9 @@ def test_core_libraries_report_invalid_layers() -> None:
         package("d", ("lib",)),
     ) == Outcome(
         FrozenList((
-            'a/Cargo.toml: package.metadata.standards.layer is "Shell"; use "core" or "shell"',
-            'b/Cargo.toml: package.metadata.standards.layer is 1; use "core" or "shell"',
-            'c/Cargo.toml: package.metadata.standards.layer is ["shell"]; use "core" or "shell"',
+            'a/Cargo.toml: package.metadata.standards.layer is "Shell"; fix: set package.metadata.standards.layer to "core" or "shell"',
+            'b/Cargo.toml: package.metadata.standards.layer is 1; fix: set package.metadata.standards.layer to "core" or "shell"',
+            'c/Cargo.toml: package.metadata.standards.layer is ["shell"]; fix: set package.metadata.standards.layer to "core" or "shell"',
         )),
         1,
     )

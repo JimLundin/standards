@@ -18,8 +18,12 @@ if TYPE_CHECKING:
 
 LAYERS = FrozenOrderedSet(("core", "shell"))
 LAYER = "package.metadata.standards.layer"
-USE = 'use "core" or "shell"'
-CORELESS = "has binaries but no no_std library to hold the pure core"
+USE = f'fix: set {LAYER} to "core" or "shell"'
+CORELESS = (
+    "has binaries but no no_std library to hold the pure core; fix: add a"
+    " `#![no_std]` library package for the core, or set"
+    f' {LAYER} = "shell" on this package'
+)
 
 
 def manifest(root: str, package: Mapping[str, object]) -> str:

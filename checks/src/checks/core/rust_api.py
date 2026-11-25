@@ -40,7 +40,11 @@ ALLOWED = FrozenOrderedSet((
     "core::marker::Sized",
     "core::marker::Sync",
 ))
-ONLY_DATA = "; the core's public API takes only data"
+ONLY_DATA = (
+    "; fix: take the plain values it would give, and keep the trait, closure"
+    " or future in the shell, or, if it can't apply, an `api` exception with"
+    " its reason"
+)
 OWNERS = FrozenList(("struct", "enum", "union", "trait", "type_alias", "impl"))
 
 
@@ -165,13 +169,16 @@ def item_findings(
         ),
     )
     for message in dict.fromkeys(messages):
-        yield Finding(path, line, f"`{name}` {message}")
+        yield Finding(path, line, f"`{name}` {message}{ONLY_DATA}")
 
 
 def crate_findings(document: Mapping[str, object]) -> FrozenList[Finding]:
     version = document.get("format_version")
     if version not in FORMATS:
-        message = f"rustdoc JSON format {version} is untested; check rust_api.py against it and add it to FORMATS"
+        message = (
+            f"rustdoc JSON format {version} is untested; fix: check"
+            f" rust_api.py against it and add {version} to FORMATS"
+        )
         return FrozenList((Finding("rust_api.py", 0, message),))
     crate = Crate(table(document.get("index")), table(document.get("paths")))
     excluded = foreign_methods(crate)
@@ -222,7 +229,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
     return summarized(
         FrozenList(
-            f"{finding.path}:{finding.line}: {finding.message}{ONLY_DATA}"
+            f"{finding.path}:{finding.line}: {finding.message}"
             for finding in sorted(
                 findings, key=lambda f: (f.path, f.line, f.message)
             )

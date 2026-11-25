@@ -5,6 +5,8 @@ lazy from collections.abc import Mapping
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_core import (
+    BUILDS_NO_STD,
+    NO_POINTER,
     PLAIN,
     POINTERS,
     TESTS_ONLY,
@@ -16,7 +18,7 @@ from checks.core.rust_core import (
     toml_value,
 )
 from checks.core.values import Inputs, Outcome, Request
-from tests.helpers import entry, inputs
+from tests.helpers import assert_findings_name_the_fix, entry, inputs
 
 ROOT = "C:\\work"
 CORE_ROOT = "core/src/lib.rs"
@@ -85,7 +87,9 @@ def checked(
     }
     if exceptions is not None:
         texts |= {"exceptions.toml": exceptions}
-    return run(ARGUMENTS, inputs(texts))
+    outcome = run(ARGUMENTS, inputs(texts))
+    assert_findings_name_the_fix(outcome)
+    return outcome
 
 
 def test_request_reads_the_core_sources_once_the_metadata_is_known() -> None:
@@ -135,7 +139,7 @@ def test_std_is_for_tests_only() -> None:
 def test_core_libraries_use_no_pointers() -> None:
     box = diagnostic("use of a disallowed type `alloc::boxed::Box`")
     assert checked(box, box).lines == (
-        f"{CORE_ROOT}:7: uses `alloc::boxed::Box`; {PLAIN}",
+        f"{CORE_ROOT}:7: uses `alloc::boxed::Box`; fix: {NO_POINTER}",
         "Found 1 issues",
     )
     ignored = (
@@ -159,7 +163,7 @@ def test_build_errors_are_reported() -> None:
         "can't find crate for `std`", level="error", code="E0463"
     )
     assert checked(error).lines == (
-        f"{CORE_ROOT}:7: can't find crate for `std`",
+        f"{CORE_ROOT}:7: can't find crate for `std`; fix: {BUILDS_NO_STD}",
         "Found 1 issues",
     )
     assert checked(diagnostic("aborting", level="error", file=None)).status == 0
@@ -167,11 +171,11 @@ def test_build_errors_are_reported() -> None:
         "can't find crate for `std`", level="error", file="clippy.toml"
     )
     assert checked(unsourced).lines[0] == (
-        f"{CORE_ROOT}:1: can't find crate for `std`"
+        f"{CORE_ROOT}:1: can't find crate for `std`; fix: {BUILDS_NO_STD}"
     )
     lineless = error.replace('"line_start": 7', '"line_start": null')
     assert checked(lineless).lines[0] == (
-        f"{CORE_ROOT}:0: can't find crate for `std`"
+        f"{CORE_ROOT}:0: can't find crate for `std`; fix: {BUILDS_NO_STD}"
     )
 
 

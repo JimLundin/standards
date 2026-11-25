@@ -47,3 +47,12 @@ def assert_names_the_fix(message: str) -> None:
 def assert_each_names_the_fix(issues: Iterable[Issue]) -> None:
     for issue in issues:
         assert_names_the_fix(issue.message)
+
+
+def assert_lines_name_the_fix(found: Iterable[str]) -> None:
+    for line in found:
+        assert_names_the_fix(line)
+
+
+def assert_findings_name_the_fix(outcome: Outcome) -> None:
+    assert_lines_name_the_fix(outcome.lines[:-1] if outcome.status else ())

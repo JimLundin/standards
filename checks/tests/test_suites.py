@@ -3,7 +3,9 @@ lazy from collections.abc import Sequence
 import pytest
 from ordered import FrozenList
 
-from checks.core.suites import Suite, Trigger, active, load
+from checks.core.suites import Suite, Suites, Trigger, active
+from checks.core.suites import load as load_suites
+from tests.helpers import assert_lines_name_the_fix
 
 PACKAGES = ("proto", "client", "app")
 PINNED = ("NODE", "DX")
@@ -31,6 +33,17 @@ tier = "release"
 tier = "step"
 paths = ["crates/app/**", "crates/proto/**"]
 """
+
+
+def load(
+    text: str | None,
+    language: str,
+    packages: Sequence[str],
+    pinned: Sequence[str] = (),
+) -> Suites:
+    loaded = load_suites(text, language, packages, pinned)
+    assert_lines_name_the_fix(loaded.problems)
+    return loaded
 
 
 def names(suites: Sequence[Suite]) -> FrozenList[str]:
@@ -71,62 +84,65 @@ def test_load_reports_invalid_toml() -> None:
 @pytest.mark.parametrize(
     ("text", "problem"),
     [
-        ("[other]\n", "checks.toml: unknown table `other`"),
+        (
+            "[other]\n",
+            "checks.toml: unknown table `other`; fix: remove it, or make it a [[suite]]",
+        ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\nextra = 1\n',
-            "checks.toml: suite 1 has unknown keys: extra",
+            "checks.toml: suite 1 has unknown keys: extra; fix: remove them, keeping `name`, `command`, `tools`, `when`",
         ),
         (
             '[[suite]]\nname = "A b"\ncommand = "b"\n[[suite.when]]\ntier = "step"\n',
-            "checks.toml: suite 1 needs a name of lowercase letters, digits and -",
+            'checks.toml: suite 1 has no name of lowercase letters, digits and -; fix: set `name`, such as `name = "ip-scrub"`',
         ),
         (
             '[[suite]]\nname = "a"\ncommand = " "\n[[suite.when]]\ntier = "step"\n',
-            "checks.toml: suite 1 needs a command",
+            "checks.toml: suite 1 has no command; fix: set `command` to the line that runs the suite",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b\\tc"\n[[suite.when]]\ntier = "step"\n',
-            "checks.toml: suite 1 command must be one line without tabs",
+            "checks.toml: suite 1 command spans lines or holds tabs; fix: write it on one line without tabs, or move it into a script",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b\\nc"\n[[suite.when]]\ntier = "step"\n',
-            "checks.toml: suite 1 command must be one line without tabs",
+            "checks.toml: suite 1 command spans lines or holds tabs; fix: write it on one line without tabs, or move it into a script",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n',
-            "checks.toml: suite 1 needs at least one [[suite.when]]",
+            "checks.toml: suite 1 has no [[suite.when]]; fix: add a [[suite.when]] with a `tier` of `commit` or `step` or `release`",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "fast"\n',
-            "checks.toml: suite 1 when 1 needs a tier: `commit` or `step` or `release`",
+            "checks.toml: suite 1 when 1 has no valid tier; fix: set `tier` to `commit` or `step` or `release`",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\nwhy = 1\n',
-            "checks.toml: suite 1 when 1 has unknown keys: why",
+            "checks.toml: suite 1 when 1 has unknown keys: why; fix: remove them, keeping `tier`, `paths`, `packages`",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npaths = "x"\n',
-            "checks.toml: suite 1 when 1 paths must be a list of strings",
+            'checks.toml: suite 1 when 1 paths must be a list of strings; fix: write it as a list of non-empty strings, such as `paths = ["x"]`',
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npaths = [""]\n',
-            "checks.toml: suite 1 when 1 paths must be a list of strings",
+            'checks.toml: suite 1 when 1 paths must be a list of strings; fix: write it as a list of non-empty strings, such as `paths = ["x"]`',
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npackages = "proto"\n',
-            "checks.toml: suite 1 when 1 packages must be a list of strings",
+            'checks.toml: suite 1 when 1 packages must be a list of strings; fix: write it as a list of non-empty strings, such as `packages = ["x"]`',
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npackages = ["ghost"]\n',
-            "checks.toml: suite 1 when 1 names no workspace package `ghost`",
+            "checks.toml: suite 1 when 1 names no workspace package `ghost`; fix: name a package of the workspace, or remove `ghost`",
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\ntools = "NODE"\n[[suite.when]]\ntier = "step"\n',
-            "checks.toml: suite 1 tools must be a list of strings",
+            'checks.toml: suite 1 tools must be a list of strings; fix: write it as a list of non-empty strings, such as `tools = ["NODE"]`',
         ),
         (
             '[[suite]]\nname = "a"\ncommand = "b"\ntools = ["NODE", "GHOST"]\n[[suite.when]]\ntier = "step"\n',
-            "checks.toml: suite 1 names no pinned tool `GHOST`",
+            "checks.toml: suite 1 names no pinned tool `GHOST`; fix: pin `GHOST` in tools.env, or remove it from `tools`",
         ),
     ],
 )
@@ -139,7 +155,7 @@ def test_load_reports_each_problem(text: str, problem: str) -> None:
 def test_packages_are_only_for_rust() -> None:
     text = '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "step"\npackages = ["proto"]\n'
     assert load(text, "python", ()).problems == (
-        "checks.toml: suite 1 when 1 packages are only for Rust projects",
+        "checks.toml: suite 1 when 1 packages are only for Rust projects; fix: name the files in `paths` instead",
     )
 
 
@@ -148,7 +164,9 @@ def test_repeated_names_are_reported_and_the_first_kept() -> None:
         '[[suite]]\nname = "a"\ncommand = "{}"\n[[suite.when]]\ntier = "step"\n'
     )
     loaded = load(suite.format("first") + suite.format("second"), "rust", ())
-    assert loaded.problems == ("checks.toml: suite 2 repeats the name `a`",)
+    assert loaded.problems == (
+        "checks.toml: suite 2 repeats the name `a`; fix: give each suite its own name",
+    )
     assert names(loaded.entries) == ("a",)
     assert loaded.entries[0].command == "first"
 
@@ -173,21 +191,21 @@ def test_every_problem_of_a_suite_is_reported() -> None:
         '[[suite.when]]\ntier = "step"\npackages = ["ghost", "proto", "spirit"]\n'
     )
     assert load(text, "rust", PACKAGES).problems == (
-        "checks.toml: unknown table `other`",
-        "checks.toml: suite 1 has unknown keys: how, why",
-        "checks.toml: suite 2 needs a name of lowercase letters, digits and -",
-        "checks.toml: suite 2 needs a command",
-        "checks.toml: suite 2 needs at least one [[suite.when]]",
-        "checks.toml: suite 3 when 1 needs a tier: `commit` or `step` or `release`",
-        "checks.toml: suite 3 when 1 paths must be a list of strings",
-        "checks.toml: suite 3 when 2 names no workspace package `ghost`",
-        "checks.toml: suite 3 when 2 names no workspace package `spirit`",
+        "checks.toml: unknown table `other`; fix: remove it, or make it a [[suite]]",
+        "checks.toml: suite 1 has unknown keys: how, why; fix: remove them, keeping `name`, `command`, `tools`, `when`",
+        'checks.toml: suite 2 has no name of lowercase letters, digits and -; fix: set `name`, such as `name = "ip-scrub"`',
+        "checks.toml: suite 2 has no command; fix: set `command` to the line that runs the suite",
+        "checks.toml: suite 2 has no [[suite.when]]; fix: add a [[suite.when]] with a `tier` of `commit` or `step` or `release`",
+        "checks.toml: suite 3 when 1 has no valid tier; fix: set `tier` to `commit` or `step` or `release`",
+        'checks.toml: suite 3 when 1 paths must be a list of strings; fix: write it as a list of non-empty strings, such as `paths = ["x"]`',
+        "checks.toml: suite 3 when 2 names no workspace package `ghost`; fix: name a package of the workspace, or remove `ghost`",
+        "checks.toml: suite 3 when 2 names no workspace package `spirit`; fix: name a package of the workspace, or remove `spirit`",
     )
     rust_only = '[[suite]]\nname = "a"\ncommand = "b"\n[[suite.when]]\ntier = "x"\npaths = "p"\npackages = ["proto"]\n'
     assert load(rust_only, "python", ()).problems == (
-        "checks.toml: suite 1 when 1 needs a tier: `commit` or `step` or `release`",
-        "checks.toml: suite 1 when 1 paths must be a list of strings",
-        "checks.toml: suite 1 when 1 packages are only for Rust projects",
+        "checks.toml: suite 1 when 1 has no valid tier; fix: set `tier` to `commit` or `step` or `release`",
+        'checks.toml: suite 1 when 1 paths must be a list of strings; fix: write it as a list of non-empty strings, such as `paths = ["x"]`',
+        "checks.toml: suite 1 when 1 packages are only for Rust projects; fix: name the files in `paths` instead",
     )
 
 
@@ -197,8 +215,8 @@ def test_a_repeated_name_is_found_among_all_earlier_suites() -> None:
         suite.format("a", "b") + suite.format("c", "d") + suite.format("a", " ")
     )
     assert load(text, "rust", ()).problems == (
-        "checks.toml: suite 3 needs a command",
-        "checks.toml: suite 3 repeats the name `a`",
+        "checks.toml: suite 3 has no command; fix: set `command` to the line that runs the suite",
+        "checks.toml: suite 3 repeats the name `a`; fix: give each suite its own name",
     )
 
 

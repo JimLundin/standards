@@ -30,8 +30,16 @@ MEASURED_KINDS = FrozenOrderedSet((
 ))
 COMPLEX = "the shell function"
 SHARED = "the shell makes"
-MOVE = "; move the decisions into the core"
+MOVE = (
+    "; fix: move the decisions into pure functions of the core and call them"
+    " from the shell, or, if it can't apply, a `shell` exception with its"
+    " reason"
+)
 UNMEASURED = "cannot be measured"
+MEASURE = (
+    "fix: make the file parse as Rust so rust-decisions measures it, or, if it"
+    " can't apply, a `shell` exception with its reason"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +125,7 @@ def findings(
     items: Sequence[Function | Failure], exceptions: Exceptions
 ) -> FrozenList[str]:
     unmeasured = FrozenList(
-        f"{item.path}: {UNMEASURED}: {item.error}"
+        f"{item.path}: {UNMEASURED}: {item.error}; {MEASURE}"
         for item in failures(items)
         if not exceptions.covers(SHELL, item.path)
     )

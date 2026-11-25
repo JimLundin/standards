@@ -305,7 +305,10 @@ def test_a_key_does_not_depend_on_the_tier() -> None:
 
 def test_suite_problems_are_reported() -> None:
     result = outcome(suites="[other]\n")
-    assert result.lines[-1] == "problem\tchecks.toml: unknown table `other`"
+    assert (
+        result.lines[-1]
+        == "problem\tchecks.toml: unknown table `other`; fix: remove it, or make it a [[suite]]"
+    )
     assert result.status == 1
 
 
@@ -410,6 +413,6 @@ def test_a_suite_s_key_holds_the_pins_of_its_tools() -> None:
 def test_a_suite_naming_an_unpinned_tool_is_a_problem() -> None:
     result = outcome(pins="DX=0.7.10\n")
     assert result.lines[-1] == (
-        "problem\tchecks.toml: suite 3 names no pinned tool `NODE`"
+        "problem\tchecks.toml: suite 3 names no pinned tool `NODE`; fix: pin `NODE` in tools.env, or remove it from `tools`"
     )
     assert result.status == 1

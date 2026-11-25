@@ -68,14 +68,15 @@ in_ci() {
 	[ -n "${CI:-}" ] && [ "$CI" != false ]
 }
 
-# A unit that can't run, such as one whose tool isn't installed, is skipped;
-# in CI it fails, so CI passes no tree with a unit it didn't run.
+# A unit that can't run, such as one whose tool isn't installed, is skipped,
+# naming what's wrong second and the fix third; in CI it fails, so CI passes
+# no tree with a unit it didn't run.
 skipped() {
 	if in_ci; then
-		line "$1" FAIL "$2; CI runs every unit"
+		line "$1" FAIL "$2; fix: $3 in CI, which runs every unit"
 		failed+=("$1")
 	else
-		line "$1" skip "$2"
+		line "$1" skip "$2; fix: $3, or leave the unit to CI, which runs every unit"
 	fi
 }
 
@@ -90,7 +91,7 @@ needs() {
 	if dry || command -v "$1" >/dev/null; then
 		return 0
 	fi
-	skipped "$2" "$1 not installed"
+	skipped "$2" "$1 not installed" "install $1"
 	return 1
 }
 
@@ -351,9 +352,9 @@ rekey() {
 	}
 	checks units "$language" "$tier" "$(native "$logs/listing")" \
 		"--standards=$standards_tree" "--pins=$(native "$home/tools.env")" \
-		"${unit_arguments[@]}" >"$logs/units.txt"
+		"${unit_arguments[@]}" >"$logs/units.txt" 2>"$logs/units.log"
 	if [ ! -s "$logs/units.txt" ]; then
-		line units FAIL "the units check failed"
+		line units FAIL "the units check failed; fix: read $(native "$logs/units.log")"
 		failed+=(units)
 		keyed=
 		return 1

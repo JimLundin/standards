@@ -3,19 +3,17 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.immutability import request, run
 from checks.core.values import Inputs, Request
-from tests.helpers import entry
+from tests.helpers import assert_findings_name_the_fix, entry
 
 MUTABLE = (
-    "in a parameter or field; use Sequence, Mapping, an Ordered type from "
+    "in a parameter or field; fix: use Sequence, Mapping, an Ordered type from "
     "ordered, or FrozenList, FrozenOrderedSet or FrozenOrderedDict"
 )
 UNORDERED = (
-    "promises no order; use OrderedSet or OrderedCollection from ordered, or "
+    "promises no order; fix: use OrderedSet or OrderedCollection from ordered, or "
     "Container for membership only"
 )
-HASHED = (
-    "iterates in hash order, which changes per process; use FrozenOrderedSet"
-)
+HASHED = "iterates in hash order, which changes per process; fix: use FrozenOrderedSet"
 
 
 def findings(source: str, exceptions: str | None = None) -> FrozenList[str]:
@@ -23,6 +21,7 @@ def findings(source: str, exceptions: str | None = None) -> FrozenList[str]:
     if exceptions is not None:
         texts |= {"exceptions.toml": exceptions}
     outcome = run(("m.py",), Inputs(texts))
+    assert_findings_name_the_fix(outcome)
     return FrozenList(line.removeprefix("m.py:") for line in outcome.lines[:-1])
 
 
@@ -51,7 +50,9 @@ def test_clean_file() -> None:
     ],
 )
 def test_unfrozen_dataclasses(source: str, expected: str) -> None:
-    assert findings(source) == (f"{expected} dataclass is not frozen=True",)
+    assert findings(source) == (
+        f"{expected} dataclass is not frozen=True; fix: pass `frozen=True` to it",
+    )
 
 
 @pytest.mark.parametrize(
@@ -120,7 +121,7 @@ def test_mutable_globals(source: str) -> None:
 
 def test_mutable_global_message() -> None:
     assert findings("X = []\n") == (
-        "1:1: IMM003 mutable module-level value; use a tuple, FrozenList or FrozenOrderedDict",
+        "1:1: IMM003 mutable module-level value; fix: use a tuple, FrozenList or FrozenOrderedDict",
     )
 
 
@@ -219,7 +220,7 @@ def test_unnamed_collections(
     source: str, spelled: str, wanted: str, column: int
 ) -> None:
     assert findings(source) == (
-        f"1:{column}: IMM006 `{spelled}` has a name in ordered; use {wanted}",
+        f"1:{column}: IMM006 `{spelled}` has a name in ordered; fix: use {wanted}",
     )
 
 
@@ -253,7 +254,7 @@ def test_findings_sort_by_position() -> None:
 def test_an_exception_covers_its_rule_in_matching_paths() -> None:
     source = "x = {1}\n@dataclass\nclass A:\n    pass\n"
     assert findings(source, entry("*.py", "IMM004")) == (
-        "2:2: IMM001 dataclass is not frozen=True",
+        "2:2: IMM001 dataclass is not frozen=True; fix: pass `frozen=True` to it",
     )
 
 
@@ -295,7 +296,7 @@ def test_a_call_in_an_annotation_is_reported_once() -> None:
     assert findings(
         "def f(x: Annotated[int, MappingProxyType()]) -> None: ...\n"
     ) == (
-        "1:25: IMM006 `MappingProxyType` has a name in ordered; use FrozenOrderedDict[K, V]",
+        "1:25: IMM006 `MappingProxyType` has a name in ordered; fix: use FrozenOrderedDict[K, V]",
     )
 
 

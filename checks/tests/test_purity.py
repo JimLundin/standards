@@ -5,10 +5,24 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.purity import core_modules, request, run, source
 from checks.core.values import Inputs, Request
-from tests.helpers import entry
+from tests.helpers import assert_findings_name_the_fix, entry
 
-IMPORTS = "it may import itself, pure standard modules and a PUR001:<module> exception"
-ONLY_DATA = "the core's public API takes only data"
+ONLY_DATA = (
+    "fix: take the plain values it would give, and keep it in the shell, or,"
+    " if it can't apply, a `PUR003` exception with its reason"
+)
+
+ASYNC = "fix: make it a plain `def` and await in the shell"
+
+
+def imports(module: str) -> str:
+    return (
+        f"the core imports `{module}`; fix: import it in the shell and pass"
+        f" its results into the core, or, if `{module}` is pure, a"
+        f" `PUR001:{module}` exception with its reason"
+    )
+
+
 PYPROJECT = """
 [[tool.importlinter.contracts]]
 type = "layers"
@@ -24,6 +38,7 @@ def findings(
     if exceptions is not None:
         texts |= {"exceptions.toml": exceptions}
     outcome = run((path,), Inputs(texts))
+    assert_findings_name_the_fix(outcome)
     return FrozenList(
         line.removeprefix(f"{path}:") for line in outcome.lines[:-1]
     )
@@ -77,7 +92,7 @@ def test_only_core_files_are_checked() -> None:
     assert findings("import os\n", "src/app/shell.py") == ()
     assert findings("import os\n", "src/app/corex.py") == ()
     assert findings("import os\n", "src/app/core.py") == (
-        f"1:1: PUR001 the core imports `os`; {IMPORTS}",
+        f"1:1: PUR001 {imports('os')}",
     )
 
 
@@ -115,15 +130,13 @@ def test_pure_imports(code: str) -> None:
     ],
 )
 def test_impure_imports(code: str, module: str) -> None:
-    assert findings(code) == (
-        f"1:1: PUR001 the core imports `{module}`; {IMPORTS}",
-    )
+    assert findings(code) == (f"1:1: PUR001 {imports(module)}",)
 
 
 def test_relative_imports_from_a_package() -> None:
     assert findings("from . import x\n", "src/app/core/__init__.py") == ()
     assert findings("from .. import x\n", "src/app/core/__init__.py") == (
-        f"1:1: PUR001 the core imports `app`; {IMPORTS}",
+        f"1:1: PUR001 {imports('app')}",
     )
 
 
@@ -145,7 +158,7 @@ def test_relative_imports_from_a_package() -> None:
 )
 def test_effect_builtins(name: str) -> None:
     assert findings(f"x = {name}\n") == (
-        f"1:5: PUR002 the core uses the builtin `{name}`; keep I/O at the boundary",
+        f"1:5: PUR002 the core uses the builtin `{name}`; fix: call it in the shell and pass its result into the core",
     )
 
 
@@ -227,8 +240,8 @@ def test_each_forbidden_type_is_reported_once() -> None:
 def test_async_anywhere_in_the_core() -> None:
     code = "async def _f() -> None: ...\ndef g() -> None:\n    async def h() -> None: ...\n"
     assert findings(code) == (
-        "1:1: PUR003 `_f` is async",
-        "3:5: PUR003 `h` is async",
+        f"1:1: PUR003 `_f` is async; {ASYNC}",
+        f"3:5: PUR003 `h` is async; {ASYNC}",
     )
 
 
