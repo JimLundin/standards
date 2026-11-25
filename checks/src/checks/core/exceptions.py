@@ -81,7 +81,13 @@ def parse_entry(index: int, entry: object) -> ExceptionEntry | Issue:
     unknown = sorted(key for key in fields if key not in FIELDS)
     if unknown:
         keys = ", ".join(unknown)
-        return Issue(EXCEPTIONS, f"{where} has unknown keys: {keys}")
+        return Issue(
+            EXCEPTIONS,
+            (
+                f"{where} has unknown keys: {keys}; fix: remove them, leaving"
+                " only path, rule and reason"
+            ),
+        )
     values = FrozenList(fields.get(key) for key in FIELDS)
     texts = FrozenList(
         value.strip() for value in values if isinstance(value, str)
@@ -89,20 +95,29 @@ def parse_entry(index: int, entry: object) -> ExceptionEntry | Issue:
     if len(texts) == len(values) and all(texts):
         path, rule, reason = texts
         return ExceptionEntry(path, rule, reason)
-    return Issue(EXCEPTIONS, f"{where} needs a path, a rule and a reason")
+    return Issue(
+        EXCEPTIONS,
+        (
+            f"{where} needs a path, a rule and a reason; fix: give it a non-empty"
+            " `path`, `rule` and `reason`"
+        ),
+    )
 
 
 def load(text: str | None) -> Exceptions:
     try:
         data = parse_toml(text)
     except tomllib.TOMLDecodeError as error:
-        problem = Issue(EXCEPTIONS, f"invalid TOML: {error}")
+        problem = Issue(
+            EXCEPTIONS,
+            f"invalid TOML: {error}; fix: correct the TOML where the error points",
+        )
         return Exceptions(FrozenList(), FrozenList((problem,)))
     parsed = FrozenList(
         starmap(parse_entry, enumerate(entries(data.get("exception"))))
     )
     unknown = FrozenList(
-        Issue(EXCEPTIONS, f"unknown table `{key}`")
+        Issue(EXCEPTIONS, f"unknown table `{key}`; fix: remove it")
         for key in data
         if key != "exception"
     )
@@ -153,13 +168,19 @@ def invalidity(
     rule_kind = kind(language, entry.rule)
     matched = FrozenList(file for file in files if matches(file, entry.path))
     if not rule_kind:
-        return f"unknown rule for {language}"
+        return (
+            f"unknown rule for {language}; fix: name a rule the {language}"
+            " checks print, or remove the entry"
+        )
     if rule_kind not in UNPATHED and not matched:
-        return "path matches no tracked file"
+        return (
+            "path matches no tracked file; fix: point the path at a tracked"
+            " file, or remove the entry"
+        )
     if rule_kind == "attribute" and not any(
         (file, entry.rule) in attributes for file in matched
     ):
-        return "no matching #[expect] attribute; remove the entry"
+        return "no matching #[expect] attribute; fix: remove the entry"
     return ""
 
 

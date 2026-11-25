@@ -1,5 +1,5 @@
 import pytest
-from ordered import FrozenList
+from ordered import FrozenList, FrozenOrderedSet
 
 from checks.core.exceptions import (
     ExceptionEntry,
@@ -8,8 +8,14 @@ from checks.core.exceptions import (
     kind,
     load,
     parse_entry,
+    validate,
 )
-from tests.helpers import entry
+from tests.helpers import assert_each_names_the_fix, assert_names_the_fix, entry
+
+NEEDS = (
+    "needs a path, a rule and a reason; fix: give it a non-empty `path`,"
+    " `rule` and `reason`"
+)
 
 
 def exceptions_for(excepted: str) -> Exceptions:
@@ -61,9 +67,16 @@ def test_parse_entry_strips_fields() -> None:
 
 def test_parse_entry_rejects_unknown_keys_in_order() -> None:
     fields = {"path": "a", "rule": "b", "reason": "c", "zeta": 1, "alpha": 2}
-    assert parse_entry(2, fields) == Issue(
-        "exceptions.toml", "exception 3 has unknown keys: alpha, zeta"
+    issue = parse_entry(2, fields)
+    assert isinstance(issue, Issue)
+    assert issue == Issue(
+        "exceptions.toml",
+        (
+            "exception 3 has unknown keys: alpha, zeta; fix: remove them,"
+            " leaving only path, rule and reason"
+        ),
     )
+    assert_names_the_fix(issue.message)
 
 
 @pytest.mark.parametrize(
@@ -76,9 +89,10 @@ def test_parse_entry_rejects_unknown_keys_in_order() -> None:
     ],
 )
 def test_parse_entry_needs_all_fields(fields: object) -> None:
-    assert parse_entry(0, fields) == Issue(
-        "exceptions.toml", "exception 1 needs a path, a rule and a reason"
-    )
+    issue = parse_entry(0, fields)
+    assert isinstance(issue, Issue)
+    assert issue == Issue("exceptions.toml", f"exception 1 {NEEDS}")
+    assert_names_the_fix(issue.message)
 
 
 def test_load_without_a_file() -> None:
@@ -93,7 +107,10 @@ def test_load_reports_invalid_toml() -> None:
     (problem,) = exceptions.problems
     assert problem.path == "exceptions.toml"
     assert problem.message.startswith("invalid TOML: ")
-    assert len(problem.message) > len("invalid TOML: ")
+    assert problem.message.endswith(
+        "; fix: correct the TOML where the error points"
+    )
+    assert_names_the_fix(problem.message)
 
 
 def test_load_keeps_entries_and_reports_problems_in_order() -> None:
@@ -110,12 +127,49 @@ def test_load_keeps_entries_and_reports_problems_in_order() -> None:
     )
     assert isinstance(exceptions.entries, FrozenList)
     assert exceptions.problems == (
-        Issue(
-            "exceptions.toml", "exception 2 needs a path, a rule and a reason"
-        ),
-        Issue("exceptions.toml", "unknown table `other`"),
-        Issue("exceptions.toml", "unknown table `more`"),
+        Issue("exceptions.toml", f"exception 2 {NEEDS}"),
+        Issue("exceptions.toml", "unknown table `other`; fix: remove it"),
+        Issue("exceptions.toml", "unknown table `more`; fix: remove it"),
     )
+    assert_each_names_the_fix(exceptions.problems)
+
+
+def test_validate_names_the_fix_for_each_entry_that_applies_to_nothing() -> (
+    None
+):
+    exceptions = load(
+        entry("src/lib.rs", "Bad-Rule")
+        + entry("gone/**", "dead_code")
+        + entry("src/lib.rs", "clippy::b")
+        + entry("src/lib.rs", "clippy::a")
+    )
+    issues = validate(
+        "rust",
+        exceptions,
+        ("src/lib.rs",),
+        FrozenOrderedSet((("src/lib.rs", "clippy::a"),)),
+    )
+    assert issues == (
+        Issue(
+            "exceptions.toml (src/lib.rs, Bad-Rule)",
+            (
+                "unknown rule for rust; fix: name a rule the rust checks print,"
+                " or remove the entry"
+            ),
+        ),
+        Issue(
+            "exceptions.toml (gone/**, dead_code)",
+            (
+                "path matches no tracked file; fix: point the path at a tracked"
+                " file, or remove the entry"
+            ),
+        ),
+        Issue(
+            "exceptions.toml (src/lib.rs, clippy::b)",
+            "no matching #[expect] attribute; fix: remove the entry",
+        ),
+    )
+    assert_each_names_the_fix(issues)
 
 
 @pytest.mark.parametrize(

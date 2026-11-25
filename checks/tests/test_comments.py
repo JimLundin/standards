@@ -5,8 +5,6 @@ from checks.core.comments import Comment, Item, comments, is_source, sources
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import suppressions
 
-INSTEAD = "; add an entry to exceptions.toml instead"
-
 
 def found(
     file: str, text: str, *, library: bool = False
@@ -204,7 +202,16 @@ def test_a_lint_disable_inside_a_typescript_string_is_no_suppression() -> None:
     })
     assert tuple(
         suppressions("typescript", sources("typescript", texts), load(None))
-    ) == (Issue("a.ts:2", f"suppression `// eslint-disable`{INSTEAD}"),)
+    ) == (
+        Issue(
+            "a.ts:2",
+            (
+                "`// eslint-disable` silences oxlint; fix: change the code so"
+                " oxlint passes, or, if the rule can't apply, an exception for"
+                " that rule with its reason"
+            ),
+        ),
+    )
 
 
 def test_a_typescript_type_assertion_is_no_comment() -> None:
