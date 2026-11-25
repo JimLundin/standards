@@ -5,9 +5,8 @@ standards=$(cd "$(dirname "$0")" && pwd)
 source "$standards/../lib.sh"
 arguments "$@"
 cd "$project" || exit 2
-# Before the lock is taken, so the sccache server it starts doesn't hold it.
-source "$standards/build.sh"
 begin rust
+source "$standards/build.sh"
 
 cargo=(cargo +nightly)
 if existing rust-toolchain rust-toolchain.toml >/dev/null; then

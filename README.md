@@ -18,7 +18,7 @@ typescript/check.sh …
 
 `step` and `release` run only in CI. On a machine the owner allows them on, set `STANDARDS_LOCAL_TIERS=1`; anywhere else either tier stops before its first unit and names the variable. `--verify` and `--affected` run nothing, so they need neither.
 
-One run that runs units at a time per user: each takes an `flock` on `run.lock` in the standards' cache directory (`STANDARDS_CACHE` overrides it), so the lock covers every checkout and worktree. A second run prints the holder's pid and project, waits for it to exit, then starts. The kernel frees the lock when the holder exits, killed or not, so a stale lock can't block; units run without it, so a process one leaves running, such as an sccache server, doesn't hold it. Without `flock` (util-linux), as under a Git Bash that lacks it, a run says so and runs without the lock. `--verify` and `--affected` take no lock.
+One run that runs units at a time per user: each takes an `flock` on `run.lock` in the standards' cache directory (`STANDARDS_CACHE` overrides it), so the lock covers every checkout and worktree. A second run prints the holder's pid and project, waits for it to exit, then starts. The kernel frees the lock when the holder exits, killed or not, so a stale lock can't block; units and the sccache server start without it, so a process that outlives the run doesn't hold it. Without `flock` (util-linux), as under a Git Bash that lacks it, a run says so and runs without the lock. `--verify` and `--affected` take no lock.
 
 A unit that can't run, such as one whose tool isn't installed, is skipped; in CI (`CI` set, as GitHub Actions sets it) it fails instead, so CI passes no tree with a unit it didn't run.
 

@@ -1,6 +1,7 @@
 """lib.sh in fixture workspaces: a git project whose origin is a bare
 repository beside it, so recorded passes go nowhere else."""
 
+import fcntl
 import json
 import os
 import signal
@@ -20,7 +21,8 @@ MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
 # marker, first reading a line from the fifo `HOLD` when set and leaving a
 # process running whose pid it writes to `LINGER` when set, and one whose
-# tool isn't installed; and the project's suites.
+# tool isn't installed; and the project's suites. With `BUILD` set, it
+# sources rust/build.sh after `begin`.
 DRIVER = f"""\
 set -uo pipefail
 PATH="$ROOT/bin:$PATH"
@@ -28,6 +30,7 @@ source "$STANDARDS/lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin python
+[ -z "${{BUILD:-}}" ] || source "$STANDARDS/rust/build.sh"
 units --toolchain=fixture --project=present,absent
 tools_of[present]=$PRESENT_TOOL
 unit present ending bash -c '[ -z "${{HOLD:-}}" ] || read -r _ <"$HOLD"; [ -z "${{LINGER:-}}" ] || {{ sleep infinity & echo $! >"$LINGER"; }}; echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
@@ -283,12 +286,15 @@ def test_with_no_tier_only_the_commit_units_run(stepped: Workspace) -> None:
 def test_a_local_tier_outside_ci_stops_before_any_unit(
     stepped: Workspace, tier: str
 ) -> None:
-    run = stepped.run(tier, only_present=True)
+    temporary = stepped.root / "tmp"
+    temporary.mkdir()
+    run = stepped.run(tier, only_present=True, more=(f"TMPDIR={temporary}",))
     assert run.status == 2
     assert run.lines == ()
     assert f"{tier} runs only in CI" in run.errors
     assert LOCAL_TIERS in run.errors
     assert stepped.runs() == 0
+    assert list(temporary.iterdir()) == []
 
 
 @pytest.mark.parametrize("allowance", [LOCAL_TIERS, "CI=true"])
@@ -364,6 +370,49 @@ def test_a_process_a_unit_leaves_running_does_not_hold_the_lock(
 ) -> None:
     linger = workspace.root / "linger"
     first = workspace.start(f"LINGER={linger}")
+    _, errors = first.communicate()
+    assert first.returncode == 0, errors
+    try:
+        second = workspace.start()
+        assert "holds" not in waiting(second)
+    finally:
+        os.kill(int(linger.read_text()), signal.SIGKILL)
+    assert second.wait() == 0
+    assert workspace.runs() == 2
+
+
+def test_a_run_waiting_on_an_empty_lock_file_names_an_unknown_run(
+    workspace: Workspace,
+) -> None:
+    file = workspace.root / "cache/run.lock"
+    file.parent.mkdir()
+    with file.open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        run = workspace.start()
+        line = waiting(run)
+        fcntl.flock(held, fcntl.LOCK_UN)
+    assert line.startswith("an unknown run holds ")
+    assert run.wait() == 0
+
+
+# A fake sccache whose server outlives it, as the real one's does, writing
+# the server's pid to `LINGER`.
+DAEMON_SCCACHE = """\
+#!/usr/bin/env bash
+sleep infinity &
+echo $! >"$LINGER"
+"""
+
+
+def test_a_server_build_sh_starts_after_the_lock_does_not_hold_it(
+    workspace: Workspace,
+) -> None:
+    fake = workspace.root / "bin/sccache"
+    fake.parent.mkdir()
+    _ = fake.write_text(DAEMON_SCCACHE, newline="\n")
+    fake.chmod(0o755)
+    linger = workspace.root / "linger"
+    first = workspace.start("BUILD=1", "RUSTC_WRAPPER=", f"LINGER={linger}")
     _, errors = first.communicate()
     assert first.returncode == 0, errors
     try:
