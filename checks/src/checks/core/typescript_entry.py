@@ -1,14 +1,13 @@
-from dataclasses import dataclass
 lazy from collections.abc import Sequence
 
 from ordered import FrozenList
 
+from checks.core.typescript_measure import Entry, of_kind, records
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
     operands,
-    parse_json,
     summarized,
     text,
 )
@@ -17,41 +16,6 @@ RUN_MAIN = "runMain"
 CREATE_ROOT = "createRoot"
 UI = "ui"
 LIMIT = 1
-
-
-@dataclass(frozen=True, slots=True)
-class Entry:
-    """A call of typescript/measure's entry records: a runtime's start."""
-
-    call: str
-    layer: str
-    root: str
-    path: str
-    line: int
-
-
-def entry(line: str) -> Entry | None:
-    record = parse_json(line)
-    call, layer, root, path, number = (
-        record.get(key) for key in ("entry", "layer", "root", "path", "line")
-    )
-    if not (
-        isinstance(call, str)
-        and isinstance(layer, str)
-        and isinstance(root, str)
-        and isinstance(path, str)
-        and isinstance(number, int)
-    ):
-        return None
-    return Entry(call, layer, root, path, number)
-
-
-def entries(lines: Sequence[str]) -> FrozenList[Entry]:
-    return FrozenList(
-        found
-        for line in lines
-        if line.startswith("{") and (found := entry(line)) is not None
-    )
 
 
 def beyond(items: Sequence[Entry], scope: str, call: str) -> FrozenList[str]:
@@ -87,9 +51,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    items = entries(
-        FrozenList(text(inputs.texts, operands(arguments)[0]).splitlines())
-    )
+    items = of_kind(records(text(inputs.texts, operands(arguments)[0])), Entry)
     mains = sum(item.call == RUN_MAIN for item in items)
     return summarized(
         findings(items),

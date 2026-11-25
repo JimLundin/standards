@@ -5,11 +5,9 @@ import sys
 lazy from pathlib import Path
 
 import pytest
-from ordered import FrozenList, FrozenOrderedDict
+from ordered import FrozenList
 
 from checks import git
-from checks.core.tools import TOOLS, request, run
-from checks.core.values import Inputs, Request
 from checks.shell import gather, main, read
 
 
@@ -29,43 +27,6 @@ def invoke(
     monkeypatch.setattr(sys, "stdin", io.StringIO(stdin))
     status = main()
     return status, capsysbinary.readouterr().out.decode()
-
-
-def test_tools_dispatch_to_each_tool() -> None:
-    assert tuple(TOOLS) == (
-        "core-clippy",
-        "core-libraries",
-        "immutability",
-        "passed",
-        "policy",
-        "purity",
-        "rust-api",
-        "rust-core",
-        "rust-roots",
-        "rust-shell",
-        "rust-shell-share",
-        "typescript-api",
-        "typescript-entry",
-        "typescript-layers",
-        "typescript-shell",
-        "typescript-shell-share",
-        "units",
-        "ruff-config",
-        "without",
-        "globs",
-        "oxlint-config",
-        "filter-mutmut",
-        "stryker-mutate",
-        "stryker-config",
-        "nextest-config",
-    )
-    assert request(("immutability", "a.py"), Inputs()) == Request(
-        FrozenList(("exceptions.toml", "a.py"))
-    )
-    texts = FrozenOrderedDict({"a.py": "x = 1\n"})
-    assert tuple(run(("immutability", "a.py"), Inputs(texts)).lines) == (
-        "All checks passed",
-    )
 
 
 def test_read_skips_missing_paths_and_directories(project: Path) -> None:

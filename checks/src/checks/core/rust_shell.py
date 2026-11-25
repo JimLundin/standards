@@ -3,8 +3,10 @@ lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
+from checks.core import typescript_measure
 from checks.core.cargo import is_shell, kinds, packages_of, relative, targets_of
 from checks.core.exceptions import EXCEPTIONS, SHELL, Exceptions, exceptions_in
+from checks.core.typescript_layers import OUTER_LAYERS
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -28,17 +30,14 @@ MEASURED_KINDS = FrozenOrderedSet((
     "staticlib",
     "proc-macro",
 ))
-# A TypeScript record's layer, which the UI shares with the shell.
-OUTER_LAYERS = FrozenOrderedSet(("shell", "ui"))
+UI = "ui"
 CARGO = "Cargo.toml"
 PACKAGE = "package.json"
-COMPLEX = "the shell function"
+SHELL_FUNCTION = "the shell function"
+COMPONENT = "the component"
 SHARED = "the shell makes"
 MOVE = "; move the decisions into the core"
 UNMEASURED = "cannot be measured"
-# typescript-measure's record of an entry point, which the entry unit reads.
-ENTRY = "entry"
-API_RECORD = "api"
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +47,7 @@ class Function:
     name: str
     decisions: int
     in_shell: bool
+    role: str = SHELL_FUNCTION
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,29 +84,20 @@ def measured(
     path = relative(str(record.get("path")), root)
     if "error" in record:
         return Failure(path, str(record.get("error")))
-    in_shell = (
-        record.get("layer") in OUTER_LAYERS
-        if "layer" in record
-        else roots.get(str(record.get("root")), False)
-    )
     return Function(
         path,
         int(str(record.get("line"))),
         str(record.get("function")),
         int(str(record.get("decisions"))),
-        in_shell,
+        roots.get(str(record.get("root")), False),
     )
 
 
 def read(
     lines: Sequence[str], roots: Mapping[str, bool], root: str
 ) -> FrozenList[Function | Failure]:
-    # typescript-measure's entry and api records are not functions.
     found = (
-        measured(line, roots, root)
-        for line in lines
-        if line.startswith("{")
-        and parse_json(line).keys().isdisjoint((ENTRY, API_RECORD))
+        measured(line, roots, root) for line in lines if line.startswith("{")
     )
     return FrozenList(dict.fromkeys(found))
 
@@ -117,9 +108,31 @@ def records(
     return read(lines, targets(metadata), str(metadata.get("workspace_root")))
 
 
-def typescript_records(lines: Sequence[str]) -> FrozenList[Function | Failure]:
-    """typescript-measure's records, whose paths are the project's."""
-    return read(lines, FrozenOrderedDict(), "")
+def typescript_item(
+    record: typescript_measure.Function | typescript_measure.Failure,
+) -> Function | Failure:
+    match record:
+        case typescript_measure.Function():
+            return Function(
+                record.path,
+                record.line,
+                record.name,
+                record.decisions,
+                record.layer in OUTER_LAYERS,
+                COMPONENT if record.layer == UI else SHELL_FUNCTION,
+            )
+        case typescript_measure.Failure():
+            return Failure(record.path, record.error)
+
+
+def typescript_records(text: str) -> FrozenList[Function | Failure]:
+    return FrozenList(
+        typescript_item(record)
+        for record in typescript_measure.records(text)
+        if isinstance(
+            record, (typescript_measure.Function, typescript_measure.Failure)
+        )
+    )
 
 
 def functions(items: Sequence[Function | Failure]) -> FrozenList[Function]:
@@ -147,7 +160,7 @@ def findings(
         if not exceptions.covers(SHELL, item.path)
     )
     complex_functions = FrozenList(
-        f"{item.path}:{item.line}: {COMPLEX} `{item.name}` makes {item.decisions} decisions (limit {LIMIT}){MOVE}"
+        f"{item.path}:{item.line}: {item.role} `{item.name}` makes {item.decisions} decisions (limit {LIMIT}){MOVE}"
         for item in shell_functions(functions(items))
         if item.decisions > LIMIT and not exceptions.covers(SHELL, item.path)
     )
@@ -222,18 +235,9 @@ def shared_verdict(
     )
 
 
-def verdict(
-    items: Sequence[Function | Failure], inputs: Inputs, files: str
-) -> Outcome:
-    issues = findings(items, exceptions_in(inputs))
-    measured_functions = functions(items)
-    return replace(
-        summarized(issues, passing(measured_functions)),
-        writes=FrozenOrderedDict({
-            files: "".join(
-                f"{path}\n" for path in shell_files(measured_functions)
-            )
-        }),
+def verdict(items: Sequence[Function | Failure], inputs: Inputs) -> Outcome:
+    return summarized(
+        findings(items, exceptions_in(inputs)), passing(functions(items))
     )
 
 
@@ -241,8 +245,18 @@ def share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return shared_verdict(measures_of(arguments, inputs), inputs, CARGO)
 
 
+# Rust's mutation step skips the shell's files, which the shell unit writes
+# to the file the third argument names.
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    return verdict(measures_of(arguments, inputs), inputs, arguments[2])
+    items = measures_of(arguments, inputs)
+    return replace(
+        verdict(items, inputs),
+        writes=FrozenOrderedDict({
+            arguments[2]: "".join(
+                f"{path}\n" for path in shell_files(functions(items))
+            )
+        }),
+    )
 
 
 def typescript_request(arguments: Sequence[str], _inputs: Inputs) -> Request:
@@ -252,9 +266,7 @@ def typescript_request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 def typescript_measures(
     arguments: Sequence[str], inputs: Inputs
 ) -> FrozenList[Function | Failure]:
-    return typescript_records(
-        FrozenList(text(inputs.texts, arguments[0]).splitlines())
-    )
+    return typescript_records(text(inputs.texts, arguments[0]))
 
 
 def typescript_share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
@@ -264,4 +276,4 @@ def typescript_share_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
 
 
 def typescript_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    return verdict(typescript_measures(arguments, inputs), inputs, arguments[1])
+    return verdict(typescript_measures(arguments, inputs), inputs)

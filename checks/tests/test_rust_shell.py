@@ -5,6 +5,7 @@ import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_shell import (
+    COMPONENT,
     Failure,
     Function,
     functions,
@@ -290,8 +291,7 @@ def compact(record: Mapping[str, object]) -> str:
     return json.dumps(record, separators=(",", ":"))
 
 
-def test_typescript_measure_records_are_read_without_entry_points() -> None:
-    # Records as typescript-measure prints them, with the layer it adds.
+def test_typescript_function_and_error_records_are_read() -> None:
     lines = (
         compact({
             "entry": "runMain",
@@ -315,11 +315,15 @@ def test_typescript_measure_records_are_read_without_entry_points() -> None:
             "root": "packages/shell",
         }),
     )
-    metadata = parse_json(
-        json.dumps({"workspace_root": "/work", "packages": []})
-    )
-    assert records(lines, metadata) == (
-        Function("packages/ui/src/view.tsx", 2, "View", 3, in_shell=True),
+    assert typescript_records("\n".join(lines)) == (
+        Function(
+            "packages/ui/src/view.tsx",
+            2,
+            "View",
+            3,
+            in_shell=True,
+            role=COMPONENT,
+        ),
         Failure("packages/shell/src/gone.ts", "not in the project"),
     )
 
@@ -336,7 +340,7 @@ def test_a_typescript_api_record_is_not_a_function() -> None:
         }),
         typescript("core", "packages/core/src/a.ts", 3, 0),
     )
-    assert typescript_records(lines) == (
+    assert typescript_records("\n".join(lines)) == (
         Function("packages/core/src/a.ts", 3, "f3", 0, in_shell=False),
     )
 
@@ -354,14 +358,12 @@ def typescript(layer: str, path: str, line: int, decisions: int) -> str:
 
 def typescript_outcome(
     *lines: str, exceptions: str | None = None
-) -> tuple[FrozenList[str], int, str]:
+) -> tuple[FrozenList[str], int]:
     texts = FrozenOrderedDict({"d.jsonl": "\n".join(lines)})
     if exceptions is not None:
         texts |= {"exceptions.toml": exceptions}
-    result = tool_run(
-        ("typescript-shell", "d.jsonl", "files.txt"), Inputs(texts)
-    )
-    return result.lines, result.status, result.writes["files.txt"]
+    result = tool_run(("typescript-shell", "d.jsonl"), Inputs(texts))
+    return result.lines, result.status
 
 
 def typescript_shared(
@@ -375,9 +377,9 @@ def typescript_shared(
 
 
 def test_typescript_requests_read_the_exceptions_and_the_measures() -> None:
-    assert tool_request(
-        ("typescript-shell", "d.jsonl", "files.txt"), Inputs()
-    ) == Request(FrozenList(("exceptions.toml", "d.jsonl")))
+    assert tool_request(("typescript-shell", "d.jsonl"), Inputs()) == Request(
+        FrozenList(("exceptions.toml", "d.jsonl"))
+    )
     assert tool_request(
         ("typescript-shell-share", "d.jsonl"), Inputs()
     ) == Request(FrozenList(("exceptions.toml", "d.jsonl")))
@@ -389,12 +391,10 @@ def test_typescript_shell_and_ui_records_are_the_shell() -> None:
         typescript("ui", "packages/app/src/view.tsx", 2, 1),
         typescript("core", "packages/model/src/index.ts", 3, 1),
     )
-    metadata = parse_json(json.dumps({"workspace_root": "/w", "packages": []}))
-    assert [item.in_shell for item in functions(records(lines, metadata))] == [
-        True,
-        True,
-        False,
-    ]
+    assert [
+        item.in_shell
+        for item in functions(typescript_records("\n".join(lines)))
+    ] == [True, True, False]
 
 
 # Each case is the decisions of the shell's functions and of the core's.
@@ -446,17 +446,17 @@ def test_typescript_records_get_the_verdicts_of_rust_records(
 
     def rust_shaped(found: FrozenList[str]) -> FrozenList[str]:
         return FrozenList(
-            line.replace("packages/shell/src/s", "s").replace(
-                "packages/ui/src/s", "s"
-            )
+            line
+            .replace("packages/shell/src/s", "s")
+            .replace("packages/ui/src/s", "s")
+            .replace("the component", "the shell function")
             for line in found
         )
 
-    rust_lines_found, rust_status, rust_files = outcome(*rust_lines)
-    ts_lines_found, ts_status, ts_files = typescript_outcome(*typescript_lines)
+    rust_lines_found, rust_status, _ = outcome(*rust_lines)
+    ts_lines_found, ts_status = typescript_outcome(*typescript_lines)
     assert rust_shaped(ts_lines_found) == renamed(rust_lines_found)
     assert ts_status == rust_status
-    assert len(ts_files.splitlines()) == len(rust_files.splitlines())
     rust_share, rust_share_status = shared(*rust_lines)
     ts_share, ts_share_status = typescript_shared(*typescript_lines)
     assert ts_share == renamed(rust_share)
@@ -466,7 +466,7 @@ def test_typescript_records_get_the_verdicts_of_rust_records(
 def test_a_typescript_shell_exception_lifts_the_function_limit_for_its_file() -> (
     None
 ):
-    lines, status, files = typescript_outcome(
+    lines, status = typescript_outcome(
         typescript("ui", "packages/ui/src/view.tsx", 7, 3),
         typescript("shell", "packages/shell/src/cli.ts", 9, 3),
         typescript("core", "packages/core/src/index.ts", 1, 3),
@@ -477,7 +477,18 @@ def test_a_typescript_shell_exception_lifts_the_function_limit_for_its_file() ->
         "Found 1 issues",
     )
     assert status == 1
-    assert files == "packages/ui/src/view.tsx\npackages/shell/src/cli.ts\n"
+
+
+def test_a_thick_component_is_named_a_component() -> None:
+    assert typescript_outcome(
+        typescript("ui", "packages/ui/src/view.tsx", 7, 3)
+    ) == (
+        (
+            f"packages/ui/src/view.tsx:7: the component `f7` makes 3 decisions (limit 2){MOVE}",
+            "Found 1 issues",
+        ),
+        1,
+    )
 
 
 def test_a_shell_exception_on_package_json_lifts_the_typescript_share() -> None:
