@@ -57,7 +57,7 @@ import * as Runtime from "@effect/platform-node/NodeRuntime";
 import { Effect } from "effect";
 NodeRuntime.runMain(Effect.void);
 run(Effect.void);
-Runtime.runMain(Effect.void);
+Runtime?.runMain(Effect.void);
 `;
 
 const roots = `import * as Client from "react-dom/client";
@@ -82,9 +82,13 @@ Effect.void.pipe(
 
 const lookalikes = `import { NodeRuntime } from "./runtime.ts";
 import { runMain } from "@effect/platform-node";
+import { runMain as run } from "@effect/platform-node/NodeRuntime";
 import { hydrateRoot } from "react-dom/client";
+export { createRoot } from "react-dom/client";
 const createRoot = (element: unknown): unknown => element;
 NodeRuntime.runMain(1);
+NodeRuntime.run(1);
+NodeRuntime.load().run(1);
 runMain(1);
 createRoot(1);
 hydrateRoot(document.body, null);

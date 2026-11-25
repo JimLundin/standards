@@ -123,19 +123,12 @@ const classOf = (reader: Reader, symbol: Named, recurse: Recurse): Shape => {
   };
 };
 
-const typed = (
-  { origins }: Look,
-  parts: ReadonlyArray<Shape>,
-  members: ReadonlyArray<Shape>,
-): Shape => ({ arguments: parts, kind: "type", members, origins });
-
 const READERS: Readonly<Record<Plan, ReadOf>> = {
-  arguments: (reader, { look, type }, recurse) =>
-    typed(
-      look,
-      argumentsOf(reader.checker, type).map((part) => recurse(within(reader, type), part)),
-      [],
-    ),
+  arguments: (reader, { type }, recurse) => ({
+    arguments: argumentsOf(reader.checker, type).map((part) => recurse(within(reader, type), part)),
+    kind: "type",
+    members: [],
+  }),
   class: (reader, { type }, recurse) =>
     defined([type.getSymbol()])
       .map((symbol) => classOf(reader, symbol, recurse))
@@ -146,13 +139,12 @@ const READERS: Readonly<Record<Plan, ReadOf>> = {
     parts: [],
     text: reader.checker.typeToString(type),
   }),
-  members: (reader, { look, type }, recurse) =>
-    typed(
-      look,
-      argumentsOf(reader.checker, type).map((part) => recurse(within(reader, type), part)),
-      membersOf(reader.checker, type).map((member) => recurse(within(reader, type), member)),
-    ),
-  named: (_reader, { look }) => typed(look, [], []),
+  members: (reader, { type }, recurse) => ({
+    arguments: argumentsOf(reader.checker, type).map((part) => recurse(within(reader, type), part)),
+    kind: "type",
+    members: membersOf(reader.checker, type).map((member) => recurse(within(reader, type), member)),
+  }),
+  named: (_reader, { look }) => ({ kind: "named", origins: look.origins }),
   signatures: (reader, { type }, recurse) => ({
     kind: "function",
     parts: signaturePartsOf(reader.checker, type).map((part) =>

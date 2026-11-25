@@ -2,6 +2,9 @@ import { bindings, refersTo, resolved } from "./imports.ts";
 import type { Reference } from "./imports.ts";
 import type { Syntax } from "./syntax.ts";
 
+const FIRST = 0;
+const NEXT = 1;
+
 type Call = "createRoot" | "runMain";
 
 // A use of a function that starts a runtime, called or passed as a value: a Node shell's runMain, or a UI's createRoot.
@@ -19,21 +22,13 @@ const ENTRIES: ReadonlyArray<readonly [Call, Reference]> = [
 
 // The expressions that may name an export, outermost first: an identifier, or a property access and then its target, but never the name after its dot, nor an import's own names.
 const expressions = (node: Syntax): ReadonlyArray<Syntax> => {
-  switch (node.kind) {
-    case "import": {
-      return [];
-    }
-    case "identifier": {
-      return [node];
-    }
-    case "property": {
-      const [target] = node.children;
-      return [node, ...(target === undefined ? [] : expressions(target))];
-    }
-    default: {
-      return node.children.flatMap(expressions);
-    }
+  if (node.kind === "identifier") {
+    return [node];
   }
+  if (node.kind === "property") {
+    return [node, ...node.children.slice(FIRST, NEXT).flatMap((target) => expressions(target))];
+  }
+  return node.kind === "import" ? [] : node.children.flatMap((child) => expressions(child));
 };
 
 // Each use of an entry point in a source file, through the imports of its top level, in source order.

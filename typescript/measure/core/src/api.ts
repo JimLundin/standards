@@ -4,9 +4,10 @@ interface Origin {
   readonly path: string;
 }
 
-// What the checker tells of a type, for the core to judge: data it can't see into, a function with the types of its signatures' parameters and returns, a class, or another type with the origins it's named by, its type arguments and the types of its members.
+// What the checker tells of a type, for the core to judge: data it can't see into, a type that isn't data with the origins it's named by, a function with the types of its signatures' parameters and returns, a class, or another type with its type arguments and the types of its members that the plan read.
 type Shape =
   | { readonly kind: "data" }
+  | { readonly kind: "named"; readonly origins: ReadonlyArray<Origin> }
   | { readonly kind: "function"; readonly text: string; readonly parts: ReadonlyArray<Shape> }
   | {
       readonly kind: "class";
@@ -16,7 +17,6 @@ type Shape =
     }
   | {
       readonly kind: "type";
-      readonly origins: ReadonlyArray<Origin>;
       readonly arguments: ReadonlyArray<Shape>;
       readonly members: ReadonlyArray<Shape>;
     };
@@ -70,8 +70,9 @@ const NEXT = 1;
 
 const LIB = "lib";
 const PACKAGES = "/node_modules/";
-const LIBRARY = /^(?:@typescript\/[^/]+|typescript)\/lib\/lib\.[^/]+\.d\.ts$/u;
-const MODULE = /^(?<name>@[^/]+\/[^/]+|[^@/][^/]*)\/(?:dist\/)?(?<module>.*?)(?:\.d)?\.[cm]?ts$/u;
+const LIBRARY = "@typescript/";
+const EFFECT = "effect/dist/";
+const DECLARATION = ".d.ts";
 const NOT_DATA: ReadonlySet<string> = new Set([
   "effect/Context",
   "effect/Effect",
@@ -125,15 +126,15 @@ const isSet = (flags: number, bit: number): boolean => Math.floor(flags / bit) %
 const flagged = (flags: number, masks: ReadonlyArray<number>): boolean =>
   masks.some((mask) => BITS.some((bit) => isSet(mask, bit) && isSet(flags, bit)));
 
-// The module a file declares into: "lib" for TypeScript's own, a package and its module for a dependency's, as `effect/Schema`, and "" for the project's.
+// The module a file declares into: "lib" for TypeScript's own, Effect's module, as `effect/Schema`, and for any other file the part of its path after its last node_modules, or past its root, which ends in its extension so is neither.
 const moduleOf = (path: string): string => {
-  const start = path.lastIndexOf(PACKAGES);
-  const within = start < NONE ? "" : path.slice(start + PACKAGES.length);
-  const groups = MODULE.exec(within)?.groups;
-  if (LIBRARY.test(within)) {
+  const within = path.slice(path.lastIndexOf(PACKAGES) + PACKAGES.length);
+  if (within.startsWith(LIBRARY)) {
     return LIB;
   }
-  return groups?.["name"] === undefined ? "" : `${groups["name"]}/${groups["module"] ?? ""}`;
+  return within.startsWith(EFFECT)
+    ? `effect/${within.slice(EFFECT.length, -DECLARATION.length)}`
+    : within;
 };
 
 const isData = ({ name, path }: Origin): boolean => {
@@ -166,6 +167,17 @@ const READS: Readonly<Record<Reading, Plan>> = {
 const isInstance = ({ symbolFlags, constructs }: Look): boolean =>
   flagged(symbolFlags, [CLASS]) && constructs === NONE;
 
+// What to read next of a type that may be data, by its members, at the top of an export or not.
+const structured = (look: Look, top: boolean): Plan => {
+  if (look.tuple) {
+    return "arguments";
+  }
+  if (look.calls === NONE && look.constructs === NONE) {
+    return "members";
+  }
+  return top ? "signatures" : "function";
+};
+
 // What to read next of a type looked at inside the types of `inside`, at the top of an export or not.
 const plan = (look: Look, inside: ReadonlyArray<number>, top: boolean): Plan => {
   if (!flagged(look.flags, STRUCTURED) || inside.includes(look.id)) {
@@ -175,13 +187,7 @@ const plan = (look: Look, inside: ReadonlyArray<number>, top: boolean): Plan => 
     return "class";
   }
   const read = READS[reading(look.origins)];
-  if (read !== "members" || look.tuple) {
-    return read === "members" ? "arguments" : read;
-  }
-  if (look.calls + look.constructs === NONE) {
-    return read;
-  }
-  return top ? "signatures" : "function";
+  return read === "members" ? structured(look, top) : read;
 };
 
 // What to read of an exported symbol, by its flags.
@@ -226,17 +232,6 @@ const classReached = (
     : members.flatMap((member) => inner(member));
 };
 
-const typeReached = (
-  { origins, arguments: parts, members }: Extract<Shape, { readonly kind: "type" }>,
-  inner: Judge,
-): ReadonlyArray<string> => {
-  const read = reading(origins);
-  if (read === "none") {
-    return found(origins);
-  }
-  return [...parts, ...(read === "all" ? members : [])].flatMap((part) => inner(part));
-};
-
 // What a shape reaches that isn't data, as its finding reads: "reaches `Promise`". A function at the top of an export is its signature, of which only the parts are judged, and a class there is the export.
 const reached = (shape: Shape, top: boolean): ReadonlyArray<string> => {
   const inner = (part: Shape): ReadonlyArray<string> => reached(part, false);
@@ -249,8 +244,11 @@ const reached = (shape: Shape, top: boolean): ReadonlyArray<string> => {
     case "class": {
       return classReached(shape, top, inner);
     }
+    case "named": {
+      return found(shape.origins);
+    }
     case "type": {
-      return typeReached(shape, inner);
+      return [...shape.arguments, ...shape.members].flatMap((part) => inner(part));
     }
     default: {
       return [];

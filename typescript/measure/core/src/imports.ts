@@ -13,14 +13,18 @@ interface Binding {
   readonly names: ReadonlyArray<string>;
 }
 
-const names = (node: Syntax): ReadonlyArray<string> =>
-  node.children.filter((child) => child.kind === "identifier").map((child) => child.name);
+const NONE = 0;
+const FIRST = 0;
+const NEXT = 1;
+const LAST = -1;
 
+// The names of a specifier's or a namespace import's identifiers, its only children.
+const names = (node: Syntax): ReadonlyArray<string> => node.children.map((child) => child.name);
+
+// A specifier binds its last name to its first, as `run` to `runMain` in `runMain as run`.
 const specified = (specifier: Syntax, module: string): ReadonlyArray<Binding> => {
-  const [imported, local = imported] = names(specifier);
-  return imported === undefined || local === undefined
-    ? []
-    : [{ local, module, names: [imported] }];
+  const spelled = names(specifier);
+  return spelled.slice(LAST).map((local) => ({ local, module, names: spelled.slice(FIRST, NEXT) }));
 };
 
 const bound = (clause: Syntax, module: string): ReadonlyArray<Binding> =>
@@ -33,30 +37,28 @@ const bound = (clause: Syntax, module: string): ReadonlyArray<Binding> =>
         return names(child).map((local) => ({ local, module, names: [] }));
       }
       default: {
-        return child.children
-          .filter((specifier) => specifier.kind === "specifier")
-          .flatMap((specifier) => specified(specifier, module));
+        return child.children.flatMap((specifier) => specified(specifier, module));
       }
     }
   });
 
-const imported = (declaration: Syntax): ReadonlyArray<Binding> => {
-  const module = declaration.children.find((child) => child.kind === "string")?.name ?? "";
-  return declaration.children
-    .filter((child) => child.kind === "clause")
-    .flatMap((clause) => bound(clause, module));
-};
+const imported = (declaration: Syntax): ReadonlyArray<Binding> =>
+  declaration.children
+    .filter((child) => child.kind === "string")
+    .flatMap((module) => declaration.children.flatMap((clause) => bound(clause, module.name)));
 
 // The names an expression spells, as `["NodeRuntime", "runMain"]` for `NodeRuntime.runMain`, or none for any other expression.
 const spelled = (node: Syntax): ReadonlyArray<string> => {
   if (node.kind === "identifier") {
     return [node.name];
   }
-  const [target, ...rest] = node.children;
-  const name = rest.findLast((child) => child.kind === "identifier");
-  const head = node.kind === "property" && target !== undefined ? spelled(target) : [];
-  const [first] = head;
-  return first !== undefined && name !== undefined ? [...head, name.name] : [];
+  if (node.kind !== "property") {
+    return [];
+  }
+  const head = node.children.slice(FIRST, NEXT).flatMap((target) => spelled(target));
+  return head.length === NONE
+    ? []
+    : [...head, ...node.children.slice(LAST).map((name) => name.name)];
 };
 
 // The names the imports of a file's top level bind.
@@ -74,11 +76,9 @@ const resolved = (known: ReadonlyArray<Binding>, node: Syntax): Reference | unde
     : { module: binding.module, path: [...binding.names, ...rest] };
 };
 
-const dotted = (path: ReadonlyArray<string>): string => path.join(".");
-
 // Whether a reference names the same export as `module` and `path`.
 const refersTo = (reference: Reference, { module, path }: Reference): boolean =>
-  reference.module === module && dotted(reference.path) === dotted(path);
+  reference.module === module && String(reference.path) === String(path);
 
 export { bindings, refersTo, resolved };
 export type { Binding, Reference };
