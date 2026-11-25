@@ -5,6 +5,8 @@
   "mutate": ["**/src/**/*.ts", "!**/src/**/*.test.ts"],
   "tsconfigFile": "",
   "incremental": true,
+  "inPlace": true,
+  "disableTypeChecks": false,
   "thresholds": {
     "high": 100,
     "low": 100,
