@@ -1020,3 +1020,46 @@ def test_typescript_knip_json_is_checked() -> None:
         "ignore:gen/**",
         "ignore adds `gen/**`; fix: remove `gen/**` from ignore",
     ))
+
+
+DOC_LINTS_ALLOWED = """
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+"""
+DOC_LINT_STANDARDS = RUST_STANDARDS | {
+    "rust/Cargo.fragment.toml": DOC_LINTS_ALLOWED
+}
+
+
+def test_rust_lint_the_standard_allows_is_drift_when_missing() -> None:
+    project = {
+        "Cargo.toml": '[lints.clippy]\npedantic = { level = "deny", priority = -1 }\nmissing_panics_doc = "allow"\n'
+    }
+    assert tuple(rust_drift(snapshot(project, DOC_LINT_STANDARDS))) == issues((
+        "Cargo.toml",
+        "lints.clippy.missing_errors_doc",
+        "lints.clippy.missing_errors_doc is weaker than `allow`; fix: set it to `allow`",
+    ))
+
+
+@pytest.mark.parametrize("setting", ['"deny"', '{ level = "warn" }'])
+def test_rust_lint_the_standard_allows_is_drift_when_stricter(
+    setting: str,
+) -> None:
+    project = {
+        "Cargo.toml": DOC_LINTS_ALLOWED.replace(
+            'missing_errors_doc = "allow"', f"missing_errors_doc = {setting}"
+        )
+    }
+    assert tuple(rust_drift(snapshot(project, DOC_LINT_STANDARDS))) == issues((
+        "Cargo.toml",
+        "lints.clippy.missing_errors_doc",
+        "lints.clippy.missing_errors_doc is stricter than the standard's `allow`, which the comment ban needs; fix: set it to `allow`",
+    ))
+
+
+def test_rust_project_allowing_the_doc_lints_has_no_drift() -> None:
+    project = {"Cargo.toml": DOC_LINTS_ALLOWED}
+    assert tuple(rust_drift(snapshot(project, DOC_LINT_STANDARDS))) == ()
