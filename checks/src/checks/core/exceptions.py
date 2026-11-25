@@ -22,6 +22,7 @@ SHELL = "shell"
 FLAKY = "flaky"
 BOX = "box"
 MUTATION = "mutation"
+UNUSED = "unused"
 RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY, BOX))
 TYPESCRIPT_RULES = FrozenOrderedSet((API, SHELL))
 UNPATHED = FrozenOrderedSet(("drift", FLAKY))
@@ -151,7 +152,7 @@ def python_kind(rule: str) -> str:
         return "immutability"
     if PURITY.fullmatch(rule):
         return "purity"
-    return "unused" if rule == "unused" else "ruff"
+    return UNUSED if rule == UNUSED else "ruff"
 
 
 def invalidity(

@@ -12,17 +12,17 @@ def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
         assert request((command,), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
-    for command in ("globs", "without"):
-        assert request((command, "mutation", "a.py"), Inputs()) == Request(
-            FrozenList(("exceptions.toml",))
-        )
+    assert request(("globs", "mutation"), Inputs()) == Request(
+        FrozenList(("exceptions.toml",))
+    )
     for command in ("stryker-mutate", "stryker-config"):
         assert request((command, "x.json", "v.ts"), Inputs()) == Request(
             FrozenList(("exceptions.toml", "x.json", "v.ts"))
         )
-    assert request(("filter-mutmut",), Inputs()) == Request(
-        FrozenList(("exceptions.toml",)), stdin=True
-    )
+    for command in ("filter-mutmut", "filter-vulture"):
+        assert request((command,), Inputs()) == Request(
+            FrozenList(("exceptions.toml",)), stdin=True
+        )
 
 
 def test_nextest_config_retries_each_flaky_test_once() -> None:
@@ -56,13 +56,10 @@ def test_ruff_config_groups_rules_by_path() -> None:
     assert lines(run(("ruff-config",), inputs({}))) == ()
 
 
-def test_without_and_globs() -> None:
+def test_globs() -> None:
     texts = {
         "exceptions.toml": entry("a/**", "unused") + entry("b.py", "mutation")
     }
-    assert lines(
-        run(("without", "unused", "a/x.py", "b.py"), inputs(texts))
-    ) == ("b.py",)
     assert lines(run(("globs", "mutation"), inputs(texts))) == ("b.py",)
     assert lines(run(("globs", "api"), inputs(texts))) == ()
 
@@ -208,6 +205,22 @@ def test_filter_mutmut_drops_excepted_modules() -> None:
     )
     outcome = run(("filter-mutmut",), inputs(texts, stdin=stdin))
     assert lines(outcome) == ("app.core.z__mutmut_3: survived",)
+
+
+def test_filter_vulture_drops_findings_in_files_excepted_from_unused() -> None:
+    texts = {
+        "exceptions.toml": entry("app/shell/**", "unused")
+        + entry("app/core.py", "mutation")
+    }
+    stdin = (
+        "app/shell/cli.py:3: unused function 'main' (60% confidence)\n"
+        "app\\shell\\io.py:9: unused variable 'x' (60% confidence)\n"
+        "app/core.py:5: unused function 'f' (60% confidence)\n"
+    )
+    outcome = run(("filter-vulture",), inputs(texts, stdin=stdin))
+    assert lines(outcome) == (
+        "app/core.py:5: unused function 'f' (60% confidence)",
+    )
 
 
 def test_stryker_mutate_adds_excepted_globs() -> None:

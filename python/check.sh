@@ -34,7 +34,6 @@ ruff_exceptions=$(checks ruff-config)
 if [ -n "$ruff_exceptions" ]; then
 	ruff_config+=(--config "$ruff_exceptions")
 fi
-mapfile -t unused_sources < <(checks without unused "${sources[@]}")
 
 mutants() {
 	plain "$1" | tr '\r' '\n' | grep -oE '(🎉|🙁) [0-9]+' | tail -2 |
@@ -58,6 +57,23 @@ mutate() {
 measured() {
 	uv run --frozen -q python -m coverage run -m pytest -q "${thorough[@]}" &&
 		uv run --frozen -q python -m coverage report
+}
+
+# Vulture reads every source, so a use in a file excepted from `unused` still
+# counts; the findings inside such files are dropped after it runs. Vulture
+# exits 3 when it finds unused code, and with another nonzero status when it
+# fails.
+unused_findings() {
+	local findings status
+	findings=$(uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "${sources[@]}" 2>&1)
+	status=$?
+	if ((status != 0 && status != 3)); then
+		echo "$findings"
+		return "$status"
+	fi
+	findings=$(checks filter-vulture <<<"$findings")
+	echo "$findings"
+	[ -z "$findings" ]
 }
 
 covered() {
@@ -106,9 +122,9 @@ unit immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	checks immutability "${sources[@]}"
 unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
-if ((${#unused_sources[@]} > 0)); then
-	unit unused "count ': unused ' findings" \
-		uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "${unused_sources[@]}"
+if ((${#sources[@]} > 0)); then
+	tools_of[unused]=uvx
+	unit unused "count ': unused ' findings" unused_findings
 fi
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
 	imports=(uvx -q --from "import-linter==${pins[IMPORT_LINTER]}" lint-imports)

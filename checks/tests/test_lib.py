@@ -7,17 +7,18 @@ import os
 import select
 import signal
 import subprocess
+import sys
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from typing import IO
-lazy from collections.abc import Generator, Sequence
+lazy from collections.abc import Generator, Mapping, Sequence
 lazy from pathlib import Path
 
 import pytest
 from ordered import FrozenList
 
 from checks.core.units import pins_of
-from tests.helpers import STANDARDS
+from tests.helpers import STANDARDS, entry
 
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
@@ -565,6 +566,86 @@ def test_setting_the_sccache_wrapper_starts_its_server(tmp_path: Path) -> None:
 def test_a_wrapper_the_caller_set_starts_no_server(tmp_path: Path) -> None:
     assert source_build(tmp_path, "RUSTC_WRAPPER=other") == "other\n"
     assert not (tmp_path / "calls").exists()
+
+
+# A uvx that runs vulture from the tests' environment and passes every other
+# tool, so that only python/check.sh's unused unit decides its outcome.
+FAKE_UVX = """\
+#!/usr/bin/env bash
+while (($# > 0)); do
+	case $1 in
+	vulture==*)
+		shift
+		exec "$PYTHON" -m vulture "$@"
+		;;
+	esac
+	shift
+done
+"""
+LIBRARY = "def helper():\n    return 1\n\n\ndef stale():\n    return 2\n"
+USER = "from app.library import helper\n\nhelper()\n\n\ndef dead():\n    return 3\n"
+
+
+def python_check(tmp_path: Path, files: Mapping[str, str]) -> FrozenList[str]:
+    project = tmp_path / "project"
+    for path, text in files.items():
+        (project / path).parent.mkdir(parents=True, exist_ok=True)
+        _ = (project / path).write_text(text, newline="\n")
+    _ = git(project, "init", "-q")
+    _ = git(project, "add", "-A")
+    uvx = tmp_path / "bin/uvx"
+    uvx.parent.mkdir()
+    _ = uvx.write_text(FAKE_UVX, newline="\n")
+    uvx.chmod(0o755)
+    done = subprocess.run(
+        ("bash", str(STANDARDS / "python/check.sh"), "commit", "--no-cache"),
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{uvx.parent}:{os.environ['PATH']}",
+            "PYTHON": sys.executable,
+            "STANDARDS_CACHE": str(tmp_path / "cache"),
+        },
+    )
+    return outcome(
+        Run(done.returncode, FrozenList(done.stdout.splitlines()), ""), "unused"
+    )
+
+
+def test_vulture_reads_the_uses_in_a_file_excepted_from_unused(
+    tmp_path: Path,
+) -> None:
+    files = {
+        "app/__init__.py": "",
+        "app/library.py": LIBRARY,
+        "app/user.py": USER,
+        "exceptions.toml": entry("app/user.py", "unused"),
+    }
+    assert python_check(tmp_path, files) == ("FAIL 1 findings",)
+
+
+def test_no_finding_left_after_the_excepted_files_passes(
+    tmp_path: Path,
+) -> None:
+    files = {
+        "app/__init__.py": "",
+        "app/library.py": LIBRARY,
+        "app/user.py": USER,
+        "exceptions.toml": entry("app/**", "unused"),
+    }
+    assert python_check(tmp_path, files) == ("ok 0 findings",)
+
+
+def test_a_vulture_error_fails_the_unused_unit(tmp_path: Path) -> None:
+    files = {
+        "app/__init__.py": "",
+        "app/broken.py": "def (:\n",
+        "exceptions.toml": entry("app/**", "unused"),
+    }
+    assert python_check(tmp_path, files) == ("FAIL 0 findings",)
 
 
 PRELUDE = """\
