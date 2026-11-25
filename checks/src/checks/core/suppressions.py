@@ -44,18 +44,18 @@ FORBIDDEN_ATTRIBUTES = FrozenOrderedSet((
 INSTEAD = "; add an entry to exceptions.toml instead"
 
 
-def python_markers(text: str) -> Iterator[tuple[int, str]]:
+def python_markers(file: str, text: str) -> Iterator[tuple[int, str]]:
     yield from (
         (comment.line, comment.text)
-        for comment in comments("python", text)
+        for comment in comments(file, text)
         if comment.kind == "line" and PYTHON_MARKER.search(comment.text)
     )
 
 
-def typescript_markers(text: str) -> Iterator[tuple[int, str]]:
+def typescript_markers(file: str, text: str) -> Iterator[tuple[int, str]]:
     yield from (
         (comment.line, comment.text)
-        for comment in comments("typescript", text)
+        for comment in comments(file, text)
         if TYPESCRIPT_MARKER.search(comment.text)
     )
 
@@ -100,7 +100,7 @@ def suppressions(
         scan = python_markers if language == "python" else typescript_markers
         yield from (
             Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
-            for line, marker in scan(text)
+            for line, marker in scan(file, text)
         )
 
 

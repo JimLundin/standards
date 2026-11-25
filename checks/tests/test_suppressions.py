@@ -33,7 +33,7 @@ INSTEAD = "; add an entry to exceptions.toml instead"
     ],
 )
 def test_python_markers_find_suppressions(comment: str) -> None:
-    assert tuple(python_markers(f"x = 1\ny = 2  {comment}  \n")) == (
+    assert tuple(python_markers("a.py", f"x = 1\ny = 2  {comment}  \n")) == (
         (2, comment),
     )
 
@@ -50,7 +50,7 @@ def test_python_markers_find_suppressions(comment: str) -> None:
     ],
 )
 def test_python_markers_ignore_other_text(text: str) -> None:
-    assert tuple(python_markers(text)) == ()
+    assert tuple(python_markers("a.py", text)) == ()
 
 
 @pytest.mark.parametrize(
@@ -69,7 +69,7 @@ def test_python_markers_ignore_other_text(text: str) -> None:
 )
 def test_typescript_markers(line: str) -> None:
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers(text)) == ((2, line),)
+    assert tuple(typescript_markers("a.ts", text)) == ((2, line),)
 
 
 @pytest.mark.parametrize("linter", ["oxlint", "eslint"])
@@ -84,16 +84,18 @@ def test_typescript_markers_find_lint_disable_comments(
 ) -> None:
     line = f"{opening}{linter}-{form} no-console{closing}"
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers(text)) == ((2, line),)
+    assert tuple(typescript_markers("a.ts", text)) == ((2, line),)
 
 
 def test_typescript_markers_ignore_biome_ignore() -> None:
     text = "// biome-ignore lint: x\n/* biome-ignore lint: x */\n"
-    assert tuple(typescript_markers(text)) == ()
+    assert tuple(typescript_markers("a.ts", text)) == ()
 
 
 def test_typescript_markers_need_a_comment() -> None:
-    assert tuple(typescript_markers('const a = "oxlint-disable";\n')) == ()
+    assert (
+        tuple(typescript_markers("a.ts", 'const a = "oxlint-disable";\n')) == ()
+    )
 
 
 def test_attribute_lints_drop_reasons() -> None:

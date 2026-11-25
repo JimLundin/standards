@@ -28,7 +28,9 @@ SOURCES = FrozenOrderedDict({
     )),
 })
 RUST = Language(tree_sitter_rust.language())
-TYPESCRIPT = Language(tree_sitter_typescript.language_tsx())
+TYPESCRIPT = Language(tree_sitter_typescript.language_typescript())
+TSX = Language(tree_sitter_typescript.language_tsx())
+WITHOUT_JSX = FrozenList((".ts", ".mts", ".cts"))
 RUST_COMMENTS = FrozenOrderedSet(("line_comment", "block_comment"))
 DOC_MARKERS = FrozenOrderedSet((
     "outer_doc_comment_marker",
@@ -180,8 +182,9 @@ def typescript_kind(text: str) -> Kind:
     return "doc" if text.startswith("/**") and text != "/**/" else "block"
 
 
-def typescript_comments(text: str) -> Iterator[Comment]:
-    tree = Parser(TYPESCRIPT).parse(text.encode())
+def typescript_comments(file: str, text: str) -> Iterator[Comment]:
+    grammar = TYPESCRIPT if file.endswith(tuple(WITHOUT_JSX)) else TSX
+    tree = Parser(grammar).parse(text.encode())
     for node in named_children(tree.root_node):
         if node.type == "comment":
             body = node_text(node).strip()
@@ -189,14 +192,14 @@ def typescript_comments(text: str) -> Iterator[Comment]:
 
 
 def comments(
-    language: str, text: str, *, library: bool = False
+    file: str, text: str, *, library: bool = False
 ) -> Iterator[Comment]:
-    if language == "python":
+    if is_source("python", file):
         yield from sorted(
             (*python_comments(text), *python_docstrings(text)),
             key=lambda comment: comment.line,
         )
-    elif language == "rust":
+    elif is_source("rust", file):
         yield from rust_comments(text, library=library)
-    elif language == "typescript":
-        yield from typescript_comments(text)
+    elif is_source("typescript", file):
+        yield from typescript_comments(file, text)

@@ -9,9 +9,9 @@ INSTEAD = "; add an entry to exceptions.toml instead"
 
 
 def found(
-    language: str, text: str, *, library: bool = False
+    file: str, text: str, *, library: bool = False
 ) -> FrozenList[Comment]:
-    return FrozenList(comments(language, text, library=library))
+    return FrozenList(comments(file, text, library=library))
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_python_comments_and_docstrings() -> None:
         '        "not a docstring"\n'
         "# last\n"
     )
-    assert found("python", text) == (
+    assert found("a.py", text) == (
         Comment(1, "docstring", '"""Module."""'),
         Comment(2, "line", "# a comment"),
         Comment(4, "docstring", "'''Class.'''"),
@@ -59,7 +59,7 @@ def test_python_comments_and_docstrings() -> None:
 
 
 def test_python_that_does_not_parse_has_no_docstrings() -> None:
-    assert found("python", '"""Doc."""\nx = = 1\ny = 2  # c\n') == (
+    assert found("a.py", '"""Doc."""\nx = = 1\ny = 2  # c\n') == (
         Comment(3, "line", "# c"),
     )
 
@@ -70,7 +70,7 @@ def test_rust_strings_hold_no_comments() -> None:
         'let r = r#"/* not a comment */"#; /* block */\n'
         "let c = '/'; let b = b\"// no\";\n"
     )
-    assert found("rust", text) == (
+    assert found("a.rs", text) == (
         Comment(1, "line", "// real"),
         Comment(2, "block", "/* block */"),
     )
@@ -101,7 +101,7 @@ pub enum G {
 
 
 def test_rust_doc_comments_name_their_item_and_its_visibility() -> None:
-    assert found("rust", RUST_DOCS, library=True) == (
+    assert found("a.rs", RUST_DOCS, library=True) == (
         Comment(
             1, "doc", "//! The crate.", Item("source_file", "", 1, public=True)
         ),
@@ -159,13 +159,13 @@ def test_rust_doc_comments_name_their_item_and_its_visibility() -> None:
 def test_rust_doc_comments_of_a_binary_are_not_public() -> None:
     assert all(
         comment.item is not None and not comment.item.public
-        for comment in found("rust", RUST_DOCS, library=False)
+        for comment in found("a.rs", RUST_DOCS, library=False)
     )
 
 
 def test_rust_inner_doc_comment_documents_its_module() -> None:
     text = "pub mod m {\n    //! The module.\n}\nmod n {\n    //! Private.\n}\n"
-    assert found("rust", text, library=True) == (
+    assert found("a.rs", text, library=True) == (
         Comment(
             2, "doc", "//! The module.", Item("mod_item", "m", 1, public=True)
         ),
@@ -186,12 +186,12 @@ def test_rust_inner_doc_comment_documents_its_module() -> None:
 )
 def test_typescript_literals_hold_no_comments(literal: str) -> None:
     text = f"const a = {literal}; // real\n"
-    assert found("typescript", text) == (Comment(1, "line", "// real"),)
+    assert found("a.tsx", text) == (Comment(1, "line", "// real"),)
 
 
 def test_typescript_comment_kinds() -> None:
     text = "/** Doc. */\nconst a = <div>{/* block */}</div>;\n/**/\n"
-    assert found("typescript", text) == (
+    assert found("a.tsx", text) == (
         Comment(1, "doc", "/** Doc. */"),
         Comment(2, "block", "/* block */"),
         Comment(3, "block", "/**/"),
@@ -205,3 +205,8 @@ def test_a_lint_disable_inside_a_typescript_string_is_no_suppression() -> None:
     assert tuple(suppressions("typescript", texts, load(None))) == (
         Issue("a.ts:2", f"suppression `// eslint-disable`{INSTEAD}"),
     )
+
+
+def test_a_typescript_type_assertion_is_no_comment() -> None:
+    text = "const x = 1;\nconst n = <number>x; // real\nconst m = 2;\n"
+    assert found("a.ts", text) == (Comment(2, "line", "// real"),)
