@@ -97,6 +97,7 @@ const DATA: ReadonlySet<string> = new Set([
 ]);
 const LIB_DATA: ReadonlySet<string> = new Set([
   "Array",
+  "Readonly",
   "ReadonlyArray",
   "ReadonlyMap",
   "ReadonlySet",
