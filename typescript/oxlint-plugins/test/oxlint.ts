@@ -16,7 +16,6 @@ const oxlint = new URL("../node_modules/oxlint/bin/oxlint", import.meta.url);
 
 type Rules = Readonly<Record<string, string | ReadonlyArray<unknown>>>;
 
-// Writes the example and a config with the standards plugin and only `rules` on; returns their paths.
 const written = (
   rules: Rules,
   source: string,
@@ -42,7 +41,6 @@ const written = (
     return [config, example] as const;
   });
 
-// Each finding of the pinned Oxlint over one example, with only `rules` on, as its line and rule.
 export const findings = (
   rules: Rules,
   source: string,
