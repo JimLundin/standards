@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+from enum import StrEnum
 lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -6,7 +7,7 @@ from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 from checks.core import typescript_measure
 from checks.core.cargo import is_shell, kinds, packages_of, relative, targets_of
 from checks.core.exceptions import EXCEPTIONS, SHELL, Exceptions, exceptions_in
-from checks.core.typescript_layers import OUTER_LAYERS
+from checks.core.typescript_layers import OUTER_LAYERS, Layer
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -30,14 +31,16 @@ MEASURED_KINDS = FrozenOrderedSet((
     "staticlib",
     "proc-macro",
 ))
-UI = "ui"
 CARGO = "Cargo.toml"
 PACKAGE = "package.json"
-SHELL_FUNCTION = "the shell function"
-COMPONENT = "the component"
 SHARED = "the shell makes"
 MOVE = "; move the decisions into the core"
 UNMEASURED = "cannot be measured"
+
+
+class Role(StrEnum):
+    SHELL_FUNCTION = "the shell function"
+    COMPONENT = "the component"
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +50,7 @@ class Function:
     name: str
     decisions: int
     in_shell: bool
-    role: str = SHELL_FUNCTION
+    role: Role
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,22 +93,21 @@ def measured(
         str(record.get("function")),
         int(str(record.get("decisions"))),
         roots.get(str(record.get("root")), False),
+        Role.SHELL_FUNCTION,
     )
-
-
-def read(
-    lines: Sequence[str], roots: Mapping[str, bool], root: str
-) -> FrozenList[Function | Failure]:
-    found = (
-        measured(line, roots, root) for line in lines if line.startswith("{")
-    )
-    return FrozenList(dict.fromkeys(found))
 
 
 def records(
     lines: Sequence[str], metadata: Mapping[str, object]
 ) -> FrozenList[Function | Failure]:
-    return read(lines, targets(metadata), str(metadata.get("workspace_root")))
+    roots, root = targets(metadata), str(metadata.get("workspace_root"))
+    return FrozenList(
+        dict.fromkeys(
+            measured(line, roots, root)
+            for line in lines
+            if line.startswith("{")
+        )
+    )
 
 
 def typescript_item(
@@ -119,7 +121,9 @@ def typescript_item(
                 record.name,
                 record.decisions,
                 record.layer in OUTER_LAYERS,
-                COMPONENT if record.layer == UI else SHELL_FUNCTION,
+                Role.COMPONENT
+                if record.layer == Layer.UI
+                else Role.SHELL_FUNCTION,
             )
         case typescript_measure.Failure():
             return Failure(record.path, record.error)
@@ -168,7 +172,7 @@ def findings(
 
 
 def share_findings(
-    items: Sequence[Function], exceptions: Exceptions, manifest: str = CARGO
+    items: Sequence[Function], exceptions: Exceptions, manifest: str
 ) -> FrozenList[str]:
     total = decisions(items)
     shell = decisions(shell_functions(items))
@@ -257,10 +261,6 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             )
         }),
     )
-
-
-def typescript_request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(FrozenList((EXCEPTIONS, arguments[0])))
 
 
 def typescript_measures(

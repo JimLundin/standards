@@ -5,9 +5,9 @@ import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.rust_shell import (
-    COMPONENT,
     Failure,
     Function,
+    Role,
     functions,
     measured,
     records,
@@ -127,10 +127,10 @@ def test_binaries_libraries_and_shell_packages_are_measured() -> None:
 def test_measures_are_read_relative_to_the_workspace() -> None:
     roots_of = {f"{ROOT}\\src/main.rs": True}
     assert measured(shell("src/a.rs", 3, 2), roots_of, ROOT) == Function(
-        "src/a.rs", 3, "f3", 2, in_shell=True
+        "src/a.rs", 3, "f3", 2, in_shell=True, role=Role.SHELL_FUNCTION
     )
     assert measured(core("src/a.rs", 3, 2), roots_of, ROOT) == Function(
-        "src/a.rs", 3, "f3", 2, in_shell=False
+        "src/a.rs", 3, "f3", 2, in_shell=False, role=Role.SHELL_FUNCTION
     )
     assert measured(
         failure("C:/work/src/../x.rs", "line 1: expected `)`"), roots_of, ROOT
@@ -148,8 +148,12 @@ def test_records_skip_other_lines_and_duplicates() -> None:
         core("src/lib.rs", 1, 2),
     )
     assert records(lines, parse_json(METADATA)) == (
-        Function("src/main.rs", 1, "f1", 1, in_shell=True),
-        Function("src/lib.rs", 1, "f1", 2, in_shell=False),
+        Function(
+            "src/main.rs", 1, "f1", 1, in_shell=True, role=Role.SHELL_FUNCTION
+        ),
+        Function(
+            "src/lib.rs", 1, "f1", 2, in_shell=False, role=Role.SHELL_FUNCTION
+        ),
     )
 
 
@@ -322,7 +326,7 @@ def test_typescript_function_and_error_records_are_read() -> None:
             "View",
             3,
             in_shell=True,
-            role=COMPONENT,
+            role=Role.COMPONENT,
         ),
         Failure("packages/shell/src/gone.ts", "not in the project"),
     )
@@ -341,7 +345,14 @@ def test_a_typescript_api_record_is_not_a_function() -> None:
         typescript("core", "packages/core/src/a.ts", 3, 0),
     )
     assert typescript_records("\n".join(lines)) == (
-        Function("packages/core/src/a.ts", 3, "f3", 0, in_shell=False),
+        Function(
+            "packages/core/src/a.ts",
+            3,
+            "f3",
+            0,
+            in_shell=False,
+            role=Role.SHELL_FUNCTION,
+        ),
     )
 
 

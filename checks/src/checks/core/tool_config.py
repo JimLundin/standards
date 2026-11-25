@@ -27,6 +27,7 @@ from checks.core.values import (
     posix,
     strings,
     table,
+    text,
 )
 
 if TYPE_CHECKING:
@@ -166,11 +167,7 @@ def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     files."""
     excepted = (
         *exceptions_in(inputs).paths(MUTATION),
-        *(
-            typescript_layers.outer_files(inputs.texts.get(arguments[1], ""))
-            if len(arguments) > 1
-            else ()
-        ),
+        *typescript_layers.outer_files(text(inputs.texts, arguments[1])),
     )
     if not excepted:
         return Outcome()

@@ -2,7 +2,8 @@ import json
 
 from ordered import FrozenList
 
-from checks.core.typescript_api import request, run
+from checks.core.tools import request
+from checks.core.typescript_api import run
 from checks.core.values import Request
 from tests.helpers import entry, inputs
 
@@ -42,7 +43,7 @@ def unread(path: str, layer: str) -> str:
 
 
 def test_it_reads_the_exceptions_and_the_records() -> None:
-    assert request([RECORDS], inputs({})) == Request(
+    assert request(("typescript-api", RECORDS), inputs({})) == Request(
         FrozenList(("exceptions.toml", RECORDS))
     )
 

@@ -215,9 +215,9 @@ def test_stryker_mutate_adds_excepted_globs() -> None:
         "exceptions.toml": entry("src/skip.ts", "mutation"),
         "stryker.json": json.dumps({"mutate": ["src/**", 3]}),
     }
-    assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == (
-        "src/**,!src/skip.ts",
-    )
+    assert lines(
+        run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
+    ) == ("src/**,!src/skip.ts",)
 
 
 def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
@@ -225,7 +225,12 @@ def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
         "exceptions.toml": entry("src/a.ts", "lint/style/noVar"),
         "stryker.json": json.dumps({"mutate": ["src/**"]}),
     }
-    assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == ()
+    assert (
+        lines(
+            run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
+        )
+        == ()
+    )
 
 
 def test_stryker_config_points_a_copy_at_the_vitest_config() -> None:

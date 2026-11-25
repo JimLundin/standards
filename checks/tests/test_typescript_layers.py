@@ -1,4 +1,5 @@
 import json
+import re
 lazy from collections.abc import Mapping
 
 from ordered import FrozenList, FrozenOrderedDict
@@ -176,12 +177,11 @@ def test_the_shell_and_the_ui_may_not_import_each_other() -> None:
     assert group(ui) == ("@w/io", "@w/io/**")
 
 
+IN_ATOMS = "an effect in a component: run it in an atom of effect/reactivity"
 EFFECT_HOOKS = FrozenOrderedDict({
     "name": "react",
     "importNames": ["useEffect", "useLayoutEffect"],
-    "message": (
-        "an effect in a component: run it in an atom of effect/reactivity"
-    ),
+    "message": IN_ATOMS,
 })
 
 
@@ -193,22 +193,65 @@ def test_the_ui_may_not_import_reacts_effect_hooks() -> None:
     assert restriction(only) == {"paths": [EFFECT_HOOKS]}
 
 
-def test_only_a_ui_package_restricts_browser_globals() -> None:
+IN_BROWSER = (
+    "a browser global in a component: reach it in an atom over"
+    " @effect/platform-browser"
+)
+# The spread of the config's own options that each UI ban extends.
+EXTENDS = re.compile(r'\.\.\.restricted\("([a-z-]+)"\), ')
+
+
+def ui_bans(config: str) -> FrozenList[object]:
+    return FrozenList(
+        decode(EXTENDS.sub(r'"\1", ', line.strip().removesuffix(",")))
+        for line in config.splitlines()
+        if "no-restricted-globals" in line
+    )
+
+
+def test_only_a_ui_package_bans_browser_globals_and_reacts_effect_hooks() -> (
+    None
+):
     outcome = run(
         ("oxlint-config", "/std/oxlint.config.ts", *NESTED_FILES),
         inputs(NESTED, cwd="/work"),
     )
     (config,) = outcome.writes.values()
-    (browser,) = (
-        line for line in config.splitlines() if "no-restricted-globals" in line
+    assert ui_bans(config) == (
+        {
+            "files": ["/work/packages/app/**"],
+            "excludeFiles": list(TOOLING),
+            "rules": {
+                "no-restricted-globals": [
+                    "error",
+                    "no-restricted-globals",
+                    {"message": IN_BROWSER, "name": "window"},
+                    {"message": IN_BROWSER, "name": "document"},
+                    {"message": IN_BROWSER, "name": "localStorage"},
+                ],
+                "no-restricted-properties": [
+                    "error",
+                    "no-restricted-properties",
+                    *(
+                        {
+                            "message": IN_BROWSER,
+                            "object": "globalThis",
+                            "property": name,
+                        }
+                        for name in ("window", "document", "localStorage")
+                    ),
+                    *(
+                        {
+                            "message": IN_ATOMS,
+                            "object": "React",
+                            "property": name,
+                        }
+                        for name in ("useEffect", "useLayoutEffect")
+                    ),
+                ],
+            },
+        },
     )
-    scoped = (
-        '\t\t{"files": ["/work/packages/app/**"], "excludeFiles": ['
-        '"/work/**/*.test.{ts,tsx}"'
-    )
-    assert browser.startswith(scoped)
-    assert '"no-restricted-globals": ["error", ...restricted(' in browser
-    assert '"no-restricted-properties": ["error", ...restricted(' in browser
 
 
 CORE_GROUP = (

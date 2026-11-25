@@ -2,19 +2,12 @@ lazy from collections.abc import Sequence
 
 from ordered import FrozenList
 
+from checks.core.typescript_layers import Layer
 from checks.core.typescript_measure import Entry, entries, records
-from checks.core.values import (
-    Inputs,
-    Outcome,
-    Request,
-    operands,
-    summarized,
-    text,
-)
+from checks.core.values import Inputs, Outcome, operands, summarized, text
 
 RUN_MAIN = "runMain"
 CREATE_ROOT = "createRoot"
-UI = "ui"
 LIMIT = 1
 
 
@@ -28,7 +21,9 @@ def beyond(items: Sequence[Entry], scope: str, call: str) -> FrozenList[str]:
 
 def mounted(items: Sequence[Entry]) -> FrozenList[Entry]:
     return FrozenList(
-        item for item in items if item.call == CREATE_ROOT and item.layer == UI
+        item
+        for item in items
+        if item.call == CREATE_ROOT and item.layer == Layer.UI
     )
 
 
@@ -44,10 +39,6 @@ def findings(items: Sequence[Entry]) -> FrozenList[str]:
             CREATE_ROOT,
         )
     )
-
-
-def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(operands(arguments)[:1])
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:

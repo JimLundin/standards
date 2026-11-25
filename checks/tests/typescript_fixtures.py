@@ -1053,6 +1053,48 @@ def test_a_component_with_an_effect_hook_or_a_browser_global_fails_lint(
     assert toggled not in lint.findings, lint.findings
 
 
+SPELLED = """{imported}
+import type { ReactElement } from "react";
+
+interface Shown {
+	readonly onShow: () => void;
+}
+
+export const {name} = ({ onShow }: Shown): ReactElement => {
+	React.{hook}(() => {
+		onShow();
+	}, [onShow]);
+	return <p />;
+};
+"""
+# An effect hook read off React's default or namespace import.
+SPELLED_HOOKS = FrozenOrderedDict({
+    "packages/ui/src/defaulted.tsx": SPELLED
+    .replace("{imported}", 'import React from "react";')
+    .replace("{name}", "Defaulted")
+    .replace("{hook}", "useEffect"),
+    "packages/ui/src/spaced.tsx": SPELLED
+    .replace("{imported}", 'import * as React from "react";')
+    .replace("{name}", "Spaced")
+    .replace("{hook}", "useLayoutEffect"),
+})
+
+
+def test_an_effect_hook_read_off_the_react_import_fails_lint(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=SPELLED_HOOKS)
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    for path in SPELLED_HOOKS:
+        found = FrozenList(
+            line
+            for line in lint.findings.splitlines()
+            if f"{path}:" in line and "eslint(no-restricted-properties)" in line
+        )
+        assert len(found) == 1, (path, lint.findings)
+
+
 # The bans of every layer that the UI's own restricted globals and
 # properties must keep.
 EVERYWHERE = FrozenOrderedDict({
