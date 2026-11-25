@@ -369,7 +369,7 @@ def rust_lint_drift(
                     "Cargo.toml",
                     f"{key}.{name}",
                     f"{key}.{name} is stricter than the standard's `allow`",
-                    "set it to `allow`",
+                    "set it to `allow`, at a priority no lower than any stricter entry",
                 )
             elif needed is not None and (current is None or current < needed):
                 yield drift(

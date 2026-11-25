@@ -1053,7 +1053,7 @@ def test_rust_lint_the_standard_allows_is_drift_when_stricter(
     assert tuple(rust_drift(snapshot(project, DOC_LINT_STANDARDS))) == issues((
         "Cargo.toml",
         "lints.clippy.missing_errors_doc",
-        "lints.clippy.missing_errors_doc is stricter than the standard's `allow`; fix: set it to `allow`",
+        "lints.clippy.missing_errors_doc is stricter than the standard's `allow`; fix: set it to `allow`, at a priority no lower than any stricter entry",
     ))
 
 
