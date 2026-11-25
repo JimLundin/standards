@@ -22,6 +22,7 @@ SHELL = "shell"
 FLAKY = "flaky"
 BOX = "box"
 MUTATION = "mutation"
+UNUSED = "unused"
 RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY, BOX))
 UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
@@ -139,7 +140,7 @@ def python_kind(rule: str) -> str:
         return "immutability"
     if PURITY.fullmatch(rule):
         return "purity"
-    return "unused" if rule == "unused" else "ruff"
+    return UNUSED if rule == UNUSED else "ruff"
 
 
 def invalidity(
