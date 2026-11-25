@@ -5,7 +5,10 @@ import standards from "./oxlint-plugins/index.ts";
 const ambient = "ambient input and side effects: pass values in from the boundary";
 const boundary = "side effect: keep I/O at the boundary";
 const nondeterministic = "nondeterministic: pass the value in from the boundary";
+const tests = ["**/*.test.{ts,tsx}", "**/test/**"] as const;
 const olderEngines = "It forbids syntax for older engines than the standard's target, esnext.";
+
+const strictMatchers = "Strict boolean matchers retain the distinction between false and any falsy value.";
 
 const off = {
   "import/no-default-export": "A tool reads its config file's default export.",
@@ -21,11 +24,19 @@ const off = {
   "react/react-in-jsx-scope":
     "The automatic JSX runtime imports what JSX compiles to, so React needn't be in scope.",
   "require-await":
-    "Contradicts typescript/promise-function-async; typescript/require-await knows a returned promise.",
+    "Typescript/require-await, which knows a returned promise, checks async functions in its place.",
   "typescript/non-nullable-type-assertion-style": "Contradicts typescript/no-non-null-assertion.",
+  "typescript/promise-function-async":
+    "Promise-library adapters, including Effect.tryPromise callbacks, can return a Promise directly.",
+  "unicorn/no-array-method-this-argument":
+    "Effect's data-first combinators, such as Effect.map(self, f), look to it like a callback with a thisArg.",
   "vitest/no-hooks": "Contradicts vitest/require-hook.",
   "vitest/no-importing-vitest-globals":
     "The standard imports it from @effect/vitest, and vitest's globals are off.",
+  "vitest/prefer-to-be-falsy": strictMatchers,
+  "vitest/prefer-to-be-truthy": strictMatchers,
+  "vitest/require-hook":
+    "Outside test files a top-level call is an entry point, such as NodeRuntime.runMain; test files turn it on.",
   "vitest/require-test-timeout":
     "Vitest's testTimeout bounds every test; a test sets its own only to need another.",
   "vitest/require-top-level-describe":
@@ -35,12 +46,17 @@ const off = {
 type Off = keyof typeof off;
 
 const scoped = [
-  { files: ["**/*.test.{ts,tsx}", "**/test/**"], rule: "no-magic-numbers" },
-  { files: ["**/*.config.{ts,tsx,mts,js,mjs}"], rule: "import/no-default-export" },
-  { files: ["**/vitest.setup.ts"], rule: "vitest/require-top-level-describe" },
-] as const satisfies ReadonlyArray<{ readonly files: ReadonlyArray<string>; readonly rule: Off }>;
+  { files: tests, off: ["no-magic-numbers"], on: ["vitest/require-hook"] },
+  { files: ["**/*.config.{ts,tsx,mts,js,mjs}"], off: ["import/no-default-export"], on: [] },
+  { files: ["**/vitest.setup.ts"], off: ["vitest/require-top-level-describe"], on: [] },
+] as const satisfies ReadonlyArray<{
+  readonly files: ReadonlyArray<string>;
+  readonly off: ReadonlyArray<Off>;
+  readonly on: ReadonlyArray<Off>;
+}>;
 
-const isScoped = (rule: string): boolean => scoped.some((scope) => scope.rule === rule);
+const isScoped = (rule: string): boolean =>
+  scoped.some((scope) => scope.off.some((scopedRule) => scopedRule === rule));
 
 const tuned = {
   "new-cap": {
@@ -52,6 +68,10 @@ const tuned = {
     options: { allowSeparateTypeImports: true },
     reason:
       "Cloudflare's import/consistent-type-specifier-style puts type imports in their own declaration.",
+  },
+  "no-underscore-dangle": {
+    options: { allow: ["_tag"] },
+    reason: "Effect's tagged data uses this discriminator as part of its contract.",
   },
   "one-var": {
     options: "never",
@@ -93,9 +113,12 @@ export default defineConfig({
     },
   ],
   options: { respectEslintDisableDirectives: false, typeAware: true },
-  overrides: scoped.map(({ files, rule }) => ({
+  overrides: scoped.map(({ files, off: scopedOff, on }) => ({
     files: [...files],
-    rules: { [rule]: "off" as const },
+    rules: {
+      ...Object.fromEntries(scopedOff.map((rule) => [rule, "off" as const])),
+      ...Object.fromEntries(on.map((rule) => [rule, "error" as const])),
+    },
   })),
   plugins: [
     "typescript",

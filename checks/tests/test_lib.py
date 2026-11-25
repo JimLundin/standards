@@ -1,14 +1,20 @@
 import json
+import os
+import select
+import signal
 import subprocess
+import sys
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
-lazy from collections.abc import Sequence
+from typing import IO
+lazy from collections.abc import Generator, Mapping, Sequence
 lazy from pathlib import Path
 
 import pytest
 from ordered import FrozenList
 
 from checks.core.units import pins_of
-from tests.helpers import STANDARDS
+from tests.helpers import STANDARDS, entry
 
 MISSING = "no-such-tool-of-the-standards"
 DRIVER = f"""\
@@ -18,9 +24,10 @@ source "$STANDARDS/lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin python
+[ -z "${{BUILD:-}}" ] || source "$STANDARDS/rust/build.sh"
 units --toolchain=fixture --project=present,absent
 tools_of[present]=$PRESENT_TOOL
-unit present ending bash -c 'echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
+unit present ending bash -c '[ -z "${{HOLD:-}}" ] || read -r _ <"$HOLD"; [ -z "${{LINGER:-}}" ] || {{ sleep infinity & echo $! >"$LINGER"; }}; echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
 if [ -z "${{ONLY_PRESENT:-}}" ]; then
 	unit absent ending {MISSING}
 fi
@@ -39,6 +46,7 @@ tier = "commit"
 class Run:
     status: int
     lines: FrozenList[str]
+    errors: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +62,45 @@ class Workspace:
         present_tool: str = "bash",
         more: Sequence[str] = (),
     ) -> Run:
+        done = subprocess.run(
+            self.command(
+                arguments,
+                ci=ci,
+                only_present=only_present,
+                present_tool=present_tool,
+                more=more,
+            ),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return Run(
+            done.returncode, FrozenList(done.stdout.splitlines()), done.stderr
+        )
+
+    def start(self, *more: str) -> subprocess.Popen[str]:
+        """A commit run of the present unit, which ignores the recorded
+        passes, in its own process group, its stderr piped and its stdout
+        dropped."""
+        return subprocess.Popen(
+            self.command(
+                ("commit", "--no-cache"), only_present=True, more=more
+            ),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+
+    def command(
+        self,
+        arguments: Sequence[str],
+        *,
+        ci: bool = False,
+        only_present: bool = False,
+        present_tool: str = "bash",
+        more: Sequence[str] = (),
+    ) -> FrozenList[str]:
         settings = (
             f"STANDARDS={STANDARDS}",
             f"STANDARDS_CACHE={self.root / 'cache'}",
@@ -64,22 +111,25 @@ class Workspace:
             *(("ONLY_PRESENT=1",) if only_present else ()),
             *more,
         )
-        done = subprocess.run(
-            (
-                "env",
-                "-u",
-                "CI",
-                *settings,
-                "bash",
-                str(self.root / "driver.sh"),
-                *arguments,
-                str(self.project),
-            ),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return Run(done.returncode, FrozenList(done.stdout.splitlines()))
+        return FrozenList((
+            "env",
+            "-u",
+            "CI",
+            "-u",
+            "STANDARDS_LOCAL_TIERS",
+            *settings,
+            "bash",
+            str(self.root / "driver.sh"),
+            *arguments,
+            str(self.project),
+        ))
+
+    def held(self, name: str) -> tuple[Path, str]:
+        """A fifo that holds a started run inside its unit, and the setting
+        that points the run at it."""
+        fifo = self.root / name
+        os.mkfifo(fifo)
+        return fifo, f"HOLD={fifo}"
 
     def runs(self) -> int:
         marker = self.root / "marker"
@@ -200,6 +250,172 @@ def test_a_unit_needs_its_declared_tool_only_to_run(
     )
     assert recorded.status == 0
     assert outcome(recorded, "present") == ("ok passed (recorded)",)
+
+
+STEP_SUITE = """\
+[[suite]]
+name = "step-suite"
+command = "true"
+[[suite.when]]
+tier = "step"
+"""
+LOCAL_TIERS = "STANDARDS_LOCAL_TIERS=1"
+
+
+@pytest.fixture
+def stepped(workspace: Workspace) -> Workspace:
+    _ = (workspace.project / "checks.toml").write_text(STEP_SUITE)
+    return workspace
+
+
+def test_with_no_tier_only_the_commit_units_run(stepped: Workspace) -> None:
+    run = stepped.run(only_present=True, more=(LOCAL_TIERS,))
+    assert run.status == 0
+    assert outcome(run, "present") == ("ok",)
+    assert outcome(run, "step-suite") == ()
+    assert run.lines[-1].startswith("tier: commit,")
+
+
+@pytest.mark.parametrize("tier", ["step", "release"])
+def test_a_local_tier_outside_ci_stops_before_any_unit(
+    stepped: Workspace, tier: str
+) -> None:
+    temporary = stepped.root / "tmp"
+    temporary.mkdir()
+    run = stepped.run(tier, only_present=True, more=(f"TMPDIR={temporary}",))
+    assert run.status == 2
+    assert run.lines == ()
+    assert f"{tier} runs only in CI" in run.errors
+    assert LOCAL_TIERS in run.errors
+    assert stepped.runs() == 0
+    assert list(temporary.iterdir()) == []
+
+
+@pytest.mark.parametrize("allowance", [LOCAL_TIERS, "CI=true"])
+def test_step_runs_where_local_tiers_are_allowed_or_in_ci(
+    stepped: Workspace, allowance: str
+) -> None:
+    run = stepped.run("step", only_present=True, more=(allowance,))
+    assert run.status == 0
+    assert outcome(run, "present") == ("ok",)
+    assert outcome(run, "step-suite") == ("ok",)
+
+
+def test_dry_runs_of_step_need_no_allowance(stepped: Workspace) -> None:
+    allowed = stepped.run("step", only_present=True, more=(LOCAL_TIERS,))
+    assert allowed.status == 0
+    assert stepped.run("step", "--verify", only_present=True).status == 0
+    assert stepped.run("step", "--affected", only_present=True).status == 0
+    assert stepped.runs() == 1
+
+
+def waiting(run: subprocess.Popen[str]) -> str:
+    """The line where the run says it waits for another, or what it wrote to
+    stderr when it ran without waiting."""
+    assert run.stderr is not None
+    stream: IO[str] = run.stderr
+    lines: list[str] = []
+    while line := stream.readline():
+        if "waiting" in line:
+            return line
+        lines.append(line)
+    return "".join(lines)
+
+
+def test_a_second_run_waits_for_the_holder_of_the_lock(
+    workspace: Workspace,
+) -> None:
+    fifo, hold = workspace.held("hold")
+    first = workspace.start(hold)
+    with fifo.open("w") as release:
+        second = workspace.start()
+        line = waiting(second)
+        assert f"pid {first.pid}" in line
+        assert f"project {workspace.project}" in line
+        assert workspace.runs() == 0
+        _ = release.write("go\n")
+    assert first.wait() == 0
+    _, errors = second.communicate()
+    assert second.returncode == 0, errors
+    assert workspace.runs() == 2
+
+
+def test_a_holder_killed_with_sigkill_frees_the_lock(
+    workspace: Workspace,
+) -> None:
+    killed_fifo, killed_hold = workspace.held("killed")
+    killed = workspace.start(killed_hold)
+    with killed_fifo.open("w"):
+        os.killpg(killed.pid, signal.SIGKILL)
+        assert killed.wait() == -signal.SIGKILL
+    fifo, hold = workspace.held("hold")
+    after = workspace.start(hold)
+    with fifo.open("w") as release:
+        third = workspace.start()
+        assert f"pid {after.pid}" in waiting(third)
+        _ = release.write("go\n")
+    assert after.wait() == 0
+    assert third.wait() == 0
+    assert workspace.runs() == 2
+
+
+def test_a_process_a_unit_leaves_running_does_not_hold_the_lock(
+    workspace: Workspace,
+) -> None:
+    linger = workspace.root / "linger"
+    first = workspace.start(f"LINGER={linger}")
+    _, errors = first.communicate()
+    assert first.returncode == 0, errors
+    try:
+        second = workspace.start()
+        assert "holds" not in waiting(second)
+    finally:
+        os.kill(int(linger.read_text()), signal.SIGKILL)
+    assert second.wait() == 0
+    assert workspace.runs() == 2
+
+
+def test_a_run_waiting_on_an_empty_lock_file_names_an_unknown_run(
+    workspace: Workspace,
+) -> None:
+    file = workspace.root / "cache/run.lock"
+    file.parent.mkdir()
+    with file.open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        run = workspace.start()
+        line = waiting(run)
+        fcntl.flock(held, fcntl.LOCK_UN)
+    assert line.startswith("an unknown run holds ")
+    assert run.wait() == 0
+
+
+# A fake sccache whose server outlives it, as the real one's does, writing
+# the server's pid to `LINGER`.
+DAEMON_SCCACHE = """\
+#!/usr/bin/env bash
+sleep infinity &
+echo $! >"$LINGER"
+"""
+
+
+def test_a_server_build_sh_starts_after_the_lock_does_not_hold_it(
+    workspace: Workspace,
+) -> None:
+    fake = workspace.root / "bin/sccache"
+    fake.parent.mkdir()
+    _ = fake.write_text(DAEMON_SCCACHE, newline="\n")
+    fake.chmod(0o755)
+    linger = workspace.root / "linger"
+    first = workspace.start("BUILD=1", "RUSTC_WRAPPER=", f"LINGER={linger}")
+    _, errors = first.communicate()
+    assert first.returncode == 0, errors
+    try:
+        second = workspace.start()
+        assert "holds" not in waiting(second)
+    finally:
+        os.kill(int(linger.read_text()), signal.SIGKILL)
+    assert second.wait() == 0
+    assert workspace.runs() == 2
 
 
 PYTHON_SUITE = """\
@@ -339,3 +555,259 @@ def test_setting_the_sccache_wrapper_starts_its_server(tmp_path: Path) -> None:
 def test_a_wrapper_the_caller_set_starts_no_server(tmp_path: Path) -> None:
     assert source_build(tmp_path, "RUSTC_WRAPPER=other") == "other\n"
     assert not (tmp_path / "calls").exists()
+
+
+# A uvx that runs vulture from the tests' environment and passes every other
+# tool, so that only python/check.sh's unused unit decides its outcome.
+FAKE_UVX = """\
+#!/usr/bin/env bash
+while (($# > 0)); do
+	case $1 in
+	vulture==*)
+		shift
+		exec "$PYTHON" -m vulture "$@"
+		;;
+	esac
+	shift
+done
+"""
+LIBRARY = "def helper():\n    return 1\n\n\ndef stale():\n    return 2\n"
+USER = "from app.library import helper\n\nhelper()\n\n\ndef dead():\n    return 3\n"
+
+
+def python_check(tmp_path: Path, files: Mapping[str, str]) -> FrozenList[str]:
+    project = tmp_path / "project"
+    for path, text in files.items():
+        (project / path).parent.mkdir(parents=True, exist_ok=True)
+        _ = (project / path).write_text(text, newline="\n")
+    _ = git(project, "init", "-q")
+    _ = git(project, "add", "-A")
+    uvx = tmp_path / "bin/uvx"
+    uvx.parent.mkdir()
+    _ = uvx.write_text(FAKE_UVX, newline="\n")
+    uvx.chmod(0o755)
+    done = subprocess.run(
+        ("bash", str(STANDARDS / "python/check.sh"), "commit", "--no-cache"),
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{uvx.parent}:{os.environ['PATH']}",
+            "PYTHON": sys.executable,
+            "STANDARDS_CACHE": str(tmp_path / "cache"),
+        },
+    )
+    return outcome(
+        Run(done.returncode, FrozenList(done.stdout.splitlines()), ""), "unused"
+    )
+
+
+def test_vulture_reads_the_uses_in_a_file_excepted_from_unused(
+    tmp_path: Path,
+) -> None:
+    files = {
+        "app/__init__.py": "",
+        "app/library.py": LIBRARY,
+        "app/user.py": USER,
+        "exceptions.toml": entry("app/user.py", "unused"),
+    }
+    assert python_check(tmp_path, files) == ("FAIL 1 findings",)
+
+
+def test_no_finding_left_after_the_excepted_files_passes(
+    tmp_path: Path,
+) -> None:
+    files = {
+        "app/__init__.py": "",
+        "app/library.py": LIBRARY,
+        "app/user.py": USER,
+        "exceptions.toml": entry("app/**", "unused"),
+    }
+    assert python_check(tmp_path, files) == ("ok 0 findings",)
+
+
+def test_a_vulture_error_fails_the_unused_unit(tmp_path: Path) -> None:
+    files = {
+        "app/__init__.py": "",
+        "app/broken.py": "def (:\n",
+        "exceptions.toml": entry("app/**", "unused"),
+    }
+    assert python_check(tmp_path, files) == ("FAIL 0 findings",)
+
+
+PRELUDE = """\
+set -uo pipefail
+source "$LIB"
+logs="$FIXTURE/logs"
+mkdir -p "$logs"
+lock
+"""
+
+
+@contextmanager
+def running(root: Path, script: str) -> Generator[subprocess.Popen[str]]:
+    run = subprocess.Popen(
+        (
+            "env",
+            f"LIB={STANDARDS / 'lib.sh'}",
+            f"STANDARDS_CACHE={root / 'cache'}",
+            f"FIXTURE={root}",
+            "bash",
+            "-c",
+            PRELUDE + script,
+        ),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        yield run
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(run.pid, signal.SIGKILL)
+        _ = run.communicate(timeout=5)
+
+
+def test_a_unit_can_run_a_nested_checker(tmp_path: Path) -> None:
+    _ = (tmp_path / "child.sh").write_text(PRELUDE + "echo acquired\n")
+    with running(
+        tmp_path,
+        'step nested ending bash "$FIXTURE/child.sh"\nexit "${#failed[@]}"\n',
+    ) as run:
+        assert run.wait(timeout=5) == 0
+    assert (tmp_path / "logs/nested.log").read_text() == "acquired\n"
+
+
+@contextmanager
+def channel(root: Path, name: str, mode: str) -> Generator[IO[str]]:
+    path = root / name
+    os.mkfifo(path)
+    with os.fdopen(os.open(path, os.O_RDWR), mode) as stream:
+        yield stream
+
+
+def received(stream: IO[str]) -> str:
+    ready, _, _ = select.select((stream,), (), (), 5)
+    assert ready, "checker did not reach the expected lock boundary"
+    return stream.readline().strip()
+
+
+def release(stream: IO[str]) -> None:
+    _ = stream.write("go\n")
+    stream.flush()
+
+
+def test_a_nested_checker_still_blocks_an_unrelated_run(tmp_path: Path) -> None:
+    _ = (tmp_path / "child.sh").write_text(
+        PRELUDE
+        + 'echo acquired >"$FIXTURE/events"\n'
+        + 'read -r _ <"$FIXTURE/release"\n'
+    )
+    with (
+        channel(tmp_path, "events", "r") as events,
+        channel(tmp_path, "release", "w") as gate,
+        running(
+            tmp_path, 'step nested ending bash "$FIXTURE/child.sh"\n'
+        ) as outer,
+    ):
+        assert received(events) == "acquired"
+        with running(tmp_path, "true\n") as unrelated:
+            assert unrelated.stderr is not None
+            assert f"pid {outer.pid}" in received(unrelated.stderr)
+            release(gate)
+            assert outer.wait(timeout=5) == 0
+            assert unrelated.wait(timeout=5) == 0
+
+
+def test_nested_siblings_wait_for_each_other(tmp_path: Path) -> None:
+    _ = (tmp_path / "first.sh").write_text(
+        PRELUDE
+        + 'echo first >"$FIXTURE/events"\n'
+        + 'read -r _ <"$FIXTURE/release"\n'
+    )
+    _ = (tmp_path / "second.sh").write_text(
+        PRELUDE + 'echo second >"$FIXTURE/events"\n'
+    )
+    _ = (tmp_path / "siblings.sh").write_text(
+        """\
+bash "$FIXTURE/first.sh" &
+read -r _ <"$FIXTURE/launch"
+bash "$FIXTURE/second.sh" 2>"$FIXTURE/events"
+wait
+"""
+    )
+    with (
+        channel(tmp_path, "events", "r") as events,
+        channel(tmp_path, "release", "w") as gate,
+        channel(tmp_path, "launch", "w") as launch,
+        running(
+            tmp_path, 'step siblings ending bash "$FIXTURE/siblings.sh"\n'
+        ) as outer,
+    ):
+        assert received(events) == "first"
+        release(launch)
+        blocked = received(events)
+        assert "/nested/" in blocked
+        assert "waiting" in blocked
+        release(gate)
+        assert received(events) == "second"
+        assert outer.wait(timeout=5) == 0
+
+
+@pytest.mark.parametrize("owner_alive", [True, False])
+def test_a_daemon_cannot_reuse_a_finished_units_context(
+    tmp_path: Path, *, owner_alive: bool
+) -> None:
+    _ = (tmp_path / "daemon.sh").write_text(
+        'read -r _ <"$FIXTURE/launch"\n'
+        + PRELUDE
+        + 'echo acquired >"$FIXTURE/events"\n'
+    )
+    _ = (tmp_path / "unit.sh").write_text(
+        'bash "$FIXTURE/daemon.sh" >/dev/null 2>"$FIXTURE/events" &\n'
+    )
+    held = 'echo held >"$FIXTURE/events"\nread -r _ <"$FIXTURE/release"\n'
+    with (
+        channel(tmp_path, "events", "r") as events,
+        channel(tmp_path, "release", "w") as gate,
+        channel(tmp_path, "launch", "w") as launch,
+        ExitStack() as stack,
+    ):
+        holder = stack.enter_context(
+            running(
+                tmp_path, 'step daemon ending bash "$FIXTURE/unit.sh"\n' + held
+            )
+        )
+        assert received(events) == "held"
+        if not owner_alive:
+            release(gate)
+            assert holder.wait(timeout=5) == 0
+            holder = stack.enter_context(running(tmp_path, held))
+            assert received(events) == "held"
+        release(launch)
+        blocked = received(events)
+        assert f"pid {holder.pid}" in blocked
+        assert "/run.lock" in blocked
+        release(gate)
+        assert received(events) == "acquired"
+        assert holder.wait(timeout=5) == 0
+
+
+def test_nested_checkers_can_nest_again(tmp_path: Path) -> None:
+    _ = (tmp_path / "child.sh").write_text(
+        PRELUDE
+        + "if (( $1 > 0 )); then\n"
+        + '    step "nested-$1" ending bash "$FIXTURE/child.sh" "$(($1 - 1))"\n'
+        + '    exit "${#failed[@]}"\n'
+        + "fi\n"
+        + "echo acquired\n"
+    )
+    with running(
+        tmp_path,
+        'step nested ending bash "$FIXTURE/child.sh" 2\nexit "${#failed[@]}"\n',
+    ) as run:
+        assert run.wait(timeout=5) == 0
+    assert (tmp_path / "logs/nested-1.log").read_text() == "acquired\n"

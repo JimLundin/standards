@@ -1,7 +1,6 @@
-logs=$(mktemp -d)
 home=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 failed=()
-tier=step
+tier=commit
 project=.
 lookup=1
 verify=
@@ -65,11 +64,14 @@ totals() {
 	plain "$1" | awk '/^Total/ { printf "%s files, %s code, %s comments, %s complexity", $2, $6, $5, $7 }'
 }
 
+in_ci() {
+	[ -n "${CI:-}" ] && [ "$CI" != false ]
+}
+
 # A unit that can't run, such as one whose tool isn't installed, is skipped;
-# in CI (`CI` set, as GitHub Actions sets it) it fails, so CI passes no tree
-# with a unit it didn't run.
+# in CI it fails, so CI passes no tree with a unit it didn't run.
 skipped() {
-	if [ -n "${CI:-}" ] && [ "$CI" != false ]; then
+	if in_ci; then
 		line "$1" FAIL "$2; CI runs every unit"
 		failed+=("$1")
 	else
@@ -104,7 +106,14 @@ step() {
 	fi
 	log="$logs/$name.log"
 	outcome=ok
-	"$@" >"$log" 2>&1 || {
+	(
+		export STANDARDS_LOCK_ROOT=${lock_root:-}
+		export STANDARDS_LOCK_OWNER=${lock_owner:-}
+		export STANDARDS_LOCK_SCOPE=$BASHPID
+		"$@"
+		# Keep this scope alive until the command returns, even if bash could exec it.
+		exit "$?"
+	) >"$log" 2>&1 {run_lock}>&- || {
 		outcome=FAIL
 		failed+=("$name")
 	}
@@ -153,6 +162,10 @@ arguments() {
 	fi
 	if [ -n "$verify" ] && [ -n "$affected" ]; then
 		echo "--verify and --affected are two dry runs; pick one" >&2
+		exit 2
+	fi
+	if at_least step && ! dry && ! in_ci && [ "${STANDARDS_LOCAL_TIERS:-}" != 1 ]; then
+		echo "$tier runs only in CI; fix: set STANDARDS_LOCAL_TIERS=1 on a machine the owner allows" >&2
 		exit 2
 	fi
 }
@@ -232,8 +245,67 @@ pinned() {
 	exit 2
 }
 
+# A unit closes the lock fd so a daemon cannot retain it. Nested checkers
+# instead lock their active unit's own file: the parent still holds its
+# lock, and sibling checkers serialize on the child lock. Ancestry ties the
+# exported context to the active unit, so a surviving daemon cannot reuse it.
+exec {run_lock}>/dev/null
+lock_root=
+lock_owner=
+
+nested_lock() {
+	local pid=$BASHPID scope=${STANDARDS_LOCK_SCOPE:-} owner=${STANDARDS_LOCK_OWNER:-} seen=
+	[ "${STANDARDS_LOCK_ROOT:-}" = "$lock_root" ] || return 1
+	[[ $scope =~ ^[0-9]+$ && $owner =~ ^[0-9]+$ ]] || return 1
+	while ((pid > 1)); do
+		[ "$pid" != "$scope" ] || seen=1
+		if [ -n "$seen" ] && [ "$pid" = "$owner" ]; then
+			echo "$lock_root/nested/$scope.lock"
+			return 0
+		fi
+		read -r pid < <(ps -o ppid= -p "$pid" 2>/dev/null) || return 1
+	done
+	return 1
+}
+
+lock() {
+	local file
+	dry && return 0
+	if ! command -v flock >/dev/null; then
+		echo "flock not installed, so this run doesn't wait for another; fix: install util-linux" >&2
+		return 0
+	fi
+	lock_root=$(cache_root)
+	mkdir -p "$lock_root"
+	lock_root=$(cd "$lock_root" && pwd -P)
+	file=$(nested_lock) || file="$lock_root/run.lock"
+	mkdir -p "${file%/*}"
+	exec {run_lock}>&- {run_lock}>>"$file"
+	if ! flock -n "$run_lock"; then
+		echo "$(holder "$file") holds $(native "$file"); waiting for it to exit (fix: stop that run or let it finish)" >&2
+		flock "$run_lock"
+	fi
+	# A waiting nested checker may outlive the unit that admitted it.
+	if [ "$file" != "$lock_root/run.lock" ] && ! nested_lock >/dev/null; then
+		exec {run_lock}>&- {run_lock}>/dev/null
+		lock
+		return
+	fi
+	lock_owner=$BASHPID
+	echo "run of pid $$, project $(native "$PWD")," >"$file"
+}
+
+# The run the lock file names, which is unknown until its holder writes it.
+holder() {
+	local text
+	text=$(cat "$1" 2>/dev/null)
+	echo "${text:-an unknown run}"
+}
+
 begin() {
 	language=$1
+	logs=$(mktemp -d)
+	lock
 	pinned UV uv "uv self update {}" uv --version
 	pinned PYTHON uv "uv python install {}" uv run --no-project -q python -V
 	mapfile -t tracked < <(git ls-files)
