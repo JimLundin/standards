@@ -167,9 +167,7 @@ def stryker_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     }
     return Outcome(
         FrozenList((STRYKER_CONFIG,)),
-        writes=FrozenOrderedDict({
-            STRYKER_CONFIG: f"{json.dumps(copy, indent=2)}\n"
-        }),
+        writes=FrozenOrderedDict({STRYKER_CONFIG: json.dumps(copy)}),
     )
 
 
