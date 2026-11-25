@@ -1,4 +1,6 @@
 import type { Kind, Syntax } from "./syntax.ts";
+import type { Reference, Resolve } from "./imports.ts";
+import { refersTo, resolver } from "./imports.ts";
 
 // A function, or a module's own statements, with the decisions written in it and its closures.
 interface Measured {
@@ -23,15 +25,20 @@ const NAMES: Readonly<Partial<Record<Kind, string>>> = {
 };
 const WRITTEN: ReadonlySet<Kind> = new Set(["conditional", "if", "loop"]);
 const LOGICAL: ReadonlySet<Kind> = new Set(["and", "coalesce", "or"]);
-const COMBINATORS: ReadonlySet<string> = new Set([
-  "Effect.catchTag",
-  "Effect.catchTags",
-  "Effect.if",
-  "Effect.when",
-  "Match.tag",
-  "Match.when",
-  "Option.match",
-  "Result.match",
+// Each combinator that branches, as the export of Effect's barrel that names it; its own module, as `effect/Effect`, exports it too.
+const BRANCHING: ReadonlyArray<readonly [string, string]> = [
+  ["Effect", "catchTag"],
+  ["Effect", "catchTags"],
+  ["Effect", "if"],
+  ["Effect", "when"],
+  ["Match", "tag"],
+  ["Match", "when"],
+  ["Option", "match"],
+  ["Result", "match"],
+];
+const COMBINATORS: ReadonlyArray<Reference> = BRANCHING.flatMap(([module, name]) => [
+  { module: "effect", path: [module, name] },
+  { module: `effect/${module}`, path: [name] },
 ]);
 // What a module declares at its top level is measured on its own, as a function is wherever it's declared and a class's member is.
 const DECLARED: ReadonlySet<Kind> = new Set(["class", "export", "variable"]);
@@ -49,12 +56,12 @@ const begins = (node: Syntax): boolean => {
   );
 };
 
-// The `Module.name` that a call's callee spells, as in `Effect.if(...)`.
-const callee = ({ children: [target] }: Syntax): string => {
-  const [module, name] = (target?.kind === "property" ? target.children : []).filter(
-    (child) => child.kind === "identifier",
+// Whether a call's callee names a combinator that branches, through the file's imports.
+const branches = ({ children: [target] }: Syntax, resolve: Resolve): boolean => {
+  const reference = target === undefined ? undefined : resolve(target);
+  return (
+    reference !== undefined && COMBINATORS.some((combinator) => refersTo(reference, combinator))
   );
-  return `${module?.name ?? ""}.${name?.name ?? ""}`;
 };
 
 const cases = (node: Syntax): number =>
@@ -63,11 +70,11 @@ const cases = (node: Syntax): number =>
     .flatMap((block) => block.children)
     .filter((child) => child.kind === "case").length;
 
-const own = (node: Syntax): boolean =>
+const own = (node: Syntax, resolve: Resolve): boolean =>
   WRITTEN.has(node.kind) ||
   (node.kind === "switch" && cases(node) >= MANY) ||
   (node.kind === "binary" && begins(node)) ||
-  (node.kind === "call" && COMBINATORS.has(callee(node)));
+  (node.kind === "call" && branches(node, resolve));
 
 const opens = (node: Syntax, parent: Kind, top: boolean): boolean =>
   node.kind === "function" ||
@@ -88,23 +95,28 @@ const summed = (tallies: ReadonlyArray<Tally>, decisions: number): Tally => ({
   functions: tallies.flatMap((tally) => tally.functions),
 });
 
-// The decisions a node leaves to the function it's in, and the functions it opens, outermost first.
-const visited = (node: Syntax, parent: Kind, top: boolean): Tally => {
-  const opened = opens(node, parent, top);
-  const inner = summed(
-    node.children.map((child) =>
-      visited(child, node.kind, top && !opened && !ENCLOSED.has(child.kind)),
-    ),
-    Number(own(node)),
-  );
-  return opened
-    ? { decisions: NONE, functions: [named(node, inner.decisions), ...inner.functions] }
-    : inner;
+// The decisions a node leaves to the function it's in, and the functions it opens, outermost first, with the combinators its file imports.
+type Visit = (node: Syntax, parent: Kind, top: boolean) => Tally;
+
+const visitor = (resolve: Resolve): Visit => {
+  const visited: Visit = (node, parent, top) => {
+    const opened = opens(node, parent, top);
+    const inner = summed(
+      node.children.map((child) =>
+        visited(child, node.kind, top && !opened && !ENCLOSED.has(child.kind)),
+      ),
+      Number(own(node, resolve)),
+    );
+    return opened
+      ? { decisions: NONE, functions: [named(node, inner.decisions), ...inner.functions] }
+      : inner;
+  };
+  return visited;
 };
 
 // Each function of a source file with its decisions, after its module's own statements if they make any.
 const functions = (file: Syntax): ReadonlyArray<Measured> => {
-  const { decisions, functions: found } = visited(file, "other", true);
+  const { decisions, functions: found } = visitor(resolver(file))(file, "other", true);
   const module: ReadonlyArray<Measured> =
     decisions > NONE ? [{ decisions, line: FIRST_LINE, name: MODULE }] : [];
   return [...module, ...found];
