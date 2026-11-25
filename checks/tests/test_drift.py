@@ -453,7 +453,6 @@ STANDARD_OXLINT_SOURCE = """import cloudflare from "@cloudflare/oxlint-config";
 
 export default defineConfig({ extends: [cloudflare] });
 """
-# A project config that extends the standard's, as check.sh evaluates it.
 EXTENDING = """import standard from "#standards/oxlint";
 import { defineConfig } from "oxlint";
 
@@ -462,8 +461,6 @@ export default defineConfig({
 	rules: { "react/jsx-max-depth": "error" },
 });
 """
-# The standard's config as `oxlint --print-config` resolves it: extends
-# flattened, categories expanded into rules, levels as allow, warn and deny.
 STANDARD_OXLINT: Mapping[str, object] = FrozenOrderedDict({
     "plugins": ["typescript", "react", "jsx-a11y"],
     "jsPlugins": [
@@ -687,8 +684,6 @@ def test_an_oxlint_config_that_weakens_every_check() -> None:
 def resolved_drift(
     standard: Mapping[str, object], project: Mapping[str, object]
 ) -> FrozenList[Issue]:
-    """The drift between a project's resolved oxlint config, which extends
-    the standard's, and the standard's."""
     files = {OXLINT: EXTENDING, "vitest.config.ts": KEPT_RUNS}
     resolved = {
         OXLINT: json.dumps(dict(project)),
@@ -782,14 +777,11 @@ def test_an_oxlint_config_left_unresolved_is_checked_for_extends_alone() -> (
     assert tuple(found) == issues(NOT_EXTENDED)
 
 
-def test_typescript_project_without_config() -> None:
-    # Without its own vitest config, a project's tests run on the standard's.
+def test_a_project_without_a_vitest_config_runs_the_standard_s() -> None:
     assert tuple(typescript_drift(snapshot({}, TYPESCRIPT_STANDARDS))) == ()
 
 
 def test_a_vite_config_without_the_modes_runs_fewer_cases() -> None:
-    # vitest reads vite.config.ts without a vitest.config.ts, so it is the
-    # project's own vitest config.
     project = {"vite.config.ts": "export default { test: {} };\n"}
     found = tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS)))
     assert found == issues(

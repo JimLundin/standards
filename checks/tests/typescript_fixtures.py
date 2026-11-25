@@ -36,8 +36,6 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
-    """A unit's line of the run, and its log."""
-
     outcome: str
     summary: str
     findings: str
@@ -189,7 +187,6 @@ TABBED = """export const double = (value: number): number => {
 
 
 def unsorted_package() -> str:
-    """The compliant core package.json, with `name` moved below `private`."""
     path = FIXTURES / COMPLIANT / "packages/core/package.json"
     lines = path.read_text().splitlines(keepends=True)
     named = next(index for index, line in enumerate(lines) if '"name"' in line)
@@ -607,7 +604,6 @@ it.effect(
 """
 
 
-# A project's own copy of the standard's vitest config, at its root.
 OWN_VITEST = FrozenOrderedDict(
     (name, (TYPESCRIPT / name).read_text())
     for name in ("vitest.config.ts", "vitest.setup.ts")
@@ -723,7 +719,6 @@ def test_a_vitest_config_with_fewer_runs_drifts(fixtures: Fixtures) -> None:
     assert "drift:arbitrary.fast" in exceptions.findings
 
 
-# A project's own oxlint.config.ts, which extends the standard's.
 EXTENDING = """import standard from "#standards/oxlint";
 
 const config = {

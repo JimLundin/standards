@@ -24,12 +24,6 @@ class OrderedSequence[T](Sequence[T], OrderedCollection[T], metaclass=ABCMeta):
 
 
 class OrderedSet[T](AbstractSet[T], OrderedCollection[T], metaclass=ABCMeta):
-    """A set whose iteration order is part of its contract.
-
-    Binary operations keep the left operand's order, then add the right
-    operand's items in its own order.
-    """
-
     __slots__: tuple[str, ...] = ()
 
     @override

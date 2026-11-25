@@ -1,18 +1,17 @@
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
-from pathlib import PurePosixPath
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.cargo import (
+    Library,
     core_packages,
-    is_library,
+    library_of,
     packages_of,
     relative,
-    targets_of,
 )
 from checks.core.exceptions import BOX, EXCEPTIONS, Exceptions, exceptions_in
 from checks.core.rust_api import Finding
@@ -48,22 +47,7 @@ STD = re.compile(r"\bextern\s+crate\s+std\b")
 TEST_ONLY = "#[cfg(test)]"
 UNCONDITIONAL = "declare `#![no_std]` unconditionally; the core does no I/O"
 TESTS_ONLY = f"`extern crate std` outside `{TEST_ONLY}`; the core does no I/O"
-# A JSON string is a TOML basic string, but only unescaped: TOML has no
-# surrogate pairs for characters outside the basic multilingual plane.
-STRING = json.JSONEncoder(ensure_ascii=False)
-
-
-@dataclass(frozen=True, slots=True)
-class Library:
-    name: str
-    root: str
-    source: str
-
-    def holds(self, file: str) -> bool:
-        folder = PurePosixPath(self.root).parent
-        return file.endswith(".rs") and PurePosixPath(file).is_relative_to(
-            folder
-        )
+UNESCAPED_TOML_BASIC_STRING = json.JSONEncoder(ensure_ascii=False)
 
 
 def toml_value(value: object) -> str:
@@ -73,13 +57,13 @@ def toml_value(value: object) -> str:
         return repr(value)
     if is_table(value):
         pairs = ", ".join(
-            f"{STRING.encode(key)} = {toml_value(item)}"
+            f"{UNESCAPED_TOML_BASIC_STRING.encode(key)} = {toml_value(item)}"
             for key, item in value.items()
         )
         return f"{{ {pairs} }}"
     if isinstance(value, Sequence) and not isinstance(value, str):
         return f"[{', '.join(toml_value(item) for item in value)}]"
-    return STRING.encode(str(value))
+    return UNESCAPED_TOML_BASIC_STRING.encode(str(value))
 
 
 def disallowed_path(item: object) -> str:
@@ -112,14 +96,6 @@ def clippy_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     base, written = arguments
     config = core_config(parse_toml(inputs.texts.get(base)))
     return Outcome(writes=FrozenOrderedDict({written: config}))
-
-
-def library_of(package: Mapping[str, object], root: str) -> Iterator[Library]:
-    for target in filter(is_library, targets_of(package)):
-        source = str(target.get("src_path"))
-        yield Library(
-            str(package.get("name")), relative(source, root), normalized(source)
-        )
 
 
 def libraries(metadata: Mapping[str, object]) -> FrozenList[Library]:
@@ -195,6 +171,10 @@ def pointer_of(message: Mapping[str, object]) -> str:
     return named[1]
 
 
+def sourceless_at_target_root(where: Finding, target_root: str) -> Finding:
+    return where if where.path.endswith(".rs") else Finding(target_root, 1)
+
+
 def diagnostic_finding(
     record: Mapping[str, object],
     sources: Sequence[str],
@@ -207,13 +187,7 @@ def diagnostic_finding(
         return None
     target = str(table(record.get("target")).get("src_path"))
     if message.get("level") == "error":
-        # rustc places errors without a source, like a missing `std`,
-        # in whichever file it loaded first.
-        located = (
-            where
-            if where.path.endswith(".rs")
-            else Finding(relative(target, root), 1)
-        )
+        located = sourceless_at_target_root(where, relative(target, root))
         return replace(located, message=str(message.get("message")))
     pointer = pointer_of(message)
     source = normalized(target)

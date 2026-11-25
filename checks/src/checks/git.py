@@ -1,6 +1,3 @@
-"""Git, run with the standards' own identity, so recording needs no git
-config, as on a CI runner."""
-
 import subprocess
 
 from ordered import FrozenList

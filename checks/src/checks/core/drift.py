@@ -39,10 +39,11 @@ RANKS = FrozenOrderedDict({
     "forbid": 3,
 })
 PROPTEST_CASES = 16
-# A mode of vitest.config.ts and the runs of its property tests, as
-# `fast: { runs: 10 }`.
-MODE_RUNS = re.compile(r"\b(\w+):\s*\{[^{}]*?\bruns:\s*(\d+)")
-VITEST_CONFIGS = FrozenList(("vitest.config.ts", "vite.config.ts"))
+VITEST_MODE_RUNS = re.compile(r"\b(\w+):\s*\{[^{}]*?\bruns:\s*(\d+)")
+VITEST_CONFIGS_IN_ORDER_READ = FrozenList((
+    "vitest.config.ts",
+    "vite.config.ts",
+))
 PROJECT_FILES = FrozenOrderedDict({
     "python": FrozenList(("pyproject.toml",)),
     "rust": FrozenList((
@@ -388,32 +389,27 @@ def rust_drift(snapshot: Snapshot) -> Iterator[Issue]:
         )
 
 
-# Oxlint prints a finding's rule as `plugin(rule)`, but its resolved config
-# names eslint's rules bare, a plugin with an underscore, and react's hooks
-# rules under react, so drift names a rule as a finding prints it.
-OXLINT_PLUGINS = FrozenOrderedDict({
+PRINTED_PLUGIN_NAMES = FrozenOrderedDict({
     "jsx_a11y": "jsx-a11y",
     "react_perf": "react-perf",
 })
-HOOKS = FrozenOrderedSet(("rules-of-hooks", "exhaustive-deps"))
+REACT_HOOKS_RULES = FrozenOrderedSet(("rules-of-hooks", "exhaustive-deps"))
 OXLINT_RANKS = FrozenOrderedDict({"allow": 0, "warn": 1, "deny": 2})
 RESTRICTED = FrozenList(("no-restricted-globals", "no-restricted-imports"))
 STANDARD_OXLINT = "#standards/oxlint"
-# A project's oxlint.config.ts imports the standard's as `#standards/oxlint`,
-# which check.sh maps to its copy, and names that import in `extends`.
 STANDARD_IMPORT = re.compile(
     rf"""import\s+(\w+)\s+from\s+["']{STANDARD_OXLINT}["']"""
 )
 EXTENDS = re.compile(r"\bextends\s*:\s*\[([^\]]*)\]")
 
 
-def printed(rule: str) -> str:
-    plugin, slash, name = rule.rpartition("/")
+def printed(configured: str) -> str:
+    plugin, slash, name = configured.rpartition("/")
     if not slash:
-        return f"eslint/{rule}"
-    if plugin == "react" and name in HOOKS:
+        return f"eslint/{configured}"
+    if plugin == "react" and name in REACT_HOOKS_RULES:
         return f"react-hooks/{name}"
-    return f"{OXLINT_PLUGINS.get(plugin, plugin)}/{name}"
+    return f"{PRINTED_PLUGIN_NAMES.get(plugin, plugin)}/{name}"
 
 
 def by_printed(rules: Mapping[str, object]) -> Mapping[str, object]:
@@ -564,7 +560,7 @@ def typescript_oxlint_drift(snapshot: Snapshot) -> Iterator[Issue]:
 
 def vitest_runs(source: str) -> FrozenOrderedDict[str, int]:
     return FrozenOrderedDict(
-        (match[1], int(match[2])) for match in MODE_RUNS.finditer(source)
+        (match[1], int(match[2])) for match in VITEST_MODE_RUNS.finditer(source)
     )
 
 
@@ -621,12 +617,15 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         snapshot.standard_json(f"{folder}stryker.config.json"),
         snapshot.json("stryker.config.json"),
     )
-    # A project's tests run on its own vitest config, vitest.config.ts or
-    # else the vite.config.ts vitest reads, or on the standard's, so only its
-    # own can run fewer cases.
     vitest = next(
-        (path for path in VITEST_CONFIGS if path in snapshot.project), None
+        (
+            path
+            for path in VITEST_CONFIGS_IN_ORDER_READ
+            if path in snapshot.project
+        ),
+        None,
     )
+
     if vitest is not None:
         yield from intensity(
             vitest,

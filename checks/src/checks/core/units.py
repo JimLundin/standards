@@ -23,12 +23,9 @@ from checks.core.values import (
 
 VERSION = "1"
 PROJECT = "."
-# A key names the object its note annotates, so it is as long as a SHA-1
-# object name.
-LENGTH = 40
+SHA1_OBJECT_NAME_LENGTH = 40
 PIN = re.compile(r"^([A-Z_]+)=(.*)$", re.MULTILINE)
-# Files no check reads: a change to them reruns no package.
-DOCS = FrozenList((
+READ_BY_NO_CHECK = FrozenList((
     "**/*.md",
     "docs/**",
     "**/LICENSE*",
@@ -62,7 +59,9 @@ def key(context: Context, check: str, scope: str, inputs: str) -> str:
         version for name, version in context.tools.items() if name == check
     )
     fields = (context.language, check, scope, context.standards)
-    return digest((*fields, context.toolchain, *tool, inputs))[:LENGTH]
+    return digest((*fields, context.toolchain, *tool, inputs))[
+        :SHA1_OBJECT_NAME_LENGTH
+    ]
 
 
 def parse_record(record: str) -> File:
@@ -88,8 +87,6 @@ def any_match(file: str, globs: Sequence[str]) -> bool:
 def package_inputs(
     files: Sequence[File], packages: Sequence[Package]
 ) -> FrozenOrderedDict[str, str]:
-    """Each package's files and its workspace dependencies', with every
-    file outside the packages and the docs, such as Cargo.lock."""
     owners = FrozenOrderedDict(
         (file.path, owned(file.path, packages)) for file in files
     )
@@ -99,7 +96,9 @@ def package_inputs(
     )
     common = fingerprint(
         FrozenList(
-            file for file in grouped[""] if not any_match(file.path, DOCS)
+            file
+            for file in grouped[""]
+            if not any_match(file.path, READ_BY_NO_CHECK)
         )
     )
     return FrozenOrderedDict(
@@ -120,7 +119,6 @@ def package_inputs(
 
 
 def pins_of(text: str) -> FrozenOrderedDict[str, str]:
-    """The `NAME=version` lines of a tools.env."""
     return FrozenOrderedDict(PIN.findall(text))
 
 
@@ -130,8 +128,6 @@ def suite_inputs(
     packages: Mapping[str, str],
     tools: Sequence[str],
 ) -> str:
-    """The files a suite's triggers name, the inputs of the packages they
-    name, or every file when one names neither, with the pins of its tools."""
     if any(not trigger.paths and not trigger.packages for trigger in triggers):
         return digest((fingerprint(files), *tools))
     globs = FrozenList(glob for trigger in triggers for glob in trigger.paths)

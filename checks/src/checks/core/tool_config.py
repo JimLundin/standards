@@ -53,16 +53,15 @@ def globs(arguments: Sequence[str], inputs: Inputs) -> Outcome:
 OXLINT_CONFIG = "node_modules/.cache/standards/oxlint.config.mjs"
 
 
-def oxlint_override(root: str, entry: ExceptionEntry) -> str:
+def oxlint_override(project_root: str, entry: ExceptionEntry) -> str:
     rule = oxlint_rule(entry.rule)
     if not rule:
         return ""
-    files, key = json.dumps([f"{root}/{entry.path}"]), json.dumps(rule)
+    files, key = json.dumps([f"{project_root}/{entry.path}"]), json.dumps(rule)
+
     return f'\t\t{{ files: {files}, rules: {{ {key}: "off" }} }},\n'
 
 
-# A file URL of an absolute path, which Node imports on any platform, such as
-# file:///C:/work/a.ts for a Windows path.
 def file_url(path: str) -> str:
     drive, rest = (
         ("", path) if path.startswith("/") else (f"/{path[:2]}", path[2:])
@@ -70,9 +69,6 @@ def file_url(path: str) -> str:
     return f"file://{drive}{quote(rest)}"
 
 
-# Oxlint resolves an override's globs against its config's folder, which
-# here is not the project root, and matches a file outside that folder by
-# its absolute path, so each glob is anchored at the project root.
 def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     *flags, path = arguments
     root = posix(inputs.cwd)
@@ -122,14 +118,17 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
-# A finding of vulture's starts with the path of the file it is in.
+def vulture_finding_file(finding: str) -> str:
+    return posix(finding.partition(":")[0])
+
+
 def filter_vulture(_: Sequence[str], inputs: Inputs) -> Outcome:
     exceptions = exceptions_in(inputs)
     return listing(
         FrozenList(
             line
             for line in inputs.stdin.splitlines()
-            if not exceptions.covers(UNUSED, posix(line.partition(":")[0]))
+            if not exceptions.covers(UNUSED, vulture_finding_file(line))
         )
     )
 
@@ -161,8 +160,6 @@ def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
 STRYKER_CONFIG = "node_modules/.cache/standards/stryker.config.json"
 
 
-# Stryker's vitest runner reads the vitest config that `vitest.configFile`
-# names, so a copy of the config names the one that applies.
 def stryker_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     path, vitest_config = arguments
     config = stryker_config_of(inputs.texts.get(path))

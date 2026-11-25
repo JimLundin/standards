@@ -2,15 +2,20 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks.core.cargo import library_files
+from checks.core.comment_rule import comment_issues
+from checks.core.comments import is_source, sources
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
 from checks.core.exceptions import EXCEPTIONS, exceptions_in, validate
-from checks.core.suppressions import is_source, suppressions, used_attributes
+from checks.core.suppressions import suppressions, used_attributes
 from checks.core.values import (
     Inputs,
     Outcome,
     Request,
     operands,
+    option,
     options,
+    parse_json,
     summarized,
 )
 
@@ -28,8 +33,6 @@ def project_paths(language: str, files: Sequence[str]) -> FrozenList[str]:
     )
 
 
-# Each `--resolved=<config>=<file>` names a file holding a config, the
-# project's or a standard's, as its tool resolves it.
 def resolved_files(arguments: Sequence[str]) -> FrozenOrderedDict[str, str]:
     return FrozenOrderedDict(
         (config, file)
@@ -58,6 +61,11 @@ def snapshot_of(arguments: Sequence[str], inputs: Inputs) -> Snapshot:
     return Snapshot(FrozenList(files), project, shared, resolved)
 
 
+def metadata_file(arguments: Sequence[str]) -> FrozenList[str]:
+    found = option(arguments, "--metadata=")
+    return FrozenList((found,) if found else ())
+
+
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
     language, standards, *files = operands(arguments)
     shared = (f"{standards}/{path}" for path in STANDARD_FILES[language])
@@ -66,6 +74,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
             *project_paths(language, files),
             *shared,
             *resolved_files(arguments).values(),
+            *metadata_file(arguments),
         ))
     )
 
@@ -74,7 +83,10 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     language = operands(arguments)[0]
     snapshot = snapshot_of(arguments, inputs)
     exceptions = exceptions_in(inputs)
-    attributes = used_attributes(snapshot.project)
+    metadata = (inputs.texts.get(file) for file in metadata_file(arguments))
+    libraries = library_files(parse_json(next(metadata, None)), snapshot.files)
+    parsed = sources(language, snapshot.project, libraries)
+    attributes = used_attributes(parsed)
     drifted = FrozenList(
         issue
         for issue in DRIFT[language](snapshot)
@@ -82,7 +94,8 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
     issues = (
         *validate(language, exceptions, snapshot.files, attributes),
-        *suppressions(language, snapshot.project, exceptions),
+        *suppressions(language, parsed, exceptions),
+        *comment_issues(language, parsed, exceptions),
         *drifted,
     )
     return summarized(

@@ -1,41 +1,16 @@
 import pytest
 from ordered import FrozenOrderedDict
 
+from checks.core.comments import Attribute, parse, sources
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import (
     attribute_lints,
-    is_source,
-    python_markers,
-    rust_attributes,
+    markers,
     suppressions,
-    typescript_markers,
     used_attributes,
 )
 
 INSTEAD = "; add an entry to exceptions.toml instead"
-
-
-@pytest.mark.parametrize(
-    ("language", "file", "expected"),
-    [
-        ("python", "a.py", True),
-        ("python", "a.pyw", True),
-        ("python", "a.pyi", False),
-        ("rust", "a.rs", True),
-        ("rust", "a.py", False),
-        ("typescript", "a.ts", True),
-        ("typescript", "a.tsx", True),
-        ("typescript", "a.mts", True),
-        ("typescript", "a.cts", True),
-        ("typescript", "a.js", True),
-        ("typescript", "a.jsx", True),
-        ("typescript", "a.mjs", True),
-        ("typescript", "a.json", False),
-        ("go", "a.go", False),
-    ],
-)
-def test_is_source(language: str, file: str, *, expected: bool) -> None:
-    assert is_source(language, file) is expected
 
 
 @pytest.mark.parametrize(
@@ -57,9 +32,8 @@ def test_is_source(language: str, file: str, *, expected: bool) -> None:
     ],
 )
 def test_python_markers_find_suppressions(comment: str) -> None:
-    assert tuple(python_markers(f"x = 1\ny = 2  {comment}  \n")) == (
-        (2, comment),
-    )
+    text = f"x = 1\ny = 2  {comment}  \n"
+    assert tuple(markers("python", parse("a.py", text))) == ((2, comment),)
 
 
 @pytest.mark.parametrize(
@@ -74,7 +48,7 @@ def test_python_markers_find_suppressions(comment: str) -> None:
     ],
 )
 def test_python_markers_ignore_other_text(text: str) -> None:
-    assert tuple(python_markers(text)) == ()
+    assert tuple(markers("python", parse("a.py", text))) == ()
 
 
 @pytest.mark.parametrize(
@@ -93,7 +67,7 @@ def test_python_markers_ignore_other_text(text: str) -> None:
 )
 def test_typescript_markers(line: str) -> None:
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers(text)) == ((2, line),)
+    assert tuple(markers("typescript", parse("a.ts", text))) == ((2, line),)
 
 
 @pytest.mark.parametrize("linter", ["oxlint", "eslint"])
@@ -108,16 +82,17 @@ def test_typescript_markers_find_lint_disable_comments(
 ) -> None:
     line = f"{opening}{linter}-{form} no-console{closing}"
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers(text)) == ((2, line),)
+    assert tuple(markers("typescript", parse("a.ts", text))) == ((2, line),)
 
 
 def test_typescript_markers_ignore_biome_ignore() -> None:
     text = "// biome-ignore lint: x\n/* biome-ignore lint: x */\n"
-    assert tuple(typescript_markers(text)) == ()
+    assert tuple(markers("typescript", parse("a.ts", text))) == ()
 
 
 def test_typescript_markers_need_a_comment() -> None:
-    assert tuple(typescript_markers('const a = "oxlint-disable";\n')) == ()
+    text = 'const a = "oxlint-disable";\n'
+    assert tuple(markers("typescript", parse("a.ts", text))) == ()
 
 
 def test_attribute_lints_drop_reasons() -> None:
@@ -134,11 +109,11 @@ def test_rust_attributes() -> None:
         '#[ expect ( clippy::x, reason = "a (b)" ) ]\n'
         "#[mutants::skip]\n"
     )
-    assert tuple(rust_attributes(text)) == (
-        (1, "no_std", ""),
-        (2, "derive", "(Clone)"),
-        (4, "expect", '( clippy::x, reason = "a (b)" )'),
-        (5, "mutants::skip", ""),
+    assert parse("a.rs", text).attributes == (
+        Attribute(1, "no_std", ""),
+        Attribute(2, "derive", "(Clone)"),
+        Attribute(4, "expect", '( clippy::x, reason = "a (b)" )'),
+        Attribute(5, "mutants::skip", ""),
     )
 
 
@@ -159,7 +134,7 @@ def test_rust_suppressions() -> None:
     exceptions = load(
         '[[exception]]\npath = "src/*.rs"\nrule = "clippy::a"\nreason = "r"\n'
     )
-    assert tuple(suppressions("rust", texts, exceptions)) == (
+    assert tuple(suppressions("rust", sources("rust", texts), exceptions)) == (
         Issue("src/lib.rs:1", "#[expect(clippy::b)] is not in exceptions.toml"),
         Issue("src/lib.rs:3", f"#[allow(dead_code)]{INSTEAD}"),
         Issue("src/lib.rs:4", f"#[mutants::skip]{INSTEAD}"),
@@ -174,10 +149,12 @@ def test_python_and_typescript_suppressions_skip_other_files() -> None:
         "b.ts": "// oxlint-disable-next-line x\n",
         "c.txt": "# noqa\n",
     })
-    assert tuple(suppressions("python", texts, load(None))) == (
-        Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),
-    )
-    assert tuple(suppressions("typescript", texts, load(None))) == (
+    assert tuple(
+        suppressions("python", sources("python", texts), load(None))
+    ) == (Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),)
+    assert tuple(
+        suppressions("typescript", sources("typescript", texts), load(None))
+    ) == (
         Issue(
             "b.ts:1", f"suppression `// oxlint-disable-next-line x`{INSTEAD}"
         ),
@@ -189,7 +166,7 @@ def test_used_attributes() -> None:
         "a.rs": RUST,
         "b.py": '#[expect(clippy::c, reason = "x")]',
     })
-    assert tuple(used_attributes(texts)) == (
+    assert tuple(used_attributes(sources("rust", texts))) == (
         ("a.rs", "clippy::a"),
         ("a.rs", "clippy::b"),
     )
@@ -202,14 +179,16 @@ def test_scanning_continues_past_other_files() -> None:
         "b.rs": "#[allow(x)]\n",
         "c.rs": "\n#[allow(y)]\n",
     })
-    assert tuple(suppressions("python", texts, load(None))) == (
-        Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),
-    )
-    assert tuple(suppressions("rust", texts, load(None))) == (
+    assert tuple(
+        suppressions("python", sources("python", texts), load(None))
+    ) == (Issue("a.py:1", f"suppression `# noqa`{INSTEAD}"),)
+    assert tuple(suppressions("rust", sources("rust", texts), load(None))) == (
         Issue("b.rs:1", f"#[allow(x)]{INSTEAD}"),
         Issue("c.rs:2", f"#[allow(y)]{INSTEAD}"),
     )
 
 
 def test_rust_attribute_lines_count_from_the_start() -> None:
-    assert tuple(rust_attributes("\n\n#[allow(x)]\n")) == ((3, "allow", "(x)"),)
+    assert parse("a.rs", "\n\n#[allow(x)]\n").attributes == (
+        Attribute(3, "allow", "(x)"),
+    )

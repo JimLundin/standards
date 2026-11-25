@@ -1,6 +1,3 @@
-"""The notes module against clones of a bare origin in a temporary
-directory, so recorded passes go nowhere else."""
-
 import subprocess
 from pathlib import Path
 
@@ -12,7 +9,6 @@ from checks.core.values import Outcome
 
 FIRST = "1" * 40
 SECOND = "2" * 40
-# Fails the first push it sees and passes the rest.
 REJECT_ONCE = """\
 #!/bin/sh
 [ -e "$GIT_DIR/rejected" ] && exit 0
@@ -33,8 +29,6 @@ def git(directory: Path, *arguments: str) -> str:
 
 @pytest.fixture
 def origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A bare origin, where no git config names a user, as on a CI
-    runner."""
     empty = tmp_path / "gitconfig"
     _ = empty.write_text("")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
@@ -54,7 +48,6 @@ def clone(origin: Path, name: str) -> str:
 
 
 def hook(origin: Path, script: str) -> None:
-    """Has origin run the script before it accepts a push."""
     path = origin / "hooks/pre-receive"
     _ = path.write_text(script, newline="\n")
     path.chmod(0o755)

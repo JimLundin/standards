@@ -8,7 +8,6 @@ const readonlyTypes: ReadonlySet<string> = new Set([
   "ReadonlySet",
 ]);
 
-// A binding outside every function is state that the module's functions share.
 const atModuleLevel = (context: Context, node: ESTree.Node): boolean => {
   const { type } = context.sourceCode.getScope(node).variableScope;
   return type === "module" || type === "global";
