@@ -7,7 +7,7 @@ lazy from pathlib import Path
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks import notes
+from checks import git
 from checks.core.tools import TOOLS, request, run
 from checks.core.values import Inputs, Request
 from checks.shell import gather, main, read
@@ -113,7 +113,7 @@ def test_main_runs_the_notes_in_the_working_directory(
     capsysbinary: pytest.CaptureFixture[bytes],
 ) -> None:
     key = "1" * 40
-    assert notes.git(str(project), "init", "-q").returncode == 0
+    assert git.git(str(project), "init", "-q").returncode == 0
     status, out = invoke(
         monkeypatch, capsysbinary, "notes", "record", key, "python lint ."
     )

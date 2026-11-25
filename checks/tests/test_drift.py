@@ -8,6 +8,7 @@ from checks.core.drift import (
     Snapshot,
     hypothesis_profiles,
     level,
+    printed,
     proptest_cases,
     python_drift,
     rust_drift,
@@ -683,22 +684,81 @@ def test_an_oxlint_config_that_weakens_every_check() -> None:
     )
 
 
-def test_an_oxlint_config_weakening_a_scoped_plugins_rule() -> None:
+def resolved_drift(
+    standard: Mapping[str, object], project: Mapping[str, object]
+) -> FrozenList[Issue]:
+    """The drift between a project's resolved oxlint config, which extends
+    the standard's, and the standard's."""
     files = {OXLINT: EXTENDING, "vitest.config.ts": KEPT_RUNS}
     resolved = {
-        OXLINT: json.dumps({"rules": {"@nkzw/no-instanceof": "allow"}}),
-        "typescript/oxlint.config.ts": json.dumps({
-            "rules": {"@nkzw/no-instanceof": "deny"}
-        }),
+        OXLINT: json.dumps(dict(project)),
+        "typescript/oxlint.config.ts": json.dumps(dict(standard)),
     }
-    found = typescript_drift(
-        snapshot(files, TYPESCRIPT_STANDARDS, (), resolved)
+    return FrozenList(
+        typescript_drift(snapshot(files, TYPESCRIPT_STANDARDS, (), resolved))
     )
-    assert tuple(found) == issues((
+
+
+def test_an_oxlint_config_weakening_a_scoped_plugins_rule() -> None:
+    found = resolved_drift(
+        {"rules": {"@nkzw/no-instanceof": "deny"}},
+        {"rules": {"@nkzw/no-instanceof": "allow"}},
+    )
+    assert found == issues((
         OXLINT,
         "rules.@nkzw/no-instanceof",
         "rules.@nkzw/no-instanceof is `allow`, weaker than `deny`",
     ))
+
+
+def test_a_rule_the_standard_warns_on_is_weakened_by_leaving_it_out() -> None:
+    standard = {"rules": {"no-console": "warn", "no-debugger": "off"}}
+    assert resolved_drift(standard, {"rules": {}}) == issues((
+        OXLINT,
+        "rules.eslint/no-console",
+        "rules.eslint/no-console is `off`, weaker than `warn`",
+    ))
+
+
+def test_an_override_turning_off_a_rule_the_standard_warns_on() -> None:
+    standard = {"rules": {"no-console": "warn"}}
+    project = standard | {
+        "overrides": [{"files": ["src/**"], "rules": {"no-console": "off"}}]
+    }
+    assert resolved_drift(standard, project) == issues((
+        OXLINT,
+        "overrides.src/**.eslint/no-console",
+        "override for src/** sets eslint/no-console to `off`",
+    ))
+
+
+def test_a_js_plugin_named_by_its_specifier_alone_must_be_kept() -> None:
+    standard = {"jsPlugins": ["standards", {"specifier": "file:///x.ts"}]}
+    assert resolved_drift(standard, {"jsPlugins": []}) == issues((
+        OXLINT,
+        "jsPlugins:standards",
+        "jsPlugins lacks `standards`",
+    ))
+
+
+def test_the_standard_s_own_ignore_patterns_are_no_drift() -> None:
+    config = {"ignorePatterns": ["dist/**"]}
+    assert resolved_drift(config, config) == ()
+
+
+@pytest.mark.parametrize(
+    ("rule", "expected"),
+    [
+        ("no-bitwise", "eslint/no-bitwise"),
+        ("jsx_a11y/alt-text", "jsx-a11y/alt-text"),
+        ("react/rules-of-hooks", "react-hooks/rules-of-hooks"),
+        ("react/jsx-max-depth", "react/jsx-max-depth"),
+        ("local/exhaustive-deps", "local/exhaustive-deps"),
+        ("jsx_a11y/local/alt-text", "jsx_a11y/local/alt-text"),
+    ],
+)
+def test_a_rule_is_named_as_oxlint_prints_it(rule: str, expected: str) -> None:
+    assert printed(rule) == expected
 
 
 def test_the_standard_oxlint_config_itself_has_no_drift() -> None:
@@ -851,10 +911,10 @@ def test_stryker_threshold_missing_or_not_a_number() -> None:
         ),
         ("mutation: { seed: 42, runs: 4 }", {"mutation": 4}),
         ("fast: { seed: 4 }, full: 3", {}),
-        (None, {}),
+        ("", {}),
     ],
 )
-def test_vitest_runs(text: str | None, expected: Mapping[str, int]) -> None:
+def test_vitest_runs(text: str, expected: Mapping[str, int]) -> None:
     assert vitest_runs(text) == expected
 
 

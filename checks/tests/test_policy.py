@@ -131,6 +131,12 @@ def test_policy_reports_drift_between_resolved_oxlint_configs() -> None:
     )
 
 
+def test_a_resolved_config_s_file_may_hold_an_equals_sign() -> None:
+    resolved = ("--resolved=oxlint.config.ts=/logs/a=b.json",)
+    paths = request(("typescript", STD, *resolved), Inputs()).paths
+    assert paths[-1] == "/logs/a=b.json"
+
+
 def test_policy_ignores_attributes_outside_rust() -> None:
     texts = {
         "exceptions.toml": entry("a.ts", "lint/style/noVar"),
