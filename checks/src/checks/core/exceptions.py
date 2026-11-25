@@ -22,6 +22,8 @@ SHELL = "shell"
 FLAKY = "flaky"
 BOX = "box"
 MUTATION = "mutation"
+COMMENT = "comment"
+EVERY_LANGUAGE = FrozenOrderedSet((MUTATION, COMMENT))
 RUST_RULES = FrozenOrderedSet((API, SHELL, FLAKY, BOX))
 UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
@@ -121,7 +123,7 @@ def oxlint_rule(rule: str) -> str:
 
 
 def kind(language: str, rule: str) -> str:
-    if rule == MUTATION or (language == "rust" and rule in RUST_RULES):
+    if rule in EVERY_LANGUAGE or (language == "rust" and rule in RUST_RULES):
         return rule
     if rule.startswith("drift:"):
         return "drift"

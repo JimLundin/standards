@@ -2,13 +2,14 @@
 
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-lazy from collections.abc import Mapping, Sequence
+lazy from collections.abc import Iterator, Mapping, Sequence
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.values import entries, lookup, normalized, strings, table
 
 LIBRARY_KINDS = FrozenOrderedSet(("lib", "rlib"))
+BINARY = "bin"
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,25 @@ class Package:
     name: str
     path: str
     dependencies: FrozenList[str] = field(default_factory=FrozenList)
+
+
+@dataclass(frozen=True, slots=True)
+class Library:
+    name: str
+    root: str
+    source: str
+
+    def holds(self, file: str) -> bool:
+        return file.endswith(".rs") and PurePosixPath(file).is_relative_to(
+            folder(self.root)
+        )
+
+    def cedes(self, file: str, binary: str) -> bool:
+        inner = folder(binary)
+        return file == binary or (
+            inner != folder(self.root)
+            and PurePosixPath(file).is_relative_to(inner)
+        )
 
 
 def relative(path: str, root: str) -> str:
@@ -49,6 +69,39 @@ def kinds(target: Mapping[str, object]) -> FrozenList[str]:
 
 def is_library(target: Mapping[str, object]) -> bool:
     return any(kind in LIBRARY_KINDS for kind in kinds(target))
+
+
+def library_of(package: Mapping[str, object], root: str) -> Iterator[Library]:
+    for target in filter(is_library, targets_of(package)):
+        source = str(target.get("src_path"))
+        yield Library(
+            str(package.get("name")), relative(source, root), normalized(source)
+        )
+
+
+def library_files(
+    metadata: Mapping[str, object], files: Sequence[str]
+) -> FrozenOrderedSet[str]:
+    root = str(metadata.get("workspace_root"))
+    packages = packages_of(metadata)
+    found = FrozenList(
+        library for package in packages for library in library_of(package, root)
+    )
+    binaries = FrozenList(
+        relative(str(target.get("src_path")), root)
+        for package in packages
+        for target in targets_of(package)
+        if BINARY in kinds(target)
+    )
+    return FrozenOrderedSet(
+        file
+        for file in files
+        if any(
+            library.holds(file)
+            and not any(library.cedes(file, binary) for binary in binaries)
+            for library in found
+        )
+    )
 
 
 def target_kinds(package: Mapping[str, object]) -> FrozenOrderedSet[str]:

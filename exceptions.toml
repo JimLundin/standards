@@ -2,7 +2,9 @@
 # tool configs fail the exceptions step. Each entry needs a path glob, a rule
 # and a reason. Rules are tool rule names (banned-api, IMM002,
 # clippy::shadow_reuse, lint/eslint/no-restricted-globals, PUR003 or PUR001:attrs
-# for one module), "mutation", "unused", "api" (a Rust file whose public
+# for one module), "mutation", "comment" (a source file whose comments
+# explain what its code can't be reshaped to say), "unused", "api" (a Rust
+# file whose public
 # items may take more than data), "shell" (a Rust shell file whose functions
 # may make more decisions, or Cargo.toml for the shell's share of them),
 # "box" (a Rust core file that may use Box, Rc or Arc),

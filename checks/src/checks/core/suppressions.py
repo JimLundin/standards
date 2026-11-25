@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedSet
 
-from checks.core.comments import comments, is_source
+from checks.core.comments import Comment, comments, is_source
 from checks.core.exceptions import Exceptions, Issue
 
 if TYPE_CHECKING:
@@ -44,19 +44,21 @@ FORBIDDEN_ATTRIBUTES = FrozenOrderedSet((
 INSTEAD = "; add an entry to exceptions.toml instead"
 
 
-def python_markers(file: str, text: str) -> Iterator[tuple[int, str]]:
-    yield from (
-        (comment.line, comment.text)
-        for comment in comments(file, text)
-        if comment.kind == "line" and PYTHON_MARKER.search(comment.text)
+def is_suppression(language: str, comment: Comment) -> bool:
+    if language == "python":
+        return comment.kind == "line" and bool(
+            PYTHON_MARKER.search(comment.text)
+        )
+    return language == "typescript" and bool(
+        TYPESCRIPT_MARKER.search(comment.text)
     )
 
 
-def typescript_markers(file: str, text: str) -> Iterator[tuple[int, str]]:
+def markers(language: str, file: str, text: str) -> Iterator[tuple[int, str]]:
     yield from (
         (comment.line, comment.text)
         for comment in comments(file, text)
-        if TYPESCRIPT_MARKER.search(comment.text)
+        if is_suppression(language, comment)
     )
 
 
@@ -97,10 +99,9 @@ def suppressions(
         if language == "rust":
             yield from rust_issues(file, text, exceptions)
             continue
-        scan = python_markers if language == "python" else typescript_markers
         yield from (
             Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
-            for line, marker in scan(file, text)
+            for line, marker in markers(language, file, text)
         )
 
 

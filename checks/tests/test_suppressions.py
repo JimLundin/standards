@@ -4,10 +4,9 @@ from ordered import FrozenOrderedDict
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import (
     attribute_lints,
-    python_markers,
+    markers,
     rust_attributes,
     suppressions,
-    typescript_markers,
     used_attributes,
 )
 
@@ -33,7 +32,7 @@ INSTEAD = "; add an entry to exceptions.toml instead"
     ],
 )
 def test_python_markers_find_suppressions(comment: str) -> None:
-    assert tuple(python_markers("a.py", f"x = 1\ny = 2  {comment}  \n")) == (
+    assert tuple(markers("python", "a.py", f"x = 1\ny = 2  {comment}  \n")) == (
         (2, comment),
     )
 
@@ -50,7 +49,7 @@ def test_python_markers_find_suppressions(comment: str) -> None:
     ],
 )
 def test_python_markers_ignore_other_text(text: str) -> None:
-    assert tuple(python_markers("a.py", text)) == ()
+    assert tuple(markers("python", "a.py", text)) == ()
 
 
 @pytest.mark.parametrize(
@@ -69,7 +68,7 @@ def test_python_markers_ignore_other_text(text: str) -> None:
 )
 def test_typescript_markers(line: str) -> None:
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers("a.ts", text)) == ((2, line),)
+    assert tuple(markers("typescript", "a.ts", text)) == ((2, line),)
 
 
 @pytest.mark.parametrize("linter", ["oxlint", "eslint"])
@@ -84,17 +83,18 @@ def test_typescript_markers_find_lint_disable_comments(
 ) -> None:
     line = f"{opening}{linter}-{form} no-console{closing}"
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers("a.ts", text)) == ((2, line),)
+    assert tuple(markers("typescript", "a.ts", text)) == ((2, line),)
 
 
 def test_typescript_markers_ignore_biome_ignore() -> None:
     text = "// biome-ignore lint: x\n/* biome-ignore lint: x */\n"
-    assert tuple(typescript_markers("a.ts", text)) == ()
+    assert tuple(markers("typescript", "a.ts", text)) == ()
 
 
 def test_typescript_markers_need_a_comment() -> None:
     assert (
-        tuple(typescript_markers("a.ts", 'const a = "oxlint-disable";\n')) == ()
+        tuple(markers("typescript", "a.ts", 'const a = "oxlint-disable";\n'))
+        == ()
     )
 
 

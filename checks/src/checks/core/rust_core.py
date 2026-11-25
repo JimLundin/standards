@@ -1,18 +1,17 @@
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
-from pathlib import PurePosixPath
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.cargo import (
+    Library,
     core_packages,
-    is_library,
+    library_of,
     packages_of,
     relative,
-    targets_of,
 )
 from checks.core.exceptions import BOX, EXCEPTIONS, Exceptions, exceptions_in
 from checks.core.rust_api import Finding
@@ -51,19 +50,6 @@ TESTS_ONLY = f"`extern crate std` outside `{TEST_ONLY}`; the core does no I/O"
 # A JSON string is a TOML basic string, but only unescaped: TOML has no
 # surrogate pairs for characters outside the basic multilingual plane.
 STRING = json.JSONEncoder(ensure_ascii=False)
-
-
-@dataclass(frozen=True, slots=True)
-class Library:
-    name: str
-    root: str
-    source: str
-
-    def holds(self, file: str) -> bool:
-        folder = PurePosixPath(self.root).parent
-        return file.endswith(".rs") and PurePosixPath(file).is_relative_to(
-            folder
-        )
 
 
 def toml_value(value: object) -> str:
@@ -112,14 +98,6 @@ def clippy_run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     base, written = arguments
     config = core_config(parse_toml(inputs.texts.get(base)))
     return Outcome(writes=FrozenOrderedDict({written: config}))
-
-
-def library_of(package: Mapping[str, object], root: str) -> Iterator[Library]:
-    for target in filter(is_library, targets_of(package)):
-        source = str(target.get("src_path"))
-        yield Library(
-            str(package.get("name")), relative(source, root), normalized(source)
-        )
 
 
 def libraries(metadata: Mapping[str, object]) -> FrozenList[Library]:

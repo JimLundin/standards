@@ -2,6 +2,8 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
+from checks.core.cargo import library_files
+from checks.core.comment_rule import comment_issues
 from checks.core.comments import is_source
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
 from checks.core.exceptions import EXCEPTIONS, exceptions_in, validate
@@ -11,7 +13,9 @@ from checks.core.values import (
     Outcome,
     Request,
     operands,
+    option,
     options,
+    parse_json,
     summarized,
 )
 
@@ -59,6 +63,11 @@ def snapshot_of(arguments: Sequence[str], inputs: Inputs) -> Snapshot:
     return Snapshot(FrozenList(files), project, shared, resolved)
 
 
+def metadata_file(arguments: Sequence[str]) -> FrozenList[str]:
+    found = option(arguments, "--metadata=")
+    return FrozenList((found,) if found else ())
+
+
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
     language, standards, *files = operands(arguments)
     shared = (f"{standards}/{path}" for path in STANDARD_FILES[language])
@@ -67,6 +76,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
             *project_paths(language, files),
             *shared,
             *resolved_files(arguments).values(),
+            *metadata_file(arguments),
         ))
     )
 
@@ -76,6 +86,10 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     snapshot = snapshot_of(arguments, inputs)
     exceptions = exceptions_in(inputs)
     attributes = used_attributes(snapshot.project)
+    libraries = library_files(
+        parse_json(inputs.texts.get(option(arguments, "--metadata="))),
+        snapshot.files,
+    )
     drifted = FrozenList(
         issue
         for issue in DRIFT[language](snapshot)
@@ -84,6 +98,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     issues = (
         *validate(language, exceptions, snapshot.files, attributes),
         *suppressions(language, snapshot.project, exceptions),
+        *comment_issues(language, snapshot.project, exceptions, libraries),
         *drifted,
     )
     return summarized(
