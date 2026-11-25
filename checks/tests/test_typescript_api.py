@@ -94,3 +94,20 @@ def test_a_core_file_that_cant_be_read_fails_and_another_layers_doesnt() -> (
         "packages/core/src/gone.ts: cannot be judged: not in the project",
         "Found 1 issues",
     ))
+
+
+def test_a_files_findings_list_its_unread_failure_then_its_lines_in_order() -> (
+    None
+):
+    path = "packages/core/src/a.ts"
+    records = "\n".join((
+        reached(path, 3, "late", "reaches `Promise`"),
+        reached(path, 1, "early", "reaches `Promise`"),
+        unread(path, "core"),
+    ))
+    assert run([RECORDS], inputs({RECORDS: records})).lines == FrozenList((
+        f"{path}: cannot be judged: not in the project",
+        f"{path}:1: `early` reaches `Promise`{ONLY_DATA}",
+        f"{path}:3: `late` reaches `Promise`{ONLY_DATA}",
+        "Found 3 issues",
+    ))

@@ -1,7 +1,8 @@
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -98,8 +99,10 @@ APART = FrozenOrderedDict({
 
 @dataclass(frozen=True, slots=True)
 class Unknown:
-    """A layer a package.json declares that names no layer, as its JSON."""
+    """A package whose package.json declares a layer that names none, as
+    that layer's JSON."""
 
+    folder: str
     written: str
 
 
@@ -109,7 +112,7 @@ class Package:
 
     folder: str
     name: str
-    layer: Layer | Unknown
+    layer: Layer
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,12 +122,18 @@ class Placement:
 
 
 @dataclass(frozen=True, slots=True)
+class Placed:
+    """Files in their packages, and the packages whose layer is unknown."""
+
+    placements: FrozenList[Placement]
+    unknown: FrozenOrderedSet[Unknown]
+
+
+@dataclass(frozen=True, slots=True)
 class Mapped:
-    """A line of the layer map: a file's layer, its package's folder ("." at
-    the root) and its path."""
+    """A line of the layer map, without its package's folder."""
 
     layer: Layer
-    root: str
     path: str
 
 
@@ -133,9 +142,9 @@ def named_layer(value: object) -> Layer | None:
 
 
 def folders(file: str) -> FrozenList[str]:
-    parts = file.split("/")[:-1]
     return FrozenList(
-        "/".join(parts[:end]) for end in range(len(parts), -1, -1)
+        "" if folder == PurePosixPath() else str(folder)
+        for folder in PurePosixPath(file).parents
     )
 
 
@@ -151,43 +160,34 @@ def manifests(files: Sequence[str]) -> FrozenList[str]:
     )
 
 
-def declared(value: object) -> Layer | Unknown:
-    if value is None:
-        return UNDECLARED
-    layer = named_layer(value)
-    return Unknown(json.dumps(value)) if layer is None else layer
-
-
-def package_at(texts: Mapping[str, str], folder: str) -> Package:
+def package_at(texts: Mapping[str, str], folder: str) -> Package | Unknown:
     data = parse_json(texts.get(manifest(folder)))
+    value = lookup(data, LAYER)
+    layer = UNDECLARED if value is None else named_layer(value)
+    if layer is None:
+        return Unknown(folder, json.dumps(value))
     name = data.get("name")
-    return Package(
-        folder,
-        name if isinstance(name, str) else "",
-        declared(lookup(data, LAYER)),
+    return Package(folder, name if isinstance(name, str) else "", layer)
+
+
+def nearest(file: str, texts: Mapping[str, str]) -> str:
+    return next(
+        (folder for folder in folders(file) if manifest(folder) in texts), ""
     )
 
 
-def placements(
-    files: Sequence[str], texts: Mapping[str, str]
-) -> FrozenList[Placement]:
-    return FrozenList(
-        Placement(
-            file,
-            package_at(
-                texts,
-                next(
-                    (
-                        folder
-                        for folder in folders(file)
-                        if manifest(folder) in texts
-                    ),
-                    "",
-                ),
-            ),
-        )
-        for file in files
-    )
+def placed(files: Sequence[str], texts: Mapping[str, str]) -> Placed:
+    found = Placed(FrozenList(), FrozenOrderedSet())
+    for file in files:
+        match package_at(texts, nearest(file, texts)):
+            case Package() as package:
+                placements = (*found.placements, Placement(file, package))
+                found = replace(found, placements=FrozenList(placements))
+            case Unknown() as unknown:
+                found = replace(
+                    found, unknown=found.unknown | FrozenOrderedSet((unknown,))
+                )
+    return found
 
 
 def packages_of(placed: Sequence[Placement]) -> FrozenList[Package]:
@@ -199,11 +199,10 @@ def packages_of(placed: Sequence[Placement]) -> FrozenList[Package]:
     )
 
 
-def layer_issues(placed: Sequence[Placement]) -> FrozenList[str]:
+def layer_issues(unknown: FrozenOrderedSet[Unknown]) -> FrozenList[str]:
     return FrozenList(
-        f"{manifest(package.folder)}: {LAYER} is {package.layer.written}; {USE}"
-        for package in packages_of(placed)
-        if isinstance(package.layer, Unknown)
+        f"{manifest(package.folder)}: {LAYER} is {package.written}; {USE}"
+        for package in unknown
     )
 
 
@@ -246,34 +245,33 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    placed = placements(mapped(arguments), inputs.texts)
-    if issues := layer_issues(placed):
+    found = placed(mapped(arguments), inputs.texts)
+    if issues := layer_issues(found.unknown):
         return Outcome(issues, 1)
     return listing(
         FrozenList(
             "\t".join((
-                str(placement.package.layer),
+                placement.package.layer,
                 placement.package.folder or ".",
                 placement.file,
             ))
-            for placement in placed
+            for placement in found.placements
         )
     )
 
 
-def mapped_line(line: str) -> Mapped | None:
+def mapped_line(line: str) -> FrozenList[Mapped]:
+    """The line's item, or none for a line that isn't one."""
     match line.split("\t"):
-        case [name, root, path] if (layer := named_layer(name)) is not None:
-            return Mapped(layer, root, path)
+        case [name, _, path] if (layer := named_layer(name)) is not None:
+            return FrozenList((Mapped(layer, path),))
         case _:
-            return None
+            return FrozenList()
 
 
 def layer_map(text: str) -> FrozenList[Mapped]:
     return FrozenList(
-        item
-        for line in text.splitlines()
-        if (item := mapped_line(line)) is not None
+        item for line in text.splitlines() for item in mapped_line(line)
     )
 
 
@@ -436,13 +434,9 @@ def names_in(packages: Sequence[Package], layer: Layer) -> FrozenList[str]:
 
 
 def layer_rule(package: Package, packages: Sequence[Package]) -> object:
-    match package.layer:
-        case Layer.CORE:
-            return core_rule(names_in(packages, Layer.CORE), ())
-        case Unknown():
-            return None
-        case _:
-            other, message = APART[package.layer]
+    if package.layer == Layer.CORE:
+        return core_rule(names_in(packages, Layer.CORE), ())
+    other, message = APART[package.layer]
     group = tuple(
         glob
         for name in names_in(packages, other)

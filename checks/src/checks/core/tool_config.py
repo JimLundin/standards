@@ -101,11 +101,11 @@ def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         else ""
     )
     exceptions = exceptions_in(inputs)
-    placed = typescript_layers.placements(files, inputs.texts)
-    if issues := typescript_layers.layer_issues(placed):
+    placed = typescript_layers.placed(files, inputs.texts)
+    if issues := typescript_layers.layer_issues(placed.unknown):
         return Outcome(issues, 1)
     overrides = typescript_layers.import_overrides(
-        root, placed, exceptions
+        root, placed.placements, exceptions
     ) + "".join(oxlint_override(root, entry) for entry in exceptions.entries)
     text = (
         f"import config from {config};\n"
