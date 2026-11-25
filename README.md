@@ -86,10 +86,9 @@ Exceptions live only in a project's `exceptions.toml`; suppression comments and 
 The exceptions check fails every comment in a Python, Rust or TypeScript source file, by file and line: a line or block comment, a doc comment or a Python docstring. Shell scripts and config files are out of scope. A comment is prose the next reader must trust unchecked, so the fix is to name, type or restructure the code until it needs none. Rust and TypeScript are parsed with tree-sitter, so `//` inside a string, template literal or regex literal is no comment. The check keeps by itself:
 
 - a Rust `// SAFETY:` comment directly before an `unsafe` block, or before a statement whose first line opens one, which `clippy::undocumented_unsafe_blocks` requires;
-- a Rust `///` or `//!` doc comment on a `pub` item of a library target, the library's public API: a file under the folder of a lib target's root, other than a bin target's root or a file under a bin's own folder, as `cargo metadata` lists them;
 - a licence header: the file's first comment block, before any code, naming `SPDX-License-Identifier` or `Copyright`.
 
-A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppression comment is reported once, as a suppression. Any other comment that must stay takes a `comment` exception naming its file, with the reason the code can't say it.
+A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppression comment is reported once, as a suppression. Any other comment that must stay takes a `comment` exception naming its file, with the reason the code can't say it. The Rust fragment allows clippy's `missing_errors_doc` and `missing_panics_doc`, which would demand a doc comment: a function's contract is its signature and its error type.
 
 ## Rust
 
@@ -103,7 +102,7 @@ A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppre
 
 **Thin shell.** No function in a binary or a shell package may make more than 2 decisions, and once a project makes 20 decisions, the shell may make at most 25% of them. A decision is an `if`, a `match` of more than one arm, a match guard, a `for` or `while` loop, a `let … else` or a run of `&&` or `||`, written in the function, its closures or a macro's arguments; `?`, `.await` and macro expansions are not. `rust-decisions`, in `rust/measure`, counts them from the source; install it with `cargo install --locked --path rust/measure`, and bump its version and `RUST_DECISIONS` in `tools.env` with every change to it. A file takes a `shell` exception for the first rule and `Cargo.toml` for the second. The second is the `shell-share` unit of the whole project, so a merge of two branches that each kept the share is checked again. Mutation testing skips shell-only files.
 
-**Lints.** A project without its own `[lints]` is linted with those of `rust/Cargo.fragment.toml`.
+**Lints.** A project without its own `[lints]` is linted with those of `rust/Cargo.fragment.toml`. The drift check holds a project's `[lints]` to the fragment's: a lint the fragment denies may be set no weaker, and one it allows must be `allow` exactly, at a priority no lower than any stricter entry, so a denied group such as `pedantic` can't override it.
 
 **Flaky tests.** A test that fails only under load takes a `flaky` exception naming the test or a glob of its nextest name. nextest retries just those once, the summary reports a pass on the retry as `flaky`, and retries in a project's own nextest config fail the checks.
 

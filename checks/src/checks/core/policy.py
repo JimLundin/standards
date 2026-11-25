@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.cargo import library_files
 from checks.core.comment_rule import comment_issues
 from checks.core.comments import is_source, sources
 from checks.core.drift import DRIFT, PROJECT_FILES, STANDARD_FILES, Snapshot
@@ -13,9 +12,7 @@ from checks.core.values import (
     Outcome,
     Request,
     operands,
-    option,
     options,
-    parse_json,
     summarized,
 )
 
@@ -61,11 +58,6 @@ def snapshot_of(arguments: Sequence[str], inputs: Inputs) -> Snapshot:
     return Snapshot(FrozenList(files), project, shared, resolved)
 
 
-def metadata_file(arguments: Sequence[str]) -> FrozenList[str]:
-    found = option(arguments, "--metadata=")
-    return FrozenList((found,) if found else ())
-
-
 def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
     language, standards, *files = operands(arguments)
     shared = (f"{standards}/{path}" for path in STANDARD_FILES[language])
@@ -74,7 +66,6 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
             *project_paths(language, files),
             *shared,
             *resolved_files(arguments).values(),
-            *metadata_file(arguments),
         ))
     )
 
@@ -83,9 +74,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     language = operands(arguments)[0]
     snapshot = snapshot_of(arguments, inputs)
     exceptions = exceptions_in(inputs)
-    metadata = (inputs.texts.get(file) for file in metadata_file(arguments))
-    libraries = library_files(parse_json(next(metadata, None)), snapshot.files)
-    parsed = sources(language, snapshot.project, libraries)
+    parsed = sources(language, snapshot.project)
     attributes = used_attributes(parsed)
     drifted = FrozenList(
         issue
