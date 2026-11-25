@@ -1,7 +1,7 @@
 logs=$(mktemp -d)
 home=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 failed=()
-tier=step
+tier=commit
 project=.
 lookup=1
 verify=
@@ -65,11 +65,15 @@ totals() {
 	plain "$1" | awk '/^Total/ { printf "%s files, %s code, %s comments, %s complexity", $2, $6, $5, $7 }'
 }
 
+# Whether the run is in CI: `CI` set, as GitHub Actions sets it.
+in_ci() {
+	[ -n "${CI:-}" ] && [ "$CI" != false ]
+}
+
 # A unit that can't run, such as one whose tool isn't installed, is skipped;
-# in CI (`CI` set, as GitHub Actions sets it) it fails, so CI passes no tree
-# with a unit it didn't run.
+# in CI it fails, so CI passes no tree with a unit it didn't run.
 skipped() {
-	if [ -n "${CI:-}" ] && [ "$CI" != false ]; then
+	if in_ci; then
 		line "$1" FAIL "$2; CI runs every unit"
 		failed+=("$1")
 	else
@@ -153,6 +157,10 @@ arguments() {
 	fi
 	if [ -n "$verify" ] && [ -n "$affected" ]; then
 		echo "--verify and --affected are two dry runs; pick one" >&2
+		exit 2
+	fi
+	if at_least step && ! dry && ! in_ci && [ "${STANDARDS_LOCAL_TIERS:-}" != 1 ]; then
+		echo "$tier runs only in CI; fix: set STANDARDS_LOCAL_TIERS=1 on a machine the owner allows" >&2
 		exit 2
 	fi
 }

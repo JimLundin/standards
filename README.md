@@ -12,9 +12,11 @@ rust/check.sh …
 typescript/check.sh …
 ```
 
-- `commit` runs the exceptions, format, lint, type and structure checks.
-- `step`, the default, adds the tests.
+- `commit`, the default, runs the exceptions, format, lint, type and structure checks.
+- `step` adds the tests.
 - `release` adds mutation testing, thorough property tests, slow and ignored tests with their coverage, one unit, duplication and volume.
+
+`step` and `release` run only in CI. On a machine the owner allows them on, set `STANDARDS_LOCAL_TIERS=1`; anywhere else either tier stops before its first unit and names the variable. `--verify` and `--affected` run nothing, so they need neither.
 
 A unit that can't run, such as one whose tool isn't installed, is skipped; in CI (`CI` set, as GitHub Actions sets it) it fails instead, so CI passes no tree with a unit it didn't run.
 

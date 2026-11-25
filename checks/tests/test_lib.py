@@ -44,6 +44,7 @@ tier = "commit"
 class Run:
     status: int
     lines: FrozenList[str]
+    errors: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,8 @@ class Workspace:
                 "env",
                 "-u",
                 "CI",
+                "-u",
+                "STANDARDS_LOCAL_TIERS",
                 *settings,
                 "bash",
                 str(self.root / "driver.sh"),
@@ -84,7 +87,9 @@ class Workspace:
             text=True,
             check=False,
         )
-        return Run(done.returncode, FrozenList(done.stdout.splitlines()))
+        return Run(
+            done.returncode, FrozenList(done.stdout.splitlines()), done.stderr
+        )
 
     def runs(self) -> int:
         marker = self.root / "marker"
@@ -205,6 +210,60 @@ def test_a_unit_needs_its_declared_tool_only_to_run(
     )
     assert recorded.status == 0
     assert outcome(recorded, "present") == ("ok passed (recorded)",)
+
+
+STEP_SUITE = """\
+[[suite]]
+name = "step-suite"
+command = "true"
+[[suite.when]]
+tier = "step"
+"""
+LOCAL_TIERS = "STANDARDS_LOCAL_TIERS=1"
+
+
+@pytest.fixture
+def stepped(workspace: Workspace) -> Workspace:
+    _ = (workspace.project / "checks.toml").write_text(STEP_SUITE)
+    return workspace
+
+
+def test_with_no_tier_only_the_commit_units_run(stepped: Workspace) -> None:
+    run = stepped.run(only_present=True, more=(LOCAL_TIERS,))
+    assert run.status == 0
+    assert outcome(run, "present") == ("ok",)
+    assert outcome(run, "step-suite") == ()
+    assert run.lines[-1].startswith("tier: commit,")
+
+
+@pytest.mark.parametrize("tier", ["step", "release"])
+def test_a_local_tier_outside_ci_stops_before_any_unit(
+    stepped: Workspace, tier: str
+) -> None:
+    run = stepped.run(tier, only_present=True)
+    assert run.status == 2
+    assert run.lines == ()
+    assert f"{tier} runs only in CI" in run.errors
+    assert LOCAL_TIERS in run.errors
+    assert stepped.runs() == 0
+
+
+@pytest.mark.parametrize("allowance", [LOCAL_TIERS, "CI=true"])
+def test_step_runs_where_local_tiers_are_allowed_or_in_ci(
+    stepped: Workspace, allowance: str
+) -> None:
+    run = stepped.run("step", only_present=True, more=(allowance,))
+    assert run.status == 0
+    assert outcome(run, "present") == ("ok",)
+    assert outcome(run, "step-suite") == ("ok",)
+
+
+def test_dry_runs_of_step_need_no_allowance(stepped: Workspace) -> None:
+    allowed = stepped.run("step", only_present=True, more=(LOCAL_TIERS,))
+    assert allowed.status == 0
+    assert stepped.run("step", "--verify", only_present=True).status == 0
+    assert stepped.run("step", "--affected", only_present=True).status == 0
+    assert stepped.runs() == 1
 
 
 PYTHON_SUITE = """\
