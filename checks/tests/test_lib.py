@@ -2,9 +2,12 @@
 repository beside it, so recorded passes go nowhere else."""
 
 import json
+import os
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 lazy from collections.abc import Sequence
 
 import pytest
@@ -15,7 +18,7 @@ from checks.core.units import pins_of
 STANDARDS = Path(__file__).resolve().parents[2]
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
-# marker, and one whose tool isn't installed; and the project's suites.
+# marker, first reading a line from the fifo `HOLD` when set, and one whose tool isn't installed; and the project's suites.
 DRIVER = f"""\
 set -uo pipefail
 PATH="$ROOT/bin:$PATH"
@@ -25,7 +28,7 @@ cd "$project" || exit 2
 begin python
 units --toolchain=fixture --project=present,absent
 tools_of[present]=$PRESENT_TOOL
-unit present ending bash -c 'echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
+unit present ending bash -c '[ -z "${{HOLD:-}}" ] || read -r _ <"$HOLD"; echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
 if [ -z "${{ONLY_PRESENT:-}}" ]; then
 	unit absent ending {MISSING}
 fi
@@ -60,6 +63,45 @@ class Workspace:
         present_tool: str = "bash",
         more: Sequence[str] = (),
     ) -> Run:
+        done = subprocess.run(
+            self.command(
+                arguments,
+                ci=ci,
+                only_present=only_present,
+                present_tool=present_tool,
+                more=more,
+            ),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return Run(
+            done.returncode, FrozenList(done.stdout.splitlines()), done.stderr
+        )
+
+    def start(self, *more: str) -> subprocess.Popen[str]:
+        """A commit run of the present unit, which ignores the recorded
+        passes, in its own process group, its stderr piped and its stdout
+        dropped."""
+        return subprocess.Popen(
+            self.command(
+                ("commit", "--no-cache"), only_present=True, more=more
+            ),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+
+    def command(
+        self,
+        arguments: Sequence[str],
+        *,
+        ci: bool = False,
+        only_present: bool = False,
+        present_tool: str = "bash",
+        more: Sequence[str] = (),
+    ) -> FrozenList[str]:
         settings = (
             f"STANDARDS={STANDARDS}",
             f"STANDARDS_CACHE={self.root / 'cache'}",
@@ -70,26 +112,25 @@ class Workspace:
             *(("ONLY_PRESENT=1",) if only_present else ()),
             *more,
         )
-        done = subprocess.run(
-            (
-                "env",
-                "-u",
-                "CI",
-                "-u",
-                "STANDARDS_LOCAL_TIERS",
-                *settings,
-                "bash",
-                str(self.root / "driver.sh"),
-                *arguments,
-                str(self.project),
-            ),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return Run(
-            done.returncode, FrozenList(done.stdout.splitlines()), done.stderr
-        )
+        return FrozenList((
+            "env",
+            "-u",
+            "CI",
+            "-u",
+            "STANDARDS_LOCAL_TIERS",
+            *settings,
+            "bash",
+            str(self.root / "driver.sh"),
+            *arguments,
+            str(self.project),
+        ))
+
+    def held(self, name: str) -> tuple[Path, str]:
+        """A fifo that holds a started run inside its unit, and the setting
+        that points the run at it."""
+        fifo = self.root / name
+        os.mkfifo(fifo)
+        return fifo, f"HOLD={fifo}"
 
     def runs(self) -> int:
         marker = self.root / "marker"
@@ -264,6 +305,56 @@ def test_dry_runs_of_step_need_no_allowance(stepped: Workspace) -> None:
     assert stepped.run("step", "--verify", only_present=True).status == 0
     assert stepped.run("step", "--affected", only_present=True).status == 0
     assert stepped.runs() == 1
+
+
+def waiting(run: subprocess.Popen[str]) -> str:
+    """The line where the run says it waits for another, or what it wrote to
+    stderr when it ran without waiting."""
+    assert run.stderr is not None
+    stream: IO[str] = run.stderr
+    lines: list[str] = []
+    while line := stream.readline():
+        if "waiting" in line:
+            return line
+        lines.append(line)
+    return "".join(lines)
+
+
+def test_a_second_run_waits_for_the_holder_of_the_lock(
+    workspace: Workspace,
+) -> None:
+    fifo, hold = workspace.held("hold")
+    first = workspace.start(hold)
+    with fifo.open("w") as release:
+        second = workspace.start()
+        line = waiting(second)
+        assert f"pid {first.pid}" in line
+        assert f"project {workspace.project}" in line
+        assert workspace.runs() == 0
+        _ = release.write("go\n")
+    assert first.wait() == 0
+    _, errors = second.communicate()
+    assert second.returncode == 0, errors
+    assert workspace.runs() == 2
+
+
+def test_a_holder_killed_with_sigkill_frees_the_lock(
+    workspace: Workspace,
+) -> None:
+    killed_fifo, killed_hold = workspace.held("killed")
+    killed = workspace.start(killed_hold)
+    with killed_fifo.open("w"):
+        os.killpg(killed.pid, signal.SIGKILL)
+        assert killed.wait() == -signal.SIGKILL
+    fifo, hold = workspace.held("hold")
+    after = workspace.start(hold)
+    with fifo.open("w") as release:
+        third = workspace.start()
+        assert f"pid {after.pid}" in waiting(third)
+        _ = release.write("go\n")
+    assert after.wait() == 0
+    assert third.wait() == 0
+    assert workspace.runs() == 2
 
 
 PYTHON_SUITE = """\

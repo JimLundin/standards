@@ -240,8 +240,30 @@ pinned() {
 	exit 2
 }
 
+# One run that runs units at a time per user, across every checkout: each
+# takes an flock on one file of the cache, open for the run's life, so the
+# kernel frees it when the run and its units exit, killed or not. The holder
+# writes its pid and project into the file for a run that waits on it.
+lock() {
+	local file
+	dry && return 0
+	if ! command -v flock >/dev/null; then
+		echo "flock not installed, so this run doesn't wait for another; fix: install util-linux" >&2
+		return 0
+	fi
+	file="$(cache_root)/run.lock"
+	mkdir -p "${file%/*}"
+	exec {held}>>"$file"
+	if ! flock -n "$held"; then
+		echo "$(cat "$file") holds $(native "$file"); waiting for it to exit (fix: stop that run or let it finish)" >&2
+		flock "$held"
+	fi
+	echo "run of pid $$, project $(native "$PWD")," >"$file"
+}
+
 begin() {
 	language=$1
+	lock
 	pinned UV uv "uv self update {}" uv --version
 	pinned PYTHON uv "uv python install {}" uv run --no-project -q python -V
 	mapfile -t tracked < <(git ls-files)
