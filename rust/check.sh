@@ -203,13 +203,7 @@ tested() {
 	echo "${counts:-$(summed 'passed|failed' "$1")}${flaky:+ ($flaky)}"
 }
 
-# Policy reads the metadata for the library targets, whose public items
-# may keep their doc comments.
-rust_policy() {
-	policy "--metadata=$metadata"
-}
-
-exceptions_unit rust_policy
+exceptions_unit
 unit format "count '^Diff in' differences" "${cargo[@]}" fmt --check "${format[@]}"
 batch lint "last '[0-9]+ previous errors?|Finished'" lint "${members[@]}"
 if ((listed != 0)); then

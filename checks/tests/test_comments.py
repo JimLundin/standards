@@ -1,15 +1,13 @@
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks.core.comments import Comment, Item, comments, is_source, sources
+from checks.core.comments import Comment, comments, is_source, sources
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import suppressions
 
 
-def found(
-    file: str, text: str, *, library: bool = False
-) -> FrozenList[Comment]:
-    return FrozenList(comments(file, text, library=library))
+def found(file: str, text: str) -> FrozenList[Comment]:
+    return FrozenList(comments(file, text))
 
 
 @pytest.mark.parametrize(
@@ -71,105 +69,6 @@ def test_rust_strings_hold_no_comments() -> None:
     assert found("a.rs", text) == (
         Comment(1, "line", "// real", precedes="let_declaration"),
         Comment(2, "block", "/* block */", precedes="let_declaration"),
-    )
-
-
-RUST_DOCS = """//! The crate.
-/// A public function.
-#[inline]
-pub fn a() {}
-/** A crate function. */
-pub(crate) fn b() {}
-/// A private struct.
-struct C {
-    /// A public field.
-    pub d: u8,
-}
-/// A public trait.
-pub trait E {
-    /// A trait method.
-    fn f();
-}
-/// A public enum.
-pub enum G {
-    /// A variant.
-    H,
-}
-"""
-
-
-def test_rust_doc_comments_name_their_item_and_its_visibility() -> None:
-    assert found("a.rs", RUST_DOCS, library=True) == (
-        Comment(
-            1, "doc", "//! The crate.", Item("source_file", "", 1, public=True)
-        ),
-        Comment(
-            2,
-            "doc",
-            "/// A public function.",
-            Item("function_item", "a", 4, public=True),
-        ),
-        Comment(
-            5,
-            "doc",
-            "/** A crate function. */",
-            Item("function_item", "b", 6, public=False),
-        ),
-        Comment(
-            7,
-            "doc",
-            "/// A private struct.",
-            Item("struct_item", "C", 8, public=False),
-        ),
-        Comment(
-            9,
-            "doc",
-            "/// A public field.",
-            Item("field_declaration", "d", 10, public=True),
-        ),
-        Comment(
-            12,
-            "doc",
-            "/// A public trait.",
-            Item("trait_item", "E", 13, public=True),
-        ),
-        Comment(
-            14,
-            "doc",
-            "/// A trait method.",
-            Item("function_signature_item", "f", 15, public=True),
-        ),
-        Comment(
-            17,
-            "doc",
-            "/// A public enum.",
-            Item("enum_item", "G", 18, public=True),
-        ),
-        Comment(
-            19,
-            "doc",
-            "/// A variant.",
-            Item("enum_variant", "H", 20, public=True),
-        ),
-    )
-
-
-def test_rust_doc_comments_of_a_binary_are_not_public() -> None:
-    assert all(
-        comment.item is not None and not comment.item.public
-        for comment in found("a.rs", RUST_DOCS, library=False)
-    )
-
-
-def test_rust_inner_doc_comment_documents_its_module() -> None:
-    text = "pub mod m {\n    //! The module.\n}\nmod n {\n    //! Private.\n}\n"
-    assert found("a.rs", text, library=True) == (
-        Comment(
-            2, "doc", "//! The module.", Item("mod_item", "m", 1, public=True)
-        ),
-        Comment(
-            5, "doc", "//! Private.", Item("mod_item", "n", 4, public=False)
-        ),
     )
 
 
