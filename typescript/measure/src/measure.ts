@@ -6,8 +6,8 @@ import {
   entry,
   failure,
   fields,
+  functionRecord,
   functions,
-  record,
 } from "@standards/measure-core";
 import { API } from "typescript/unstable/sync";
 import type { Placement } from "@standards/measure-core";
@@ -52,7 +52,7 @@ const measured = (
   }
   const syntax = syntaxOf(source);
   return [
-    ...functions(syntax).map((found) => record(placement, found)),
+    ...functions(syntax).map((found) => functionRecord(placement, found)),
     ...entries(syntax).map((found) => entry(placement, found)),
     ...api(project, source, placement),
   ];

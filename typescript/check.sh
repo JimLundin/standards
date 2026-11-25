@@ -186,7 +186,6 @@ measured() {
 	typescript-measure . "$(native "$logs/layers.tsv")" >"$1"
 }
 
-# The core's exports, read by the type checker, take and return only data.
 api() {
 	measured "$logs/api.jsonl" || return
 	checks typescript-api "$(native "$logs/api.jsonl")"
