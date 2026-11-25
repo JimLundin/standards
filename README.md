@@ -102,7 +102,7 @@ A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppre
 
 **Thin shell.** No function in a binary or a shell package may make more than 2 decisions, and once a project makes 20 decisions, the shell may make at most 25% of them. A decision is an `if`, a `match` of more than one arm, a match guard, a `for` or `while` loop, a `let … else` or a run of `&&` or `||`, written in the function, its closures or a macro's arguments; `?`, `.await` and macro expansions are not. `rust-decisions`, in `rust/measure`, counts them from the source; install it with `cargo install --locked --path rust/measure`, and bump its version and `RUST_DECISIONS` in `tools.env` with every change to it. A file takes a `shell` exception for the first rule and `Cargo.toml` for the second. The second is the `shell-share` unit of the whole project, so a merge of two branches that each kept the share is checked again. Mutation testing skips shell-only files.
 
-**Lints.** A project without its own `[lints]` is linted with those of `rust/Cargo.fragment.toml`.
+**Lints.** A project without its own `[lints]` is linted with those of `rust/Cargo.fragment.toml`. The drift check holds a project's `[lints]` to the fragment's: a lint the fragment denies may be set no weaker, and one it allows must be `allow` exactly, at a priority no lower than any stricter entry, so a denied group such as `pedantic` can't override it.
 
 **Flaky tests.** A test that fails only under load takes a `flaky` exception naming the test or a glob of its nextest name. nextest retries just those once, the summary reports a pass on the retry as `flaky`, and retries in a project's own nextest config fail the checks.
 

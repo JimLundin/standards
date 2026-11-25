@@ -339,6 +339,19 @@ def level(value: object) -> str:
     return setting if isinstance(setting, str) else ""
 
 
+def priority(value: object) -> int:
+    setting = table(value).get("priority")
+    return setting if isinstance(setting, int) else 0
+
+
+def overridden(lints: Mapping[str, object], value: object) -> bool:
+    return any(
+        RANKS.get(level(other), RANKS["allow"]) > RANKS["allow"]
+        and priority(other) > priority(value)
+        for other in lints.values()
+    )
+
+
 def rust_lint_drift(
     standard: Mapping[str, object], project: Mapping[str, object]
 ) -> Iterator[Issue]:
@@ -347,23 +360,23 @@ def rust_lint_drift(
         wanted, actual = table(standard.get(group)), table(project.get(group))
         for name, value in wanted.items():
             needed = RANKS.get(level(value))
-            current = RANKS.get(level(actual.get(name)))
-            if needed is not None and (current is None or current < needed):
+            setting = actual.get(name)
+            current = RANKS.get(level(setting))
+            if needed == RANKS["allow"] and (
+                current != needed or overridden(actual, setting)
+            ):
+                yield drift(
+                    "Cargo.toml",
+                    f"{key}.{name}",
+                    f"{key}.{name} is stricter than the standard's `allow`",
+                    "set it to `allow`",
+                )
+            elif needed is not None and (current is None or current < needed):
                 yield drift(
                     "Cargo.toml",
                     f"{key}.{name}",
                     f"{key}.{name} is weaker than `{level(value)}`",
                     f"set it to `{level(value)}`",
-                )
-            elif needed == RANKS["allow"] and current != needed:
-                yield drift(
-                    "Cargo.toml",
-                    f"{key}.{name}",
-                    (
-                        f"{key}.{name} is stricter than the standard's `allow`,"
-                        " which the comment ban needs"
-                    ),
-                    "set it to `allow`",
                 )
         yield from (
             drift(
