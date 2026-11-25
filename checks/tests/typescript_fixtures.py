@@ -931,18 +931,19 @@ export const {name} = (name: string): string => greet(name);
 """
 
 
+EXPORTED = '"exports": "./src/index.ts",\n'
+IMPORTS = """  "imports": {
+    "#greet": "./src/internal/greet.ts",
+    "#internal/*": "./src/internal/*"
+  },
+"""
+
+
 def test_a_core_file_may_import_its_packages_own_subpaths(
     fixtures: Fixtures,
 ) -> None:
     manifest = FIXTURES / COMPLIANT / "packages/core/package.json"
-    imported = manifest.read_text().replace(
-        '"exports": "./src/index.ts",\n',
-        '"exports": "./src/index.ts",\n'
-        '  "imports": {\n'
-        '    "#greet": "./src/internal/greet.ts",\n'
-        '    "#internal/*": "./src/internal/*"\n'
-        "  },\n",
-    )
+    imported = manifest.read_text().replace(EXPORTED, EXPORTED + IMPORTS)
     run = fixtures.check(
         "commit",
         files={
