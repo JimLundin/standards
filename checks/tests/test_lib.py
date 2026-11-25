@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 import select
@@ -78,10 +79,7 @@ class Workspace:
             done.returncode, FrozenList(done.stdout.splitlines()), done.stderr
         )
 
-    def start(self, *more: str) -> subprocess.Popen[str]:
-        """A commit run of the present unit, which ignores the recorded
-        passes, in its own process group, its stderr piped and its stdout
-        dropped."""
+    def start_commit_in_own_group(self, *more: str) -> subprocess.Popen[str]:
         return subprocess.Popen(
             self.command(
                 ("commit", "--no-cache"), only_present=True, more=more
@@ -124,9 +122,7 @@ class Workspace:
             str(self.project),
         ))
 
-    def held(self, name: str) -> tuple[Path, str]:
-        """A fifo that holds a started run inside its unit, and the setting
-        that points the run at it."""
+    def holding_fifo(self, name: str) -> tuple[Path, str]:
         fifo = self.root / name
         os.mkfifo(fifo)
         return fifo, f"HOLD={fifo}"
@@ -309,9 +305,7 @@ def test_dry_runs_of_step_need_no_allowance(stepped: Workspace) -> None:
     assert stepped.runs() == 1
 
 
-def waiting(run: subprocess.Popen[str]) -> str:
-    """The line where the run says it waits for another, or what it wrote to
-    stderr when it ran without waiting."""
+def waiting_line_or_stderr(run: subprocess.Popen[str]) -> str:
     assert run.stderr is not None
     stream: IO[str] = run.stderr
     lines: list[str] = []
@@ -325,11 +319,11 @@ def waiting(run: subprocess.Popen[str]) -> str:
 def test_a_second_run_waits_for_the_holder_of_the_lock(
     workspace: Workspace,
 ) -> None:
-    fifo, hold = workspace.held("hold")
-    first = workspace.start(hold)
+    fifo, hold = workspace.holding_fifo("hold")
+    first = workspace.start_commit_in_own_group(hold)
     with fifo.open("w") as release:
-        second = workspace.start()
-        line = waiting(second)
+        second = workspace.start_commit_in_own_group()
+        line = waiting_line_or_stderr(second)
         assert f"pid {first.pid}" in line
         assert f"project {workspace.project}" in line
         assert workspace.runs() == 0
@@ -343,16 +337,16 @@ def test_a_second_run_waits_for_the_holder_of_the_lock(
 def test_a_holder_killed_with_sigkill_frees_the_lock(
     workspace: Workspace,
 ) -> None:
-    killed_fifo, killed_hold = workspace.held("killed")
-    killed = workspace.start(killed_hold)
+    killed_fifo, killed_hold = workspace.holding_fifo("killed")
+    killed = workspace.start_commit_in_own_group(killed_hold)
     with killed_fifo.open("w"):
         os.killpg(killed.pid, signal.SIGKILL)
         assert killed.wait() == -signal.SIGKILL
-    fifo, hold = workspace.held("hold")
-    after = workspace.start(hold)
+    fifo, hold = workspace.holding_fifo("hold")
+    after = workspace.start_commit_in_own_group(hold)
     with fifo.open("w") as release:
-        third = workspace.start()
-        assert f"pid {after.pid}" in waiting(third)
+        third = workspace.start_commit_in_own_group()
+        assert f"pid {after.pid}" in waiting_line_or_stderr(third)
         _ = release.write("go\n")
     assert after.wait() == 0
     assert third.wait() == 0
@@ -363,12 +357,12 @@ def test_a_process_a_unit_leaves_running_does_not_hold_the_lock(
     workspace: Workspace,
 ) -> None:
     linger = workspace.root / "linger"
-    first = workspace.start(f"LINGER={linger}")
+    first = workspace.start_commit_in_own_group(f"LINGER={linger}")
     _, errors = first.communicate()
     assert first.returncode == 0, errors
     try:
-        second = workspace.start()
-        assert "holds" not in waiting(second)
+        second = workspace.start_commit_in_own_group()
+        assert "holds" not in waiting_line_or_stderr(second)
     finally:
         os.kill(int(linger.read_text()), signal.SIGKILL)
     assert second.wait() == 0
@@ -382,16 +376,14 @@ def test_a_run_waiting_on_an_empty_lock_file_names_an_unknown_run(
     file.parent.mkdir()
     with file.open("w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
-        run = workspace.start()
-        line = waiting(run)
+        run = workspace.start_commit_in_own_group()
+        line = waiting_line_or_stderr(run)
         fcntl.flock(held, fcntl.LOCK_UN)
     assert line.startswith("an unknown run holds ")
     assert run.wait() == 0
 
 
-# A fake sccache whose server outlives it, as the real one's does, writing
-# the server's pid to `LINGER`.
-DAEMON_SCCACHE = """\
+SCCACHE_LEAVING_ITS_SERVER_PID_IN_LINGER = """\
 #!/usr/bin/env bash
 sleep infinity &
 echo $! >"$LINGER"
@@ -403,15 +395,17 @@ def test_a_server_build_sh_starts_after_the_lock_does_not_hold_it(
 ) -> None:
     fake = workspace.root / "bin/sccache"
     fake.parent.mkdir()
-    _ = fake.write_text(DAEMON_SCCACHE, newline="\n")
+    _ = fake.write_text(SCCACHE_LEAVING_ITS_SERVER_PID_IN_LINGER, newline="\n")
     fake.chmod(0o755)
     linger = workspace.root / "linger"
-    first = workspace.start("BUILD=1", "RUSTC_WRAPPER=", f"LINGER={linger}")
+    first = workspace.start_commit_in_own_group(
+        "BUILD=1", "RUSTC_WRAPPER=", f"LINGER={linger}"
+    )
     _, errors = first.communicate()
     assert first.returncode == 0, errors
     try:
-        second = workspace.start()
-        assert "holds" not in waiting(second)
+        second = workspace.start_commit_in_own_group()
+        assert "holds" not in waiting_line_or_stderr(second)
     finally:
         os.kill(int(linger.read_text()), signal.SIGKILL)
     assert second.wait() == 0
@@ -557,9 +551,7 @@ def test_a_wrapper_the_caller_set_starts_no_server(tmp_path: Path) -> None:
     assert not (tmp_path / "calls").exists()
 
 
-# A uvx that runs vulture from the tests' environment and passes every other
-# tool, so that only python/check.sh's unused unit decides its outcome.
-FAKE_UVX = """\
+UVX_RUNNING_ONLY_VULTURE = """\
 #!/usr/bin/env bash
 while (($# > 0)); do
 	case $1 in
@@ -584,7 +576,7 @@ def python_check(tmp_path: Path, files: Mapping[str, str]) -> FrozenList[str]:
     _ = git(project, "add", "-A")
     uvx = tmp_path / "bin/uvx"
     uvx.parent.mkdir()
-    _ = uvx.write_text(FAKE_UVX, newline="\n")
+    _ = uvx.write_text(UVX_RUNNING_ONLY_VULTURE, newline="\n")
     uvx.chmod(0o755)
     done = subprocess.run(
         ("bash", str(STANDARDS / "python/check.sh"), "commit", "--no-cache"),

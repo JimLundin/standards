@@ -118,14 +118,17 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
-# A finding of vulture's starts with the path of the file it is in.
+def vulture_finding_file(finding: str) -> str:
+    return posix(finding.partition(":")[0])
+
+
 def filter_vulture(_: Sequence[str], inputs: Inputs) -> Outcome:
     exceptions = exceptions_in(inputs)
     return listing(
         FrozenList(
             line
             for line in inputs.stdin.splitlines()
-            if not exceptions.covers(UNUSED, posix(line.partition(":")[0]))
+            if not exceptions.covers(UNUSED, vulture_finding_file(line))
         )
     )
 

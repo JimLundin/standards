@@ -8,7 +8,8 @@ const nondeterministic = "nondeterministic: pass the value in from the boundary"
 const tests = ["**/*.test.{ts,tsx}", "**/test/**"] as const;
 const olderEngines = "It forbids syntax for older engines than the standard's target, esnext.";
 
-const strictMatchers = "Strict boolean matchers retain the distinction between false and any falsy value.";
+const strictMatchers =
+  "Strict boolean matchers retain the distinction between false and any falsy value.";
 
 const off = {
   "import/no-default-export": "A tool reads its config file's default export.",
