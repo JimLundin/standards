@@ -1,5 +1,3 @@
-"""The workspace as `cargo metadata` describes it."""
-
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 lazy from collections.abc import Iterator, Mapping, Sequence
@@ -39,7 +37,6 @@ class Library:
 
 
 def relative(path: str, root: str) -> str:
-    """A path relative to the root, "" for the root itself, or whole outside it."""
     whole, base = PurePosixPath(normalized(path)), normalized(root)
     if not whole.is_relative_to(base):
         return whole.as_posix()
@@ -168,7 +165,6 @@ def owned(file: str, packages: Sequence[Package]) -> str:
 def reach(
     names: FrozenOrderedSet[str], edges: Mapping[str, Sequence[str]]
 ) -> FrozenOrderedSet[str]:
-    """The names and every name their edges lead to, in the order found."""
     more = FrozenOrderedSet(
         other
         for name in names

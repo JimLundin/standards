@@ -1,6 +1,3 @@
-"""lib.sh in fixture workspaces: a git project whose origin is a bare
-repository beside it, so recorded passes go nowhere else."""
-
 import json
 import subprocess
 from dataclasses import dataclass
@@ -14,8 +11,6 @@ from checks.core.units import pins_of
 from tests.helpers import STANDARDS
 
 MISSING = "no-such-tool-of-the-standards"
-# A check script of two project units: one that runs and appends to the
-# marker, and one whose tool isn't installed; and the project's suites.
 DRIVER = f"""\
 set -uo pipefail
 PATH="$ROOT/bin:$PATH"
@@ -240,8 +235,6 @@ def test_a_pass_whose_project_changed_while_it_ran_is_not_recorded(
     assert workspace.runs() == 2
 
 
-# A check script of one package check over a workspace of two packages,
-# where app depends on core.
 PACKAGES = """\
 set -uo pipefail
 source "$STANDARDS/lib.sh"

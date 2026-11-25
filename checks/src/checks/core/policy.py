@@ -33,8 +33,6 @@ def project_paths(language: str, files: Sequence[str]) -> FrozenList[str]:
     )
 
 
-# Each `--resolved=<config>=<file>` names a file holding a config, the
-# project's or a standard's, as its tool resolves it.
 def resolved_files(arguments: Sequence[str]) -> FrozenOrderedDict[str, str]:
     return FrozenOrderedDict(
         (config, file)

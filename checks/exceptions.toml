@@ -107,3 +107,13 @@ reason = "the Rust grammar for tree-sitter, a pure parser that does no I/O"
 path = "src/checks/core/comments.py"
 rule = "PUR001:tree_sitter_typescript"
 reason = "the TypeScript and TSX grammars for tree-sitter, a pure parser that does no I/O"
+
+[[exception]]
+path = "tests/helpers.py"
+rule = "comment"
+reason = "says why STANDARDS searches upward for lib.sh: mutmut runs a copy of the tests under checks/mutants/, a depth the code can't show"
+
+[[exception]]
+path = "tests/typescript_fixtures.py"
+rule = "comment"
+reason = "each fixture depends on how Oxlint, oxfmt, vitest or Stryker behaves, such as where a rule prints or how many runs a mode gives, which the fixture's code can't show"

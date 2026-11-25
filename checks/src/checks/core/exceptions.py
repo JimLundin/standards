@@ -29,9 +29,8 @@ UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
-# A plugin is a name, a scope such as `@nkzw`, or a scoped name such as
-# `@scope/name`.
-OXLINT = re.compile(r"lint/((?:@[\w-]+/|@)?[\w-]+/[\w-]+)")
+OXLINT_PLUGIN = r"(?:@[\w-]+/[\w-]+|@[\w-]+|[\w-]+)"
+OXLINT = re.compile(rf"lint/({OXLINT_PLUGIN}/[\w-]+)")
 
 
 def rule_covers(excepted: str, found: str) -> bool:

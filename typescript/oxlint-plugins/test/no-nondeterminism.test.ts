@@ -2,7 +2,6 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { findings } from "./oxlint.ts";
 
-// Native rules replace the GritQL noNondeterminism, with the standard's entries.
 const rules = {
   "no-restricted-globals": ["error", "Date", "performance", "crypto"],
   "no-restricted-properties": ["error", { object: "Math", property: "random" }],
