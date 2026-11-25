@@ -51,6 +51,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "oxlint-config",
         "filter-mutmut",
         "stryker-mutate",
+        "stryker-config",
         "nextest-config",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(

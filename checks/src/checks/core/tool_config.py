@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -22,10 +23,11 @@ from checks.core.values import (
     parse_json,
     posix,
     strings,
+    table,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 
 def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
@@ -78,8 +80,6 @@ def file_url(path: str) -> str:
 # Oxlint resolves an override's globs against its config's folder, which
 # here is not the project root, and matches a file outside that folder by
 # its absolute path, so each glob is anchored at the project root.
-# Untyped, for a project without a tsconfig.json, the type-aware rules are
-# off.
 def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     *flags, path = arguments
     root = posix(inputs.cwd)
@@ -129,17 +129,48 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class StrykerConfig:
+    fields: Mapping[str, object]
+    mutate: FrozenList[str]
+    vitest: Mapping[str, object]
+
+
+def stryker_config_of(text: str | None) -> StrykerConfig:
+    fields = parse_json(text)
+    return StrykerConfig(
+        fields, strings(fields.get("mutate")), table(fields.get("vitest"))
+    )
+
+
 def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     excepted = exceptions_in(inputs).paths(MUTATION)
     if not excepted:
         return Outcome()
-    config = parse_json(inputs.texts.get(arguments[0]))
+    config = stryker_config_of(inputs.texts.get(arguments[0]))
     return listing((
-        ",".join((
-            *strings(config.get("mutate")),
-            *(f"!{glob}" for glob in excepted),
-        )),
+        ",".join((*config.mutate, *(f"!{glob}" for glob in excepted))),
     ))
+
+
+STRYKER_CONFIG = "node_modules/.cache/standards/stryker.config.json"
+
+
+# Stryker's vitest runner reads the vitest config that `vitest.configFile`
+# names, so a copy of the config names the one that applies.
+def stryker_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    path, vitest_config = arguments
+    config = stryker_config_of(inputs.texts.get(path))
+    copy = {
+        **config.fields,
+        "vitest": {**config.vitest, "configFile": vitest_config},
+    }
+    return Outcome(
+        FrozenList((STRYKER_CONFIG,)),
+        writes=FrozenOrderedDict({
+            STRYKER_CONFIG: f"{json.dumps(copy, indent=2)}\n"
+        }),
+    )
 
 
 def nextest_config(_: Sequence[str], inputs: Inputs) -> Outcome:
@@ -178,6 +209,7 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "oxlint-config": (exceptions_only, oxlint_config),
         "filter-mutmut": (with_stdin, filter_mutmut),
         "stryker-mutate": (with_named, stryker_mutate),
+        "stryker-config": (with_named, stryker_config),
         "nextest-config": (exceptions_only, nextest_config),
     })
 )
