@@ -145,6 +145,29 @@ export class Chain {
 `,
 );
 
+const readonlyData = inCore(
+  "readonly-data",
+  `type Indexed = Readonly<ReadonlyMap<string, number>>;
+export const direct: Readonly<ReadonlyMap<string, number>> = new Map();
+export const aliased: Indexed = new Map();
+export interface Host {
+  readonly sessions: Readonly<ReadonlyMap<string, Readonly<{ count: number }>>>;
+}
+export const hosts: Readonly<ReadonlyMap<string, Host>> = new Map();
+`,
+);
+
+const readonlyHidden = inCore(
+  "readonly-hidden",
+  `import { Effect } from "effect";
+type Jobs = Readonly<ReadonlyMap<string, Effect.Effect<number>>>;
+export const callback: Readonly<ReadonlyMap<string, () => number>> = new Map();
+export const effect: Jobs = new Map();
+export const promised: Readonly<{ work: Promise<number> }> = { work: Promise.resolve(1) };
+export type Handler = Readonly<{ run: () => number }>;
+`,
+);
+
 describe("what a core export reaches that isn't data", () => {
   it.effect(
     "reports an export that takes a callback, returns a Promise or an Effect, takes an Iterable or is a class with methods",
@@ -178,6 +201,21 @@ describe("what a core export reaches that isn't data", () => {
       ["layer", 3, "reaches `Layer.Layer`"],
       ["Clock", 4, "reaches `Context.ServiceClass`"],
       ["pulled", 5, "reaches `AsyncIterable`"],
+    ]),
+  );
+});
+
+describe("readonly data containers", () => {
+  it.effect("accepts direct and aliased readonly maps nested in host data", () =>
+    reports(readonlyData, []),
+  );
+
+  it.effect("still reports callbacks and effects inside readonly wrappers", () =>
+    reports(readonlyHidden, [
+      ["callback", 3, "reaches a function type, `() => number`"],
+      ["effect", 4, "reaches `Effect.Effect`"],
+      ["promised", 5, "reaches `Promise`"],
+      ["Handler", 6, "reaches a function type, `() => number`"],
     ]),
   );
 });
