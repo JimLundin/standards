@@ -1,0 +1,8 @@
+# typescript/check.sh on the fixture workspaces, whose npm install needs Node
+# and the network, so it stays out of commit.
+[[suite]]
+name = "typescript-fixtures"
+command = "uv run --frozen -q --project checks python -m pytest -q checks/tests/typescript_fixtures.py"
+tools = ["NODE"]
+[[suite.when]]
+tier = "step"

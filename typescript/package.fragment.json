@@ -1,19 +1,19 @@
 {
-	"type": "module",
-	"engines": { "node": ">=26" },
-	"scripts": {
-		"test": "node --test --import ./profiles/fast.ts --test-skip-pattern=@slow",
-		"test:full": "node --test --import ./profiles/full.ts --experimental-test-coverage",
-		"check": "tsc && biome check",
-		"mutate": "stryker run"
-	},
-	"devDependencies": {
-		"typescript": "7.0.2",
-		"@types/node": "latest",
-		"@biomejs/biome": "2.6.8",
-		"fast-check": "latest",
-		"@stryker-mutator/core": "10.1.1",
-		"@stryker-mutator/tap-runner": "10.1.1",
-		"knip": "6.48.0"
-	}
+  "type": "module",
+  "engines": { "node": ">=26" },
+  "scripts": {
+    "check": "tsc"
+  },
+  "dependencies": {
+    "effect": "4.1.5"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vitest": "5.1.1",
+    "@vitest/coverage-v8": "5.1.1",
+    "@effect/vitest": "4.1.5",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "knip": "6.48.0"
+  }
 }

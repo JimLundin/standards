@@ -24,9 +24,23 @@ A unit that can't run, such as one whose tool isn't installed, is skipped; in CI
 
 The scripts' own tools live in `checks`, a uv project that depends on `ordered` and passes the Python standard itself, so every language's checks need uv.
 
+The repository as a whole is no one language's project. Its own gate is each check run on its own part, from the repository's root:
+
+```bash
+python/check.sh commit checks
+python/check.sh commit python/ordered
+rust/check.sh commit rust/measure
+typescript/check.sh commit typescript
+typescript/check.sh commit typescript/oxlint-plugins
+```
+
+`typescript/oxlint-plugins` is a package of its own, so its checks need its dependencies installed first, with `npm ci` in it.
+
+The trees under `typescript/fixtures/` are the inputs of the `typescript-fixtures` suite, which checks each as a project of its own; the TypeScript part's checks leave them out.
+
 ## Tool versions
 
-`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version. Python is the one uv resolves: `check.sh` sets `UV_PYTHON` to the `PYTHON` pin, so the standards' checks, a Python project's checks and its key use that interpreter whatever `python3` is on `PATH`, and a suite runs with it first on `PATH`.
+`tools.env` pins the version of every tool the checks run or fetch, one `NAME=version` per line so CI can read it too. `uvx` and `npx` fetch the pinned version. Before a run, each installed tool, such as uv, Node, nextest, sccache, `rust-decisions` or the project's Stryker, vitest and `@effect/vitest` with the Effect beside it, is compared with its pin, and a mismatch fails at once with the command that installs the pinned version. Python is the one uv resolves: `check.sh` sets `UV_PYTHON` to the `PYTHON` pin, so the standards' checks, a Python project's checks and its key use that interpreter whatever `python3` is on `PATH`, and a suite runs with it first on `PATH`.
 
 ## Units and recorded passes
 
@@ -61,7 +75,7 @@ A project declares its own suites in `checks.toml`. Each `[[suite]]` has a `name
 
 ## Exceptions
 
-Exceptions live only in a project's `exceptions.toml`; suppression comments and weakened configs fail the checks. Each entry has a path glob, a rule and a reason; `exceptions.toml` at the root lists the rules.
+Exceptions live only in a project's `exceptions.toml`; suppression comments and weakened configs fail the checks. Each entry has a path glob, a rule and a reason; `exceptions.toml` at the root lists the rules. A TypeScript lint exception names its rule `lint/<plugin>/<rule>`, as Oxlint prints it, such as `lint/typescript/no-floating-promises` or `lint/eslint/no-bitwise`; `checks oxlint-config` writes a config under `node_modules/.cache/standards/` that extends the project's or the standard's config and turns each such rule off for its path, anchored at the project root, and the lint unit runs Oxlint with it.
 
 ## Rust
 
@@ -88,3 +102,11 @@ Exceptions live only in a project's `exceptions.toml`; suppression comments and 
 **Ordered collections.** `python/ordered` is a small package of collections whose iteration order is part of their type: `OrderedCollection`, `OrderedSequence`, `OrderedSet` and `OrderedMapping` extend the collection ABCs with that promise, and `FrozenList`, `FrozenOrderedSet` and `FrozenOrderedDict` implement them, with set and merge operations that keep the left operand's order. Projects copy it or depend on it, and the core may import it.
 
 **Immutability.** The immutability check makes `ordered` the vocabulary: no set literals, set comprehensions, `set()` or `frozenset()`, since they iterate in hash order; no `set`, `frozenset`, `AbstractSet` or `Collection` in annotations, since they promise no order; and `FrozenList` and `FrozenOrderedDict` in place of `tuple[T, ...]`, `frozendict` and `MappingProxyType`. Plain `Sequence`, `Mapping` and `Container` stay for inputs that don't depend on order.
+
+## TypeScript
+
+**Lint and format.** oxfmt formats every tracked file it supports, with the project's `.oxfmtrc.json` or else the standard's `typescript/.oxfmtrc.json`, and sorts `package.json`. Oxlint lints with the project's `oxlint.config.ts`, which imports the standard's as `#standards/oxlint` and extends it, or else with the standard's, which extends `@cloudflare/oxlint-config`. Its rules are type-aware through `oxlint-tsgolint` where the project has a `tsconfig.json`. It prints its findings in its `unix` format, one line each, which the lint unit's summary counts. `check.sh` installs Oxlint, `oxlint-tsgolint` and the cloudflare config at their pins into its cache with `npm ci`, from `typescript/oxlint-install/package-lock.json`, which pins their own dependencies. A project merges `typescript/package.fragment.json` into its `package.json`, for TypeScript, its test tools and knip at their pins. The fragment carries no Oxlint or oxfmt, and its one script, `check`, runs only `tsc`: `check.sh` is the one runner of lint, format, tests and mutation, since it alone runs them on the standard's configs.
+
+**Custom rules.** The standard's own lint rules are the Oxlint JS plugin `standards`, in `typescript/oxlint-plugins/`: one module per rule in `rules/`, named for it, and `index.ts`, which lists them. Node loads its `.ts` files by type stripping, and `oxlint.config.ts` loads it from beside itself and turns every rule it lists on, so a new rule is a module and an entry in the index. `no-module-state` reports a mutable binding at module scope and a module-level mutable collection; `readonly-members` a class property or type member without `readonly`; `readonly-types` a mutable array, `Map` or `Set` type. Nondeterminism is native: `no-restricted-globals` bans `Date`, `performance` and `crypto`, and `no-restricted-properties` `Math.random`. Each rule's vitest test runs the pinned Oxlint with only it on over example files, and the package's `test` unit runs them at `step`.
+
+**Tests.** Tests run on vitest with `it` from `@effect/vitest`, the one test function: `it.effect` for an Effect, `it.prop` for a property over Schemas or Arbitraries. vitest runs on a project's own config, a `vitest.config.*` or the `vite.config.*` vitest reads without one, or else on the standard's `typescript/vitest.config.ts`, which loads `vitest.setup.ts` from beside itself: `check.sh` copies both into `node_modules/.cache/standards/`, where vitest and Effect resolve from the project's install, and gives the copy to Stryker's vitest runner too, through a copy of a JSON Stryker config with `vitest.configFile` set, which `checks stryker-config` writes there. The config's modes set the runs of every property test, through Effect's `Arbitrary`: `fast` runs 10, `full` 1000 with `@vitest/coverage-v8`, and `mutation` 10 with seed 42, ending on the first failure. `mutation` is also vitest's default mode, the one Stryker's vitest runner starts it in. A test tagged `slow` (`{ tags: ["slow"] }`) runs only in `full`. `check.sh` runs vitest in `fast` at `step` and `full` at `release`, which also runs Stryker on `@stryker-mutator/vitest-runner`. The exceptions check reports a project's own `vitest.config.ts`, or else `vite.config.ts`, whose modes run fewer cases than the standard's as drift; a project without one runs the standard's.

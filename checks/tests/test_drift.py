@@ -6,28 +6,30 @@ from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.drift import (
     Snapshot,
-    biome_levels,
     hypothesis_profiles,
     level,
+    printed,
     proptest_cases,
     python_drift,
-    runs,
     rust_drift,
     typescript_drift,
+    vitest_runs,
 )
 from checks.core.exceptions import Issue
-from checks.core.values import parse_toml
+from checks.core.values import entries, parse_toml, strings, table
 
 
 def snapshot(
     project: Mapping[str, str],
     standards: Mapping[str, str],
     files: Sequence[str] = (),
+    resolved: Mapping[str, str] | None = None,
 ) -> Snapshot:
     return Snapshot(
         FrozenList(files or tuple(project)),
         FrozenOrderedDict(project),
         FrozenOrderedDict(standards),
+        FrozenOrderedDict(resolved or {}),
     )
 
 
@@ -447,39 +449,59 @@ def test_level(value: object, expected: str) -> None:
     assert level(value) == expected
 
 
-def test_biome_levels_flatten_groups() -> None:
-    rules = {
-        "recommended": "on",
-        "style": {"noVar": "off", "useConst": {"level": "warn"}},
-    }
-    assert biome_levels(rules) == {
-        "recommended": "on",
-        "style/noVar": "off",
-        "style/useConst": "warn",
-    }
+STANDARD_OXLINT_SOURCE = """import cloudflare from "@cloudflare/oxlint-config";
 
+export default defineConfig({ extends: [cloudflare] });
+"""
+# A project config that extends the standard's, as check.sh evaluates it.
+EXTENDING = """import standard from "#standards/oxlint";
+import { defineConfig } from "oxlint";
 
-STANDARD_BIOME = json.dumps({
-    "linter": {
-        "rules": {
-            "preset": "strict",
-            "style": {
-                "noVar": "error",
-                "noRestrictedGlobals": {
-                    "options": {"deniedGlobals": {"Date": "x"}}
-                },
-                "noRestrictedImports": {"options": {"paths": {"fs": "y"}}},
-                "useWeak": "off",
-            },
-        }
+export default defineConfig({
+	extends: [standard],
+	rules: { "react/jsx-max-depth": "error" },
+});
+"""
+# The standard's config as `oxlint --print-config` resolves it: extends
+# flattened, categories expanded into rules, levels as allow, warn and deny.
+STANDARD_OXLINT: Mapping[str, object] = FrozenOrderedDict({
+    "plugins": ["typescript", "react", "jsx-a11y"],
+    "jsPlugins": [
+        {
+            "name": "standards",
+            "specifier": "file:///run/oxlint-plugins/index.ts",
+        },
+        {"name": "quality", "specifier": "file:///install/quality/index.js"},
+    ],
+    "categories": {"correctness": "deny", "style": "deny"},
+    "rules": {
+        "no-bitwise": "deny",
+        "no-console": "warn",
+        "typescript/no-explicit-any": ["deny", {"fixToUnknown": False}],
+        "react/rules-of-hooks": "deny",
+        "jsx_a11y/alt-text": "deny",
+        "no-magic-numbers": "deny",
+        "no-restricted-globals": [
+            "deny",
+            {"name": "process", "message": "ambient"},
+            {"name": "fetch", "message": "boundary"},
+        ],
+        "no-restricted-imports": [
+            "deny",
+            {"paths": [{"name": "lodash", "message": "x"}, "fs"]},
+        ],
     },
-    "plugins": ["./biome-plugins/a.grit", {"path": "./biome-plugins/b.grit"}],
     "overrides": [
         {
-            "includes": ["tests/**"],
-            "linter": {"rules": {"style": {"noMagic": "off"}}},
+            "files": ["**/*.test.ts"],
+            "env": None,
+            "globals": None,
+            "plugins": None,
+            "rules": {"no-magic-numbers": "allow"},
         }
     ],
+    "options": {"typeAware": True, "respectEslintDisableDirectives": False},
+    "ignorePatterns": [],
 })
 STANDARD_TSCONFIG = json.dumps({
     "compilerOptions": {"strict": True, "noImplicitAny": True, "target": "x"}
@@ -489,85 +511,308 @@ STANDARD_STRYKER = json.dumps({
     "mutate": ["src/**", "!src/**/*.test.ts"],
 })
 TYPESCRIPT_STANDARDS = FrozenOrderedDict({
-    "typescript/biome.json": STANDARD_BIOME,
+    "typescript/oxlint.config.ts": STANDARD_OXLINT_SOURCE,
     "typescript/tsconfig.base.json": STANDARD_TSCONFIG,
     "typescript/stryker.config.json": STANDARD_STRYKER,
     "typescript/knip.json": json.dumps({
         "ignore": ["dist/**"],
         "ignoreBinaries": ["tsc"],
     }),
-    "typescript/profiles/fast.ts": "export default { numRuns: 10 };",
-    "typescript/profiles/full.ts": "export default { numRuns:1000 };",
-    "typescript/profiles/mutation.ts": "export default {};",
+    "typescript/vitest.config.ts": (
+        "const modes = {\n"
+        "\tfast: { runs: 10 },\n"
+        "\tfull: {runs:1000},\n"
+        "\tmutation: { runs: 10, seed: 42 },\n"
+        "} as const;\n"
+    ),
 })
+KEPT_RUNS = (
+    "fast: { runs: 10 }, full: { runs: 1000 }, mutation: { runs: 10, seed: 42 }"
+)
+OXLINT = "oxlint.config.ts"
+NOT_EXTENDED = (
+    OXLINT,
+    "extends",
+    "oxlint.config.ts doesn't extend the standard's, imported from `#standards/oxlint`",
+)
+
+
+def oxlint_drift_of(
+    source: str, project: Mapping[str, object]
+) -> FrozenList[Issue]:
+    files = {OXLINT: source, "vitest.config.ts": KEPT_RUNS}
+    resolved = {
+        OXLINT: json.dumps(dict(project)),
+        "typescript/oxlint.config.ts": json.dumps(dict(STANDARD_OXLINT)),
+    }
+    return FrozenList(
+        typescript_drift(snapshot(files, TYPESCRIPT_STANDARDS, (), resolved))
+    )
 
 
 def test_typescript_project_matching_the_standard_has_no_drift() -> None:
     project = {
-        "biome.json": STANDARD_BIOME,
+        OXLINT: EXTENDING,
         "tsconfig.json": json.dumps({
             "compilerOptions": {"noImplicitAny": True}
         }),
         "stryker.config.json": STANDARD_STRYKER,
         "knip.json": json.dumps({"ignore": ["dist/**"]}),
-        "profiles/fast.ts": "{ numRuns: 10 }",
-        "profiles/full.ts": "{ numRuns: 1000 }",
+        "vitest.config.ts": KEPT_RUNS,
     }
-    assert (
-        tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS))) == ()
+    resolved = {
+        OXLINT: json.dumps(dict(STANDARD_OXLINT)),
+        "typescript/oxlint.config.ts": json.dumps(dict(STANDARD_OXLINT)),
+    }
+    found = typescript_drift(
+        snapshot(project, TYPESCRIPT_STANDARDS, (), resolved)
+    )
+    assert tuple(found) == ()
+
+
+def test_an_oxlint_config_that_only_adds_or_raises_rules_has_no_drift() -> None:
+    standard_rules = table(STANDARD_OXLINT["rules"])
+    raised = dict(STANDARD_OXLINT) | {
+        "plugins": [*strings(STANDARD_OXLINT["plugins"]), "promise"],
+        "jsPlugins": [
+            *entries(STANDARD_OXLINT["jsPlugins"]),
+            {"name": "local", "specifier": "file:///project/local.ts"},
+        ],
+        "categories": {"correctness": "deny", "style": "deny", "perf": "deny"},
+        "rules": dict(standard_rules)
+        | {
+            "no-console": "deny",
+            "react/jsx-max-depth": ["deny", {"max": 3}],
+            "nursery-rule": "allow",
+            "no-restricted-globals": [
+                *entries(standard_rules["no-restricted-globals"]),
+                {"name": "window", "message": "x"},
+            ],
+        },
+        "overrides": [
+            *entries(STANDARD_OXLINT["overrides"]),
+            {
+                "files": ["src/**"],
+                "rules": {"no-console": "deny", "nursery-rule": "allow"},
+            },
+        ],
+    }
+    assert oxlint_drift_of(EXTENDING, raised) == ()
+
+
+def test_an_oxlint_config_that_weakens_every_check() -> None:
+    weak = {
+        "plugins": ["typescript"],
+        "jsPlugins": [
+            {"name": "quality", "specifier": "file:///install/quality/index.js"}
+        ],
+        "categories": {"style": "warn"},
+        "rules": {
+            "no-bitwise": "warn",
+            "no-console": "warn",
+            "typescript/no-explicit-any": ["allow", {"fixToUnknown": False}],
+            "no-magic-numbers": "deny",
+            "no-restricted-globals": ["deny", "process"],
+            "no-restricted-imports": ["deny", {"paths": ["fs"]}],
+        },
+        "overrides": [
+            *entries(STANDARD_OXLINT["overrides"]),
+            {"files": ["src/**", "lib/**"], "rules": {"no-bitwise": "allow"}},
+            {"files": ["x/**"], "rules": {"no-bitwise": "deny"}},
+        ],
+        "options": {
+            "typeAware": False,
+            "respectEslintDisableDirectives": False,
+        },
+        "ignorePatterns": ["gen/**"],
+    }
+    restricted = "rules.eslint/no-restricted"
+    assert oxlint_drift_of(STANDARD_OXLINT_SOURCE + "\n", weak) == issues(
+        NOT_EXTENDED,
+        (
+            OXLINT,
+            "categories.correctness",
+            "categories.correctness is `off`, weaker than `deny`",
+        ),
+        (
+            OXLINT,
+            "categories.style",
+            "categories.style is `warn`, weaker than `deny`",
+        ),
+        (
+            OXLINT,
+            "rules.eslint/no-bitwise",
+            "rules.eslint/no-bitwise is `warn`, weaker than `deny`",
+        ),
+        (
+            OXLINT,
+            "rules.typescript/no-explicit-any",
+            "rules.typescript/no-explicit-any is `allow`, weaker than `deny`",
+        ),
+        (
+            OXLINT,
+            "rules.react-hooks/rules-of-hooks",
+            "rules.react-hooks/rules-of-hooks is `off`, weaker than `deny`",
+        ),
+        (
+            OXLINT,
+            "rules.jsx-a11y/alt-text",
+            "rules.jsx-a11y/alt-text is `off`, weaker than `deny`",
+        ),
+        (OXLINT, "jsPlugins:standards", "jsPlugins lacks `standards`"),
+        (
+            OXLINT,
+            f"{restricted}-globals:fetch",
+            f"{restricted}-globals lacks `fetch`",
+        ),
+        (
+            OXLINT,
+            f"{restricted}-imports:lodash",
+            f"{restricted}-imports lacks `lodash`",
+        ),
+        (
+            OXLINT,
+            "overrides.src/**,lib/**.eslint/no-bitwise",
+            "override for src/**,lib/** sets eslint/no-bitwise to `allow`",
+        ),
+        (
+            OXLINT,
+            "options.typeAware",
+            "options.typeAware is `false`, not `true`",
+        ),
+        (OXLINT, "ignorePatterns:gen/**", "ignorePatterns adds `gen/**`"),
     )
 
 
+def resolved_drift(
+    standard: Mapping[str, object], project: Mapping[str, object]
+) -> FrozenList[Issue]:
+    """The drift between a project's resolved oxlint config, which extends
+    the standard's, and the standard's."""
+    files = {OXLINT: EXTENDING, "vitest.config.ts": KEPT_RUNS}
+    resolved = {
+        OXLINT: json.dumps(dict(project)),
+        "typescript/oxlint.config.ts": json.dumps(dict(standard)),
+    }
+    return FrozenList(
+        typescript_drift(snapshot(files, TYPESCRIPT_STANDARDS, (), resolved))
+    )
+
+
+def test_an_oxlint_config_weakening_a_scoped_plugins_rule() -> None:
+    found = resolved_drift(
+        {"rules": {"@nkzw/no-instanceof": "deny"}},
+        {"rules": {"@nkzw/no-instanceof": "allow"}},
+    )
+    assert found == issues((
+        OXLINT,
+        "rules.@nkzw/no-instanceof",
+        "rules.@nkzw/no-instanceof is `allow`, weaker than `deny`",
+    ))
+
+
+def test_a_rule_the_standard_warns_on_is_weakened_by_leaving_it_out() -> None:
+    standard = {"rules": {"no-console": "warn", "no-debugger": "off"}}
+    assert resolved_drift(standard, {"rules": {}}) == issues((
+        OXLINT,
+        "rules.eslint/no-console",
+        "rules.eslint/no-console is `off`, weaker than `warn`",
+    ))
+
+
+def test_an_override_turning_off_a_rule_the_standard_warns_on() -> None:
+    standard = {"rules": {"no-console": "warn"}}
+    project = standard | {
+        "overrides": [{"files": ["src/**"], "rules": {"no-console": "off"}}]
+    }
+    assert resolved_drift(standard, project) == issues((
+        OXLINT,
+        "overrides.src/**.eslint/no-console",
+        "override for src/** sets eslint/no-console to `off`",
+    ))
+
+
+def test_a_js_plugin_named_by_its_specifier_alone_must_be_kept() -> None:
+    standard = {"jsPlugins": ["standards", {"specifier": "file:///x.ts"}]}
+    assert resolved_drift(standard, {"jsPlugins": []}) == issues((
+        OXLINT,
+        "jsPlugins:standards",
+        "jsPlugins lacks `standards`",
+    ))
+
+
+def test_the_standard_s_own_ignore_patterns_are_no_drift() -> None:
+    config = {"ignorePatterns": ["dist/**"]}
+    assert resolved_drift(config, config) == ()
+
+
+@pytest.mark.parametrize(
+    ("rule", "expected"),
+    [
+        ("no-bitwise", "eslint/no-bitwise"),
+        ("jsx_a11y/alt-text", "jsx-a11y/alt-text"),
+        ("react/rules-of-hooks", "react-hooks/rules-of-hooks"),
+        ("react/jsx-max-depth", "react/jsx-max-depth"),
+        ("local/exhaustive-deps", "local/exhaustive-deps"),
+        ("jsx_a11y/local/alt-text", "jsx_a11y/local/alt-text"),
+    ],
+)
+def test_a_rule_is_named_as_oxlint_prints_it(rule: str, expected: str) -> None:
+    assert printed(rule) == expected
+
+
+def test_the_standard_oxlint_config_itself_has_no_drift() -> None:
+    assert oxlint_drift_of(STANDARD_OXLINT_SOURCE, STANDARD_OXLINT) == ()
+
+
+def test_an_oxlint_config_importing_the_standard_must_extend_it() -> None:
+    source = (
+        'import standard from "#standards/oxlint";\n'
+        'import other from "./other.ts";\n\n'
+        "export default { extends: [other], rules: standard.rules };\n"
+    )
+    assert oxlint_drift_of(source, STANDARD_OXLINT) == issues(NOT_EXTENDED)
+
+
+def test_an_oxlint_config_left_unresolved_is_checked_for_extends_alone() -> (
+    None
+):
+    project = {OXLINT: "export default {};\n", "vitest.config.ts": KEPT_RUNS}
+    found = typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS))
+    assert tuple(found) == issues(NOT_EXTENDED)
+
+
 def test_typescript_project_without_config() -> None:
-    found = tuple(typescript_drift(snapshot({}, TYPESCRIPT_STANDARDS)))
+    # Without its own vitest config, a project's tests run on the standard's.
+    assert tuple(typescript_drift(snapshot({}, TYPESCRIPT_STANDARDS))) == ()
+
+
+def test_a_vite_config_without_the_modes_runs_fewer_cases() -> None:
+    # vitest reads vite.config.ts without a vitest.config.ts, so it is the
+    # project's own vitest config.
+    project = {"vite.config.ts": "export default { test: {} };\n"}
+    found = tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS)))
     assert found == issues(
         (
-            "profiles",
-            "fast-check.fast",
-            "fast-check `fast` runs fewer than 10 cases",
+            "vite.config.ts",
+            "arbitrary.fast",
+            "arbitrary `fast` runs fewer than 10 cases",
         ),
         (
-            "profiles",
-            "fast-check.full",
-            "fast-check `full` runs fewer than 1000 cases",
+            "vite.config.ts",
+            "arbitrary.full",
+            "arbitrary `full` runs fewer than 1000 cases",
+        ),
+        (
+            "vite.config.ts",
+            "arbitrary.mutation",
+            "arbitrary `mutation` runs fewer than 10 cases",
         ),
     )
 
 
 def test_typescript_project_that_weakens_every_check() -> None:
-    biome: dict[str, object] = {
-        "linter": {
-            "enabled": False,
-            "rules": {
-                "preset": "recommended",
-                "style": {
-                    "noVar": "warn",
-                    "useWeak": "off",
-                    "useOther": {"level": "info"},
-                    "useStrong": "error",
-                    "noRestrictedGlobals": {"options": {"deniedGlobals": {}}},
-                },
-                "suspicious": "off",
-            },
-        },
-        "plugins": ["../elsewhere/a.grit"],
-        "overrides": [
-            {
-                "includes": ["tests/**"],
-                "linter": {"rules": {"style": {"noMagic": "off"}}},
-            },
-            {
-                "includes": ["src/**", "lib/**"],
-                "linter": {"rules": {"style": {"noVar": "warn"}}},
-            },
-            {
-                "includes": ["x/**"],
-                "linter": {"rules": {"style": {"noVar": "error"}}},
-            },
-        ],
-    }
     project = {
-        "biome.jsonc": json.dumps(biome),
         "tsconfig.json": json.dumps({
             "compilerOptions": {
                 "strict": False,
@@ -584,41 +829,12 @@ def test_typescript_project_that_weakens_every_check() -> None:
             "ignoreDependencies": "lodash",
             "other": ["x"],
         }),
-        "profiles/fast.ts": "{ numRuns: 9 }",
-        "profiles/full.ts": "{ numRuns: 5000 }",
+        "vitest.config.ts": (
+            "fast: { runs: 9 }, full: { runs: 5000 }, mutation: { runs: 10 }"
+        ),
     }
-    rules = "linter.rules"
     found = tuple(typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS)))
     assert found == issues(
-        ("biome.json", f"{rules}.preset", f"{rules}.preset is not `strict`"),
-        ("biome.json", "linter.enabled", "the linter is disabled"),
-        ("biome.json", "plugins:b.grit", "plugins lacks `b.grit`"),
-        (
-            "biome.json",
-            f"{rules}.style/noVar",
-            f"{rules}.style/noVar is `warn`",
-        ),
-        (
-            "biome.json",
-            f"{rules}.style/useOther",
-            f"{rules}.style/useOther is `info`",
-        ),
-        ("biome.json", f"{rules}.suspicious", f"{rules}.suspicious is `off`"),
-        (
-            "biome.json",
-            f"{rules}.style/noRestrictedGlobals.deniedGlobals:Date",
-            f"{rules}.style/noRestrictedGlobals.deniedGlobals lacks `Date`",
-        ),
-        (
-            "biome.json",
-            f"{rules}.style/noRestrictedImports.paths:fs",
-            f"{rules}.style/noRestrictedImports.paths lacks `fs`",
-        ),
-        (
-            "biome.json",
-            "overrides.src/**,lib/**.style/noVar",
-            "override for src/**,lib/** sets style/noVar to `warn`",
-        ),
         (
             "tsconfig.json",
             "compilerOptions.strict",
@@ -640,9 +856,9 @@ def test_typescript_project_that_weakens_every_check() -> None:
             "mutate adds `!src/skip.ts`",
         ),
         (
-            "profiles",
-            "fast-check.fast",
-            "fast-check `fast` runs fewer than 10 cases",
+            "vitest.config.ts",
+            "arbitrary.fast",
+            "arbitrary `fast` runs fewer than 10 cases",
         ),
         ("knip.json", "ignore:gen/**", "ignore adds `gen/**`"),
         (
@@ -659,8 +875,7 @@ def test_typescript_strict_off_without_a_standard_flag() -> None:
     }
     project = {
         "tsconfig.json": json.dumps({"compilerOptions": {"strict": False}}),
-        "profiles/fast.ts": "{ numRuns: 10 }",
-        "profiles/full.ts": "{ numRuns: 1000 }",
+        "vitest.config.ts": KEPT_RUNS,
     }
     assert tuple(typescript_drift(snapshot(project, standards))) == issues((
         "tsconfig.json",
@@ -670,10 +885,7 @@ def test_typescript_strict_off_without_a_standard_flag() -> None:
 
 
 def test_stryker_threshold_missing_or_not_a_number() -> None:
-    standards = dict(TYPESCRIPT_STANDARDS) | {
-        "typescript/profiles/fast.ts": "",
-        "typescript/profiles/full.ts": "",
-    }
+    standards = dict(TYPESCRIPT_STANDARDS) | {"typescript/vitest.config.ts": ""}
     for thresholds in ('{"mutate": []}', '{"thresholds": {"break": "100"}}'):
         project = {"stryker.config.json": thresholds}
         assert tuple(typescript_drift(snapshot(project, standards))) == issues((
@@ -693,14 +905,17 @@ def test_stryker_threshold_missing_or_not_a_number() -> None:
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("{ numRuns: 12 }", 12),
-        ("{numRuns:3}", 3),
-        ("{ runs: 4 }", None),
-        (None, None),
+        (
+            "fast: { runs: 12 }, full: {runs:3, seed: 1}",
+            {"fast": 12, "full": 3},
+        ),
+        ("mutation: { seed: 42, runs: 4 }", {"mutation": 4}),
+        ("fast: { seed: 4 }, full: 3", {}),
+        ("", {}),
     ],
 )
-def test_runs(text: str | None, expected: int | None) -> None:
-    assert runs(text) == expected
+def test_vitest_runs(text: str, expected: Mapping[str, int]) -> None:
+    assert vitest_runs(text) == expected
 
 
 def test_rust_lint_missing_from_the_project() -> None:
@@ -734,22 +949,14 @@ def test_rust_clippy_toml_is_checked() -> None:
     )
 
 
-def test_typescript_biome_json_and_knip_json_are_checked() -> None:
+def test_typescript_knip_json_is_checked() -> None:
     project = {
-        "biome.json": json.dumps({
-            "linter": {"enabled": False, "rules": {"preset": "strict"}},
-            "plugins": ["a.grit", "b.grit"],
-        }),
         "knip.json": json.dumps({"ignore": ["gen/**"]}),
-        "profiles/fast.ts": "{ numRuns: 10 }",
-        "profiles/full.ts": "{ numRuns: 1000 }",
+        "vitest.config.ts": KEPT_RUNS,
     }
-    standards = TYPESCRIPT_STANDARDS | {
-        "typescript/biome.json": json.dumps({
-            "linter": {"rules": {"preset": "strict"}}
-        })
-    }
-    assert tuple(typescript_drift(snapshot(project, standards))) == issues(
-        ("biome.json", "linter.enabled", "the linter is disabled"),
-        ("knip.json", "ignore:gen/**", "ignore adds `gen/**`"),
-    )
+    found = typescript_drift(snapshot(project, TYPESCRIPT_STANDARDS))
+    assert tuple(found) == issues((
+        "knip.json",
+        "ignore:gen/**",
+        "ignore adds `gen/**`",
+    ))

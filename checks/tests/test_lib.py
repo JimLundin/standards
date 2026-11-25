@@ -4,15 +4,15 @@ repository beside it, so recorded passes go nowhere else."""
 import json
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 lazy from collections.abc import Sequence
+lazy from pathlib import Path
 
 import pytest
 from ordered import FrozenList
 
 from checks.core.units import pins_of
+from tests.helpers import STANDARDS
 
-STANDARDS = Path(__file__).resolve().parents[2]
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
 # marker, and one whose tool isn't installed; and the project's suites.

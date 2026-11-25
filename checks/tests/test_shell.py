@@ -7,7 +7,7 @@ lazy from pathlib import Path
 import pytest
 from ordered import FrozenList, FrozenOrderedDict
 
-from checks import notes
+from checks import git
 from checks.core.tools import TOOLS, request, run
 from checks.core.values import Inputs, Request
 from checks.shell import gather, main, read
@@ -48,10 +48,10 @@ def test_tools_dispatch_to_each_tool() -> None:
         "ruff-config",
         "without",
         "globs",
-        "biome-groups",
-        "biome-plugins",
+        "oxlint-config",
         "filter-mutmut",
         "stryker-mutate",
+        "stryker-config",
         "nextest-config",
     )
     assert request(("immutability", "a.py"), Inputs()) == Request(
@@ -109,7 +109,7 @@ def test_main_runs_the_notes_in_the_working_directory(
     capsysbinary: pytest.CaptureFixture[bytes],
 ) -> None:
     key = "1" * 40
-    assert notes.git(str(project), "init", "-q").returncode == 0
+    assert git.git(str(project), "init", "-q").returncode == 0
     status, out = invoke(
         monkeypatch, capsysbinary, "notes", "record", key, "python lint ."
     )
@@ -213,10 +213,14 @@ def test_main_resolves_paths_against_the_working_directory(
     capsysbinary: pytest.CaptureFixture[bytes],
 ) -> None:
     (project / "conf").mkdir()
-    _ = (project / "conf" / "biome.json").write_text(
-        '{"plugins": ["p/a.grit"]}', encoding="utf-8"
+    _ = (project / "conf" / "stryker.json").write_text(
+        '{"mutate": ["src/**"]}', encoding="utf-8"
+    )
+    _ = (project / "exceptions.toml").write_text(
+        '[[exception]]\npath = "src/a.ts"\nrule = "mutation"\nreason = "r"\n',
+        encoding="utf-8",
     )
     status, out = invoke(
-        monkeypatch, capsysbinary, "biome-plugins", "conf/biome.json"
+        monkeypatch, capsysbinary, "stryker-mutate", "conf/stryker.json"
     )
-    assert (status, out) == (0, f"a|{project.as_posix()}/conf/p/a.grit\n")
+    assert (status, out) == (0, "src/**,!src/a.ts\n")

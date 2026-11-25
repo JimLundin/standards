@@ -74,6 +74,19 @@ def test_a_recorded_pass_is_looked_up_by_its_key(origin: Path) -> None:
     assert message(project, FIRST) == ("python lint .",)
 
 
+def test_recording_a_pass_again_replaces_its_message(origin: Path) -> None:
+    project = clone(origin, "project")
+    _ = notes.record(project, (FIRST, "python lint ."))
+    assert notes.record(project, (FIRST, "python format .")) == (FIRST,)
+    assert message(project, FIRST) == ("python format .",)
+
+
+def test_a_key_without_its_message_is_refused(origin: Path) -> None:
+    project = clone(origin, "project")
+    with pytest.raises(ValueError, match="zip"):
+        _ = notes.record(project, (FIRST, "python lint .", SECOND))
+
+
 def test_notes_commits_carry_the_standards_identity(origin: Path) -> None:
     project = clone(origin, "project")
     _ = notes.record(project, (FIRST, "python lint ."))

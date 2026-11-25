@@ -8,7 +8,7 @@ from tests.helpers import entry, inputs, lines
 
 
 def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
-    for command in ("ruff-config", "nextest-config"):
+    for command in ("ruff-config", "nextest-config", "oxlint-config"):
         assert request((command,), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
@@ -16,8 +16,8 @@ def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
         assert request((command, "mutation", "a.py"), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
-    for command in ("stryker-mutate", "biome-plugins"):
-        assert request((command, "x.json"), Inputs()) == Request(
+    for command in ("stryker-mutate", "stryker-config"):
+        assert request((command, "x.json", "v.ts"), Inputs()) == Request(
             FrozenList(("exceptions.toml", "x.json"))
         )
     assert request(("filter-mutmut",), Inputs()) == Request(
@@ -67,39 +67,105 @@ def test_without_and_globs() -> None:
     assert lines(run(("globs", "api"), inputs(texts))) == ()
 
 
-def test_biome_groups_by_shared_skips() -> None:
+OXLINT_CONFIG = """import config from "file:///std/oxlint.config.ts";
+
+export default {
+	extends: [config],
+	overrides: [
+		{ files: ["/work/src/b.ts"], rules: { "eslint/no-bitwise": "off" } },
+		{ files: ["/work/**/*.test.ts"], rules: { "typescript/no-floating-promises": "off" } },
+	],
+};
+"""
+
+
+def test_oxlint_config_extends_the_config_with_an_override_per_exception() -> (
+    None
+):
     texts = {
-        "exceptions.toml": entry("a.ts", "lint/style/noVar")
-        + entry("*.ts", "lint/style/useConst")
-        + entry("*.ts", "lint/plugin/a")
-        + entry("c.js", "mutation")
+        "exceptions.toml": entry("src/b.ts", "lint/eslint/no-bitwise")
+        + entry("src/c.ts", "mutation")
+        + entry("**/*.test.ts", "lint/typescript/no-floating-promises")
     }
     outcome = run(
-        ("biome-groups", "a.ts", "b.ts", "c.js", "d.ts"), inputs(texts)
+        ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
     )
-    assert lines(outcome) == (
-        "style/noVar style/useConst|a.ts",
-        "style/useConst|b.ts|d.ts",
-        "|c.js",
-    )
+    written = "node_modules/.cache/standards/oxlint.config.mjs"
+    assert lines(outcome) == (written,)
+    assert outcome.writes == {written: OXLINT_CONFIG}
 
 
-def test_biome_plugins_resolve_against_the_config() -> None:
-    config = json.dumps({"plugins": ["./p/a.grit", {"path": "../b.grit"}, {}]})
+def test_oxlint_config_turns_off_a_scoped_plugins_rule() -> None:
+    texts = {
+        "exceptions.toml": entry("a.ts", "lint/@nkzw/no-instanceof")
+        + entry("b.ts", "lint/@scope/plugin/a-rule")
+    }
     outcome = run(
-        ("biome-plugins", "conf/biome.json"),
-        inputs({"conf/biome.json": config}, cwd="C:\\work"),
+        ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
     )
-    assert lines(outcome) == (
-        "a|C:/work/conf/p/a.grit",
-        "b|C:/work/b.grit",
-        "|C:/work/conf",
+    (config,) = outcome.writes.values()
+    assert (
+        '{ files: ["/work/a.ts"], rules: { "@nkzw/no-instanceof": "off" } },'
+        in config
     )
-    absolute = run(
-        ("biome-plugins", "/std/biome.json"),
-        inputs({"/std/biome.json": config}, cwd="/home"),
+    assert (
+        '{ files: ["/work/b.ts"], rules: { "@scope/plugin/a-rule": "off" } },'
+        in config
     )
-    assert lines(absolute)[0] == "a|/std/p/a.grit"
+
+
+def test_oxlint_config_anchors_globs_at_a_windows_project_root() -> None:
+    texts = {"exceptions.toml": entry("*.ts", "lint/eslint/no-var")}
+    outcome = run(
+        ("oxlint-config", "conf/oxlint.config.ts"),
+        inputs(texts, cwd="C:\\work"),
+    )
+    (config,) = outcome.writes.values()
+    assert (
+        'import config from "file:///C:/work/conf/oxlint.config.ts";' in config
+    )
+    assert (
+        '{ files: ["C:/work/*.ts"], rules: { "eslint/no-var": "off" } },'
+        in config
+    )
+
+
+def test_oxlint_config_imports_the_config_by_an_escaped_file_url() -> None:
+    outcome = run(
+        ("oxlint-config", "my std/oxlint.config.ts"), inputs({}, cwd="/work")
+    )
+    (config,) = outcome.writes.values()
+    assert (
+        'import config from "file:///work/my%20std/oxlint.config.ts";' in config
+    )
+
+
+def test_oxlint_config_untyped_turns_type_aware_rules_off() -> None:
+    outcome = run(
+        ("oxlint-config", "--untyped", "/std/oxlint.config.ts"),
+        inputs({}, cwd="/work"),
+    )
+    (config,) = outcome.writes.values()
+    assert config == (
+        'import config from "file:///std/oxlint.config.ts";\n\n'
+        "export default {\n"
+        "\textends: [config],\n"
+        "\toptions: { ...config.options, typeAware: false },\n"
+        "\toverrides: [\n\t],\n"
+        "};\n"
+    )
+
+
+def test_oxlint_config_turns_a_standards_plugin_rule_off() -> None:
+    texts = {
+        "exceptions.toml": entry("src/a.ts", "lint/standards/no-module-state")
+    }
+    outcome = run(
+        ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
+    )
+    (config,) = outcome.writes.values()
+    override = '{ files: ["/work/src/a.ts"], rules: { "standards/no-module-state": "off" } },'
+    assert override in config
 
 
 def test_filter_mutmut_drops_excepted_modules() -> None:
@@ -132,6 +198,35 @@ def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
         "stryker.json": json.dumps({"mutate": ["src/**"]}),
     }
     assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == ()
+
+
+def test_stryker_config_points_a_copy_at_the_vitest_config() -> None:
+    texts = {
+        "stryker.json": json.dumps({
+            "mutate": ["src/**"],
+            "vitest": {"related": False},
+        })
+    }
+    outcome = run(
+        ("stryker-config", "stryker.json", "cache/vitest.config.ts"),
+        inputs(texts),
+    )
+    written = "node_modules/.cache/standards/stryker.config.json"
+    assert lines(outcome) == (written,)
+    assert json.loads(outcome.writes[written]) == {
+        "mutate": ["src/**"],
+        "vitest": {"related": False, "configFile": "cache/vitest.config.ts"},
+    }
+
+
+def test_stryker_config_adds_the_vitest_table_a_config_lacks() -> None:
+    texts = {"stryker.json": json.dumps({"mutate": ["src/**"]})}
+    outcome = run(("stryker-config", "stryker.json", "v.ts"), inputs(texts))
+    (config,) = outcome.writes.values()
+    assert json.loads(config) == {
+        "mutate": ["src/**"],
+        "vitest": {"configFile": "v.ts"},
+    }
 
 
 def test_globs_lists_the_paths_an_exception_of_the_rule_covers() -> None:

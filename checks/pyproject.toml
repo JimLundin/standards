@@ -29,7 +29,7 @@ root_package = "checks"
 name = "core is the bottom layer"
 type = "layers"
 containers = ["checks"]
-layers = ["(__main__)", "shell", "notes", "core"]
+layers = ["(__main__)", "shell", "notes", "git", "core"]
 exhaustive = true
 
 [tool.pytest]
