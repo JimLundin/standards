@@ -42,6 +42,8 @@ PUBLIC_MEMBERS = FrozenOrderedDict({
     "enum_variant_list": "enum_item",
     "declaration_list": "trait_item",
 })
+STATEMENTS = FrozenOrderedSet(("expression_statement", "let_declaration"))
+UNSAFE = "unsafe_block"
 DOCUMENTED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
@@ -59,6 +61,7 @@ class Comment:
     kind: Kind
     text: str
     item: Item | None = None
+    precedes: str = ""
 
 
 def is_source(language: str, file: str) -> bool:
@@ -94,6 +97,7 @@ def python_comments(text: str) -> Iterator[Comment]:
         Comment(token.start[0], "line", token.string.strip())
         for token in tokens
         if token.type == COMMENT
+        and not (token.start == (1, 0) and token.string.startswith("#!"))
     )
 
 
@@ -147,6 +151,25 @@ def documented(comment: Node) -> Node | None:
     return sibling
 
 
+def opens_unsafe(statement: Node) -> bool:
+    return any(
+        node.type == UNSAFE
+        and node.start_point.row == statement.start_point.row
+        for node in named_children(statement)
+    )
+
+
+def preceded(comment: Node) -> str:
+    sibling = comment.next_named_sibling
+    while sibling is not None and sibling.type in RUST_COMMENTS:
+        sibling = sibling.next_named_sibling
+    if sibling is None:
+        return ""
+    if sibling.type in STATEMENTS and opens_unsafe(sibling):
+        return UNSAFE
+    return sibling.type
+
+
 def item_of(node: Node, *, library: bool) -> Item:
     name = node.child_by_field_name("name")
     return Item(
@@ -161,7 +184,7 @@ def rust_comment(node: Node, *, library: bool) -> Comment:
     line, text = node.start_point.row + 1, node_text(node).strip()
     if not has_doc_marker(node):
         kind = "line" if node.type == "line_comment" else "block"
-        return Comment(line, kind, text)
+        return Comment(line, kind, text, precedes=preceded(node))
     item = documented(node)
     found = None if item is None else item_of(item, library=library)
     return Comment(line, "doc", text, found)

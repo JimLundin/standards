@@ -71,8 +71,8 @@ def test_rust_strings_hold_no_comments() -> None:
         "let c = '/'; let b = b\"// no\";\n"
     )
     assert found("a.rs", text) == (
-        Comment(1, "line", "// real"),
-        Comment(2, "block", "/* block */"),
+        Comment(1, "line", "// real", precedes="let_declaration"),
+        Comment(2, "block", "/* block */", precedes="let_declaration"),
     )
 
 
@@ -210,3 +210,35 @@ def test_a_lint_disable_inside_a_typescript_string_is_no_suppression() -> None:
 def test_a_typescript_type_assertion_is_no_comment() -> None:
     text = "const x = 1;\nconst n = <number>x; // real\nconst m = 2;\n"
     assert found("a.ts", text) == (Comment(2, "line", "// real"),)
+
+
+def test_a_python_shebang_is_no_comment() -> None:
+    assert found("a.py", "#!/usr/bin/env python\nx = 1  # c\n") == (
+        Comment(2, "line", "# c"),
+    )
+
+
+def test_a_rust_comment_names_what_it_precedes() -> None:
+    text = (
+        "fn f() {\n"
+        "    // SAFETY: one\n"
+        "    // and two\n"
+        "    unsafe { g() }\n"
+        "    // SAFETY: three\n"
+        "    let x = unsafe { g() };\n"
+        "    /* SAFETY: four */\n"
+        "    let y =\n"
+        "        unsafe { g() };\n"
+        "    // five\n"
+        "    g();\n"
+        "}\n"
+    )
+    assert FrozenList(
+        (comment.line, comment.precedes) for comment in found("a.rs", text)
+    ) == (
+        (2, "unsafe_block"),
+        (3, "unsafe_block"),
+        (5, "unsafe_block"),
+        (7, "let_declaration"),
+        (10, "expression_statement"),
+    )
