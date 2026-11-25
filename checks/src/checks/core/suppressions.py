@@ -1,10 +1,9 @@
 import re
-from io import StringIO
-from tokenize import COMMENT, TokenError, generate_tokens
 from typing import TYPE_CHECKING
 
-from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
+from ordered import FrozenList, FrozenOrderedSet
 
+from checks.core.comments import comments, is_source
 from checks.core.exceptions import Exceptions, Issue
 
 if TYPE_CHECKING:
@@ -42,43 +41,22 @@ FORBIDDEN_ATTRIBUTES = FrozenOrderedSet((
     "mutants::skip",
     "rustfmt::skip",
 ))
-SOURCES = FrozenOrderedDict({
-    "python": FrozenList((".py", ".pyw")),
-    "rust": FrozenList((".rs",)),
-    "typescript": FrozenList((
-        ".ts",
-        ".tsx",
-        ".mts",
-        ".cts",
-        ".js",
-        ".jsx",
-        ".mjs",
-    )),
-})
 INSTEAD = "; add an entry to exceptions.toml instead"
 
 
-def is_source(language: str, file: str) -> bool:
-    return file.endswith(tuple(SOURCES.get(language, FrozenList())))
-
-
-def python_markers(text: str) -> Iterator[tuple[int, str]]:
-    try:
-        tokens = FrozenList(generate_tokens(StringIO(text).readline))
-    except SyntaxError, TokenError:
-        return
+def python_markers(file: str, text: str) -> Iterator[tuple[int, str]]:
     yield from (
-        (token.start[0], token.string.strip())
-        for token in tokens
-        if token.type == COMMENT and PYTHON_MARKER.search(token.string)
+        (comment.line, comment.text)
+        for comment in comments(file, text)
+        if comment.kind == "line" and PYTHON_MARKER.search(comment.text)
     )
 
 
-def typescript_markers(text: str) -> Iterator[tuple[int, str]]:
+def typescript_markers(file: str, text: str) -> Iterator[tuple[int, str]]:
     yield from (
-        (number, line.strip())
-        for number, line in enumerate(text.splitlines(), start=1)
-        if TYPESCRIPT_MARKER.search(line)
+        (comment.line, comment.text)
+        for comment in comments(file, text)
+        if TYPESCRIPT_MARKER.search(comment.text)
     )
 
 
@@ -122,7 +100,7 @@ def suppressions(
         scan = python_markers if language == "python" else typescript_markers
         yield from (
             Issue(f"{file}:{line}", f"suppression `{marker}`{INSTEAD}")
-            for line, marker in scan(text)
+            for line, marker in scan(file, text)
         )
 
 

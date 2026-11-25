@@ -4,7 +4,6 @@ from ordered import FrozenOrderedDict
 from checks.core.exceptions import Issue, load
 from checks.core.suppressions import (
     attribute_lints,
-    is_source,
     python_markers,
     rust_attributes,
     suppressions,
@@ -13,29 +12,6 @@ from checks.core.suppressions import (
 )
 
 INSTEAD = "; add an entry to exceptions.toml instead"
-
-
-@pytest.mark.parametrize(
-    ("language", "file", "expected"),
-    [
-        ("python", "a.py", True),
-        ("python", "a.pyw", True),
-        ("python", "a.pyi", False),
-        ("rust", "a.rs", True),
-        ("rust", "a.py", False),
-        ("typescript", "a.ts", True),
-        ("typescript", "a.tsx", True),
-        ("typescript", "a.mts", True),
-        ("typescript", "a.cts", True),
-        ("typescript", "a.js", True),
-        ("typescript", "a.jsx", True),
-        ("typescript", "a.mjs", True),
-        ("typescript", "a.json", False),
-        ("go", "a.go", False),
-    ],
-)
-def test_is_source(language: str, file: str, *, expected: bool) -> None:
-    assert is_source(language, file) is expected
 
 
 @pytest.mark.parametrize(
@@ -57,7 +33,7 @@ def test_is_source(language: str, file: str, *, expected: bool) -> None:
     ],
 )
 def test_python_markers_find_suppressions(comment: str) -> None:
-    assert tuple(python_markers(f"x = 1\ny = 2  {comment}  \n")) == (
+    assert tuple(python_markers("a.py", f"x = 1\ny = 2  {comment}  \n")) == (
         (2, comment),
     )
 
@@ -74,7 +50,7 @@ def test_python_markers_find_suppressions(comment: str) -> None:
     ],
 )
 def test_python_markers_ignore_other_text(text: str) -> None:
-    assert tuple(python_markers(text)) == ()
+    assert tuple(python_markers("a.py", text)) == ()
 
 
 @pytest.mark.parametrize(
@@ -93,7 +69,7 @@ def test_python_markers_ignore_other_text(text: str) -> None:
 )
 def test_typescript_markers(line: str) -> None:
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers(text)) == ((2, line),)
+    assert tuple(typescript_markers("a.ts", text)) == ((2, line),)
 
 
 @pytest.mark.parametrize("linter", ["oxlint", "eslint"])
@@ -108,16 +84,18 @@ def test_typescript_markers_find_lint_disable_comments(
 ) -> None:
     line = f"{opening}{linter}-{form} no-console{closing}"
     text = f"const a = 1;\n  {line}  \n"
-    assert tuple(typescript_markers(text)) == ((2, line),)
+    assert tuple(typescript_markers("a.ts", text)) == ((2, line),)
 
 
 def test_typescript_markers_ignore_biome_ignore() -> None:
     text = "// biome-ignore lint: x\n/* biome-ignore lint: x */\n"
-    assert tuple(typescript_markers(text)) == ()
+    assert tuple(typescript_markers("a.ts", text)) == ()
 
 
 def test_typescript_markers_need_a_comment() -> None:
-    assert tuple(typescript_markers('const a = "oxlint-disable";\n')) == ()
+    assert (
+        tuple(typescript_markers("a.ts", 'const a = "oxlint-disable";\n')) == ()
+    )
 
 
 def test_attribute_lints_drop_reasons() -> None:
