@@ -106,7 +106,14 @@ step() {
 	fi
 	log="$logs/$name.log"
 	outcome=ok
-	"$@" >"$log" 2>&1 {run_lock}>&- || {
+	(
+		export STANDARDS_LOCK_ROOT=${lock_root:-}
+		export STANDARDS_LOCK_OWNER=${lock_owner:-}
+		export STANDARDS_LOCK_SCOPE=$BASHPID
+		"$@"
+		# Keep this scope alive until the command returns, even if bash could exec it.
+		exit "$?"
+	) >"$log" 2>&1 {run_lock}>&- || {
 		outcome=FAIL
 		failed+=("$name")
 	}
@@ -238,14 +245,28 @@ pinned() {
 	exit 2
 }
 
-# One run that runs units at a time per user, across every checkout: each
-# takes an flock on one file of the cache, open on `run_lock` for the run's
-# life, so the kernel frees it when the run exits, killed or not. Until then,
-# and in a run without the lock, `run_lock` is open on /dev/null. A process
-# that can outlive the run, such as a unit's or the sccache server, starts
-# with it closed. The holder writes its pid and project into the file for a
-# run that waits on it.
+# A unit closes the lock fd so a daemon cannot retain it. Nested checkers
+# instead lock their active unit's own file: the parent still holds its
+# lock, and sibling checkers serialize on the child lock. Ancestry ties the
+# exported context to the active unit, so a surviving daemon cannot reuse it.
 exec {run_lock}>/dev/null
+lock_root=
+lock_owner=
+
+nested_lock() {
+	local pid=$BASHPID scope=${STANDARDS_LOCK_SCOPE:-} owner=${STANDARDS_LOCK_OWNER:-} seen=
+	[ "${STANDARDS_LOCK_ROOT:-}" = "$lock_root" ] || return 1
+	[[ $scope =~ ^[0-9]+$ && $owner =~ ^[0-9]+$ ]] || return 1
+	while ((pid > 1)); do
+		[ "$pid" != "$scope" ] || seen=1
+		if [ -n "$seen" ] && [ "$pid" = "$owner" ]; then
+			echo "$lock_root/nested/$scope.lock"
+			return 0
+		fi
+		read -r pid < <(ps -o ppid= -p "$pid" 2>/dev/null) || return 1
+	done
+	return 1
+}
 
 lock() {
 	local file
@@ -254,13 +275,23 @@ lock() {
 		echo "flock not installed, so this run doesn't wait for another; fix: install util-linux" >&2
 		return 0
 	fi
-	file="$(cache_root)/run.lock"
+	lock_root=$(cache_root)
+	mkdir -p "$lock_root"
+	lock_root=$(cd "$lock_root" && pwd -P)
+	file=$(nested_lock) || file="$lock_root/run.lock"
 	mkdir -p "${file%/*}"
 	exec {run_lock}>&- {run_lock}>>"$file"
 	if ! flock -n "$run_lock"; then
 		echo "$(holder "$file") holds $(native "$file"); waiting for it to exit (fix: stop that run or let it finish)" >&2
 		flock "$run_lock"
 	fi
+	# A waiting nested checker may outlive the unit that admitted it.
+	if [ "$file" != "$lock_root/run.lock" ] && ! nested_lock >/dev/null; then
+		exec {run_lock}>&- {run_lock}>/dev/null
+		lock
+		return
+	fi
+	lock_owner=$BASHPID
 	echo "run of pid $$, project $(native "$PWD")," >"$file"
 }
 
