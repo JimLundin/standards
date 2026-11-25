@@ -215,9 +215,9 @@ def test_stryker_mutate_adds_excepted_globs() -> None:
         "exceptions.toml": entry("src/skip.ts", "mutation"),
         "stryker.json": json.dumps({"mutate": ["src/**", 3]}),
     }
-    assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == (
-        "src/**,!src/skip.ts",
-    )
+    assert lines(
+        run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
+    ) == ("src/**,!src/skip.ts",)
 
 
 def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
@@ -225,7 +225,12 @@ def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
         "exceptions.toml": entry("src/a.ts", "lint/style/noVar"),
         "stryker.json": json.dumps({"mutate": ["src/**"]}),
     }
-    assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == ()
+    assert (
+        lines(
+            run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
+        )
+        == ()
+    )
 
 
 def test_stryker_config_points_a_copy_at_the_vitest_config() -> None:
@@ -275,6 +280,8 @@ def test_stryker_mutate_skips_the_shell_and_ui_files_of_the_layer_map() -> None:
             "shell\tpackages/shell\tpackages/shell/main.ts\n"
             "core\tpackages/core\tpackages/core/src/index.ts\n"
             "ui\tpackages/ui\tpackages/ui/src/view.tsx\n"
+            "ui\tpackages/ui\tpackages/ui/src/my view.tsx\n"
+            "Shell\tpackages/io\tpackages/io/src/main.ts\n"
         ),
     }
     assert request(
@@ -283,9 +290,17 @@ def test_stryker_mutate_skips_the_shell_and_ui_files_of_the_layer_map() -> None:
     assert lines(
         run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
     ) == (
-        "src/**,!src/skip.ts,!packages/shell/main.ts,!packages/ui/src/view.tsx",
+        (
+            "src/**,!src/skip.ts,!packages/shell/main.ts,"
+            "!packages/ui/src/view.tsx,!packages/ui/src/my view.tsx"
+        ),
     )
     del texts["exceptions.toml"]
     assert lines(
         run(("stryker-mutate", "stryker.json", "layers.tsv"), inputs(texts))
-    ) == ("src/**,!packages/shell/main.ts,!packages/ui/src/view.tsx",)
+    ) == (
+        (
+            "src/**,!packages/shell/main.ts,!packages/ui/src/view.tsx,"
+            "!packages/ui/src/my view.tsx"
+        ),
+    )

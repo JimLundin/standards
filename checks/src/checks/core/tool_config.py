@@ -27,6 +27,7 @@ from checks.core.values import (
     posix,
     strings,
     table,
+    text,
 )
 
 if TYPE_CHECKING:
@@ -100,11 +101,11 @@ def oxlint_config(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         else ""
     )
     exceptions = exceptions_in(inputs)
-    placed = typescript_layers.placements(files, inputs.texts)
-    if issues := typescript_layers.layer_issues(placed):
+    placed = typescript_layers.placed(files, inputs.texts)
+    if issues := typescript_layers.layer_issues(placed.unknown):
         return Outcome(issues, 1)
     overrides = typescript_layers.import_overrides(
-        root, placed, exceptions
+        root, placed.placements, exceptions
     ) + "".join(oxlint_override(root, entry) for entry in exceptions.entries)
     text = (
         f"import config from {config};\n"
@@ -166,11 +167,7 @@ def stryker_mutate(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     files."""
     excepted = (
         *exceptions_in(inputs).paths(MUTATION),
-        *(
-            typescript_layers.outer_files(inputs.texts.get(arguments[1], ""))
-            if len(arguments) > 1
-            else ()
-        ),
+        *typescript_layers.outer_files(text(inputs.texts, arguments[1])),
     )
     if not excepted:
         return Outcome()

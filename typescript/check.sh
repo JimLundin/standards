@@ -288,8 +288,16 @@ stryker_run() {
 	npx --no-install stryker run ${given:+"$(native "$given")"} "$@"
 }
 
+# Mutation testing skips the shell's and the UI's files, from the layer
+# map.
+mutation_run() {
+	local mutate
+	layer_map || return
+	mutate=$(checks stryker-mutate "$(native "$stryker_config")" "$(native "$logs/layers.tsv")") || return
+	stryker_run ${mutate:+--mutate "$mutate"}
+}
+
 if full; then
-	mutation=()
 	# Stryker finds a project's own config itself, and is given the
 	# standard's otherwise.
 	stryker_config=$(compgen -G 'stryker.conf*' | head -1)
@@ -298,16 +306,8 @@ if full; then
 		stryker_config=$standards/stryker.config.json
 		stryker_given=$stryker_config
 	fi
-	# Mutation testing skips the shell's and the UI's files, from the layer
-	# map.
-	layer_map >/dev/null
-	mutate=$(checks stryker-mutate "$(native "$stryker_config")" "$(native "$logs/layers.tsv")")
-	if [ -n "$mutate" ]; then
-		mutation+=(--mutate "$mutate")
-	fi
 	if dry || [ -e node_modules/@stryker-mutator/core ]; then
-		unit mutation "last 'mutation score (of )?[0-9.]+'" \
-			stryker_run "${mutation[@]}"
+		unit mutation "last 'mutation score (of )?[0-9.]+'" mutation_run
 	else
 		skipped mutation "@stryker-mutator/core not installed"
 	fi

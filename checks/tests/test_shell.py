@@ -186,7 +186,14 @@ def test_main_resolves_paths_against_the_working_directory(
         '[[exception]]\npath = "src/a.ts"\nrule = "mutation"\nreason = "r"\n',
         encoding="utf-8",
     )
+    _ = (project / "conf" / "layers.tsv").write_text(
+        "core\t.\tsrc/a.ts\n", encoding="utf-8"
+    )
     status, out = invoke(
-        monkeypatch, capsysbinary, "stryker-mutate", "conf/stryker.json"
+        monkeypatch,
+        capsysbinary,
+        "stryker-mutate",
+        "conf/stryker.json",
+        "conf/layers.tsv",
     )
     assert (status, out) == (0, "src/**,!src/a.ts\n")

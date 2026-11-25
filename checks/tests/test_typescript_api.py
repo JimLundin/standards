@@ -2,7 +2,8 @@ import json
 
 from ordered import FrozenList
 
-from checks.core.typescript_api import request, run
+from checks.core.tools import request
+from checks.core.typescript_api import run
 from checks.core.values import Request
 from tests.helpers import entry, inputs
 
@@ -42,7 +43,7 @@ def unread(path: str, layer: str) -> str:
 
 
 def test_it_reads_the_exceptions_and_the_records() -> None:
-    assert request([RECORDS], inputs({})) == Request(
+    assert request(("typescript-api", RECORDS), inputs({})) == Request(
         FrozenList(("exceptions.toml", RECORDS))
     )
 
@@ -92,4 +93,21 @@ def test_a_core_file_that_cant_be_read_fails_and_another_layers_doesnt() -> (
     assert run([RECORDS], inputs({RECORDS: records})).lines == FrozenList((
         "packages/core/src/gone.ts: cannot be judged: not in the project",
         "Found 1 issues",
+    ))
+
+
+def test_a_files_findings_list_its_unread_failure_then_its_lines_in_order() -> (
+    None
+):
+    path = "packages/core/src/a.ts"
+    records = "\n".join((
+        reached(path, 3, "late", "reaches `Promise`"),
+        reached(path, 1, "early", "reaches `Promise`"),
+        unread(path, "core"),
+    ))
+    assert run([RECORDS], inputs({RECORDS: records})).lines == FrozenList((
+        f"{path}: cannot be judged: not in the project",
+        f"{path}:1: `early` reaches `Promise`{ONLY_DATA}",
+        f"{path}:3: `late` reaches `Promise`{ONLY_DATA}",
+        "Found 3 issues",
     ))

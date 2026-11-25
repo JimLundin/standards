@@ -3,6 +3,7 @@ lazy from collections.abc import Sequence
 
 from ordered import FrozenList
 
+from checks.core.typescript_layers import Layer, named_layer
 from checks.core.values import parse_json
 
 
@@ -10,7 +11,7 @@ from checks.core.values import parse_json
 class Function:
     """A function and the decisions it makes."""
 
-    layer: str
+    layer: Layer
     root: str
     path: str
     line: int
@@ -22,7 +23,7 @@ class Function:
 class Entry:
     """A call that starts a runtime, such as `runMain` or `createRoot`."""
 
-    layer: str
+    layer: Layer
     root: str
     path: str
     line: int
@@ -33,7 +34,7 @@ class Entry:
 class Reached:
     """A thing a core export reaches that isn't data."""
 
-    layer: str
+    layer: Layer
     root: str
     path: str
     line: int
@@ -45,7 +46,7 @@ class Reached:
 class Failure:
     """A file typescript-measure couldn't read."""
 
-    layer: str
+    layer: Layer
     root: str
     path: str
     error: str
@@ -55,51 +56,48 @@ type Record = Function | Entry | Reached | Failure
 
 
 # typescript-measure tells its records apart by the key each kind alone has.
-def decoded(line: str) -> Record | None:
-    match parse_json(line):
+def decoded(line: str) -> FrozenList[Record]:
+    """The line's record, or none for a line that isn't one."""
+    data = parse_json(line)
+    layer = named_layer(data.get("layer"))
+    if layer is None:
+        return FrozenList()
+    record: Record
+    match data:
         case {
             "entry": str(call),
-            "layer": str(layer),
             "root": str(root),
             "path": str(path),
             "line": int(number),
         }:
-            return Entry(layer, root, path, number, call)
+            record = Entry(layer, root, path, number, call)
         case {
             "api": str(api),
             "export": str(export),
-            "layer": str(layer),
             "root": str(root),
             "path": str(path),
             "line": int(number),
         }:
-            return Reached(layer, root, path, number, export, api)
-        case {
-            "error": str(error),
-            "layer": str(layer),
-            "root": str(root),
-            "path": str(path),
-        }:
-            return Failure(layer, root, path, error)
+            record = Reached(layer, root, path, number, export, api)
+        case {"error": str(error), "root": str(root), "path": str(path)}:
+            record = Failure(layer, root, path, error)
         case {
             "function": str(name),
             "decisions": int(decisions),
-            "layer": str(layer),
             "root": str(root),
             "path": str(path),
             "line": int(number),
         }:
-            return Function(layer, root, path, number, name, decisions)
+            record = Function(layer, root, path, number, name, decisions)
         case _:
-            return None
+            return FrozenList()
+    return FrozenList((record,))
 
 
 def records(text: str) -> FrozenList[Record]:
     return FrozenList(
         dict.fromkeys(
-            found
-            for line in text.splitlines()
-            if (found := decoded(line)) is not None
+            found for line in text.splitlines() for found in decoded(line)
         )
     )
 

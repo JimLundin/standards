@@ -1,4 +1,5 @@
 import json
+import re
 lazy from collections.abc import Mapping
 
 from ordered import FrozenList, FrozenOrderedDict
@@ -170,19 +171,51 @@ def test_each_package_restricts_imports_in_its_files_alone() -> None:
     )
 
 
-def test_the_shell_and_the_ui_may_not_import_each_other() -> None:
-    _, shell, _, ui = overrides(NESTED, *NESTED_FILES)
-    assert group(shell) == ("@w/app", "@w/app/**")
-    assert group(ui) == ("@w/io", "@w/io/**")
-
-
+IN_ATOMS = "an effect in a component: run it in an atom of effect/reactivity"
 EFFECT_HOOKS = FrozenOrderedDict({
     "name": "react",
     "importNames": ["useEffect", "useLayoutEffect"],
-    "message": (
-        "an effect in a component: run it in an atom of effect/reactivity"
-    ),
+    "message": IN_ATOMS,
 })
+
+
+def test_the_shell_and_the_ui_may_not_import_each_other() -> None:
+    _, shell, _, ui = overrides(NESTED, *NESTED_FILES)
+    assert restriction(shell) == {
+        "patterns": [
+            {
+                "group": ["@w/app", "@w/app/**"],
+                "caseSensitive": True,
+                "message": (
+                    "the shell meets the UI only through contracts in core"
+                ),
+            }
+        ]
+    }
+    assert restriction(ui) == {
+        "paths": [EFFECT_HOOKS],
+        "patterns": [
+            {
+                "group": ["@w/io", "@w/io/**"],
+                "caseSensitive": True,
+                "message": (
+                    "the UI meets the shell only through contracts in core"
+                ),
+            }
+        ],
+    }
+
+
+def test_a_package_named_by_no_string_is_left_out_of_the_layers_names() -> None:
+    texts = {
+        "packages/io/package.json": json.dumps({
+            "name": 3,
+            "standards": {"layer": "shell"},
+        }),
+        "packages/app/package.json": named("@w/app", "ui"),
+    }
+    *_, ui = overrides(texts, "packages/io/a.ts", "packages/app/c.tsx")
+    assert restriction(ui) == {"paths": [EFFECT_HOOKS]}
 
 
 def test_the_ui_may_not_import_reacts_effect_hooks() -> None:
@@ -193,24 +226,89 @@ def test_the_ui_may_not_import_reacts_effect_hooks() -> None:
     assert restriction(only) == {"paths": [EFFECT_HOOKS]}
 
 
-def test_only_a_ui_package_restricts_browser_globals() -> None:
+IN_BROWSER = (
+    "a browser global in a component: reach it in an atom over"
+    " @effect/platform-browser"
+)
+# The spread of the config's own options that each UI ban extends.
+EXTENDS = re.compile(r'\.\.\.restricted\("([a-z-]+)"\), ')
+
+
+def ui_bans(config: str) -> FrozenList[object]:
+    return FrozenList(
+        decode(EXTENDS.sub(r'"\1", ', line.strip().removesuffix(",")))
+        for line in config.splitlines()
+        if "no-restricted-globals" in line
+    )
+
+
+def test_only_a_ui_package_bans_browser_globals_and_reacts_effect_hooks() -> (
+    None
+):
     outcome = run(
         ("oxlint-config", "/std/oxlint.config.ts", *NESTED_FILES),
         inputs(NESTED, cwd="/work"),
     )
     (config,) = outcome.writes.values()
-    (browser,) = (
-        line for line in config.splitlines() if "no-restricted-globals" in line
+    assert ui_bans(config) == (
+        {
+            "files": ["/work/packages/app/**"],
+            "excludeFiles": list(TOOLING),
+            "rules": {
+                "no-restricted-globals": [
+                    "error",
+                    "no-restricted-globals",
+                    {"message": IN_BROWSER, "name": "window"},
+                    {"message": IN_BROWSER, "name": "document"},
+                    {"message": IN_BROWSER, "name": "localStorage"},
+                ],
+                "no-restricted-properties": [
+                    "error",
+                    "no-restricted-properties",
+                    *(
+                        {
+                            "message": IN_BROWSER,
+                            "object": "globalThis",
+                            "property": name,
+                        }
+                        for name in ("window", "document", "localStorage")
+                    ),
+                    *(
+                        {
+                            "message": IN_ATOMS,
+                            "object": "React",
+                            "property": name,
+                        }
+                        for name in ("useEffect", "useLayoutEffect")
+                    ),
+                ],
+            },
+        },
     )
-    scoped = (
-        '\t\t{"files": ["/work/packages/app/**"], "excludeFiles": ['
-        '"/work/**/*.test.{ts,tsx}"'
-    )
-    assert browser.startswith(scoped)
-    assert '"no-restricted-globals": ["error", ...restricted(' in browser
-    assert '"no-restricted-properties": ["error", ...restricted(' in browser
 
 
+def test_each_ui_package_bans_browser_globals_in_its_files() -> None:
+    texts = {
+        "a/package.json": named("@w/a", "ui"),
+        "b/package.json": named("@w/b", "ui"),
+    }
+    outcome = run(
+        ("oxlint-config", "/std/oxlint.config.ts", "a/x.tsx", "b/y.tsx"),
+        inputs(texts, cwd="/work"),
+    )
+    (config,) = outcome.writes.values()
+    assert FrozenList(map(scope, ui_bans(config))) == (
+        (("/work/a/**",), TOOLING),
+        (("/work/b/**",), TOOLING),
+    )
+
+
+CORE_MESSAGE = (
+    "the core imports only core packages, Effect's pure data modules and"
+    " HTTP API and RPC definitions; another module takes a purity:<module>"
+    " exception"
+)
+UNORDERED = "iterates in hash order: use a ReadonlyMap or a ReadonlySet"
 CORE_GROUP = (
     "**",
     "!./**",
@@ -269,40 +367,70 @@ def allowed(override: object) -> FrozenOrderedDict[str, object]:
 
 def test_the_core_imports_core_packages_and_effects_pure_modules() -> None:
     root, _, pure, _ = overrides(NESTED, *NESTED_FILES)
-    assert group(root) == CORE_GROUP
-    assert group(pure) == CORE_GROUP
-    assert allowed(root) == {
-        "effect": [
-            "Array",
-            "Data",
-            "Equal",
-            "Hash",
-            "Match",
-            "Number",
-            "Option",
-            "Order",
-            "Record",
-            "Result",
-            "Schema",
-            "String",
-            "Struct",
-            "flow",
-            "pipe",
+    expected = {
+        "paths": [
+            {
+                "name": "effect",
+                "allowImportNames": [
+                    "Array",
+                    "Data",
+                    "Equal",
+                    "Hash",
+                    "Match",
+                    "Number",
+                    "Option",
+                    "Order",
+                    "Record",
+                    "Result",
+                    "Schema",
+                    "String",
+                    "Struct",
+                    "flow",
+                    "pipe",
+                ],
+                "message": CORE_MESSAGE,
+            },
+            {
+                "name": "effect/Function",
+                "allowImportNames": ["flow", "pipe"],
+                "message": CORE_MESSAGE,
+            },
+            {
+                "name": "effect/http-api",
+                "allowImportNames": [
+                    "HttpApi",
+                    "HttpApiEndpoint",
+                    "HttpApiError",
+                    "HttpApiGroup",
+                    "HttpApiMiddleware",
+                    "HttpApiSchema",
+                    "HttpApiSecurity",
+                ],
+                "message": CORE_MESSAGE,
+            },
+            {
+                "name": "effect/rpc",
+                "allowImportNames": [
+                    "Rpc",
+                    "RpcGroup",
+                    "RpcMiddleware",
+                    "RpcSchema",
+                ],
+                "message": CORE_MESSAGE,
+            },
+            {"name": "effect/HashMap", "message": UNORDERED},
+            {"name": "effect/HashSet", "message": UNORDERED},
         ],
-        "effect/Function": ["flow", "pipe"],
-        "effect/http-api": [
-            "HttpApi",
-            "HttpApiEndpoint",
-            "HttpApiError",
-            "HttpApiGroup",
-            "HttpApiMiddleware",
-            "HttpApiSchema",
-            "HttpApiSecurity",
+        "patterns": [
+            {
+                "group": list(CORE_GROUP),
+                "caseSensitive": True,
+                "message": CORE_MESSAGE,
+            }
         ],
-        "effect/rpc": ["Rpc", "RpcGroup", "RpcMiddleware", "RpcSchema"],
-        "effect/HashMap": None,
-        "effect/HashSet": None,
     }
+    assert restriction(root) == expected
+    assert restriction(pure) == expected
 
 
 def test_the_core_imports_its_own_packages_subpath_imports() -> None:
@@ -321,13 +449,14 @@ def test_a_purity_exception_allows_its_module_in_its_core_files() -> None:
         + entry("packages/io/a.ts", "purity:other"),
     }
     *layers, excepted, wider = overrides(
-        texts, *NESTED_FILES, "y.ts", "packages/app/d.ts"
+        texts, *NESTED_FILES, "y.ts", "z.ts", "packages/app/d.ts"
     )
     assert len(layers) == len(NESTED)
-    assert scope(wider) == (("/work/y.ts",), TOOLING)
-    assert group(wider)[-2:] == ("!@w/io", "!@w/io/**")
+    assert scope(wider) == (("/work/y.ts", "/work/z.ts"), TOOLING)
+    assert group(wider) == (*CORE_GROUP, "!@w/io", "!@w/io/**")
     assert scope(excepted) == (("/work/x.ts",), TOOLING)
-    assert group(excepted)[-7:] == (
+    assert group(excepted) == (
+        *CORE_GROUP,
         "!lodash",
         "!lodash/**",
         "**/*/lodash",
@@ -349,7 +478,11 @@ def test_a_purity_exception_for_effect_keeps_hash_maps_banned() -> None:
         "effect/HashSet": None,
     }
     (barrel, *_) = paths(excepted)
-    assert barrel.get("importNames") == ["HashMap", "HashSet"]
+    assert barrel == {
+        "name": "effect",
+        "importNames": ["HashMap", "HashSet"],
+        "message": UNORDERED,
+    }
 
 
 def test_oxlint_config_writes_nothing_on_an_unknown_layer() -> None:

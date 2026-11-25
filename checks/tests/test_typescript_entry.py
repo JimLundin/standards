@@ -47,9 +47,9 @@ def entered(*lines: str) -> Outcome:
     )
 
 
-def test_entry_reads_the_records() -> None:
+def test_entry_reads_the_exceptions_and_the_records() -> None:
     assert request(("typescript-entry", "m.jsonl"), Inputs()) == Request(
-        FrozenList(("m.jsonl",))
+        FrozenList(("exceptions.toml", "m.jsonl"))
     )
 
 

@@ -1,6 +1,8 @@
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -20,13 +22,19 @@ from checks.core.values import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-LAYERS = FrozenOrderedSet(("core", "shell", "ui"))
-UNDECLARED = "core"
+
+class Layer(StrEnum):
+    CORE = "core"
+    SHELL = "shell"
+    UI = "ui"
+
+
+UNDECLARED = Layer.CORE
 LAYER = "standards.layer"
-USE = 'use "core", "shell" or "ui"'
+USE = f'use "{Layer.CORE}", "{Layer.SHELL}" or "{Layer.UI}"'
 # The layers outside the core, whose files the thin-shell rules measure and
 # mutation testing skips.
-OUTER_LAYERS = FrozenOrderedSet(("shell", "ui"))
+OUTER_LAYERS = FrozenOrderedSet((Layer.SHELL, Layer.UI))
 
 PURE = FrozenList((
     "Array",
@@ -78,9 +86,24 @@ IN_ATOMS = "an effect in a component: run it in an atom of effect/reactivity"
 BROWSER = FrozenList(("window", "document", "localStorage"))
 IN_BROWSER = "a browser global in a component: reach it in an atom over @effect/platform-browser"
 APART = FrozenOrderedDict({
-    "shell": ("ui", "the shell meets the UI only through contracts in core"),
-    "ui": ("shell", "the UI meets the shell only through contracts in core"),
+    Layer.SHELL: (
+        Layer.UI,
+        "the shell meets the UI only through contracts in core",
+    ),
+    Layer.UI: (
+        Layer.SHELL,
+        "the UI meets the shell only through contracts in core",
+    ),
 })
+
+
+@dataclass(frozen=True, slots=True)
+class Unknown:
+    """A package whose package.json declares a layer that names none, as
+    that layer's JSON."""
+
+    folder: str
+    written: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +112,7 @@ class Package:
 
     folder: str
     name: str
-    layer: object
+    layer: Layer
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,19 +122,29 @@ class Placement:
 
 
 @dataclass(frozen=True, slots=True)
-class Mapped:
-    """A line of the layer map: a file's layer, its package's folder ("." at
-    the root) and its path."""
+class Placed:
+    """Files in their packages, and the packages whose layer is unknown."""
 
-    layer: str
-    root: str
+    placements: FrozenList[Placement]
+    unknown: FrozenOrderedSet[Unknown]
+
+
+@dataclass(frozen=True, slots=True)
+class Mapped:
+    """A line of the layer map, without its package's folder."""
+
+    layer: Layer
     path: str
 
 
+def named_layer(value: object) -> Layer | None:
+    return Layer(value) if value in Layer else None
+
+
 def folders(file: str) -> FrozenList[str]:
-    parts = file.split("/")[:-1]
     return FrozenList(
-        "/".join(parts[:end]) for end in range(len(parts), -1, -1)
+        "" if folder == PurePosixPath() else str(folder)
+        for folder in PurePosixPath(file).parents
     )
 
 
@@ -127,37 +160,34 @@ def manifests(files: Sequence[str]) -> FrozenList[str]:
     )
 
 
-def package_at(texts: Mapping[str, str], folder: str) -> Package:
+def package_at(texts: Mapping[str, str], folder: str) -> Package | Unknown:
     data = parse_json(texts.get(manifest(folder)))
+    value = lookup(data, LAYER)
+    layer = UNDECLARED if value is None else named_layer(value)
+    if layer is None:
+        return Unknown(folder, json.dumps(value))
     name = data.get("name")
-    layer = lookup(data, LAYER)
-    return Package(
-        folder,
-        name if isinstance(name, str) else "",
-        UNDECLARED if layer is None else layer,
+    return Package(folder, name if isinstance(name, str) else "", layer)
+
+
+def nearest(file: str, texts: Mapping[str, str]) -> str:
+    return next(
+        (folder for folder in folders(file) if manifest(folder) in texts), ""
     )
 
 
-def placements(
-    files: Sequence[str], texts: Mapping[str, str]
-) -> FrozenList[Placement]:
-    return FrozenList(
-        Placement(
-            file,
-            package_at(
-                texts,
-                next(
-                    (
-                        folder
-                        for folder in folders(file)
-                        if manifest(folder) in texts
-                    ),
-                    "",
-                ),
-            ),
-        )
-        for file in files
-    )
+def placed(files: Sequence[str], texts: Mapping[str, str]) -> Placed:
+    found = Placed(FrozenList(), FrozenOrderedSet())
+    for file in files:
+        match package_at(texts, nearest(file, texts)):
+            case Package() as package:
+                placements = (*found.placements, Placement(file, package))
+                found = replace(found, placements=FrozenList(placements))
+            case Unknown() as unknown:
+                found = replace(
+                    found, unknown=found.unknown | FrozenOrderedSet((unknown,))
+                )
+    return found
 
 
 def packages_of(placed: Sequence[Placement]) -> FrozenList[Package]:
@@ -169,16 +199,10 @@ def packages_of(placed: Sequence[Placement]) -> FrozenList[Package]:
     )
 
 
-def layer_issue(package: Package) -> str:
-    layer = json.dumps(package.layer)
-    return f"{manifest(package.folder)}: {LAYER} is {layer}; {USE}"
-
-
-def layer_issues(placed: Sequence[Placement]) -> FrozenList[str]:
+def layer_issues(unknown: FrozenOrderedSet[Unknown]) -> FrozenList[str]:
     return FrozenList(
-        layer_issue(package)
-        for package in packages_of(placed)
-        if not (isinstance(package.layer, str) and package.layer in LAYERS)
+        f"{manifest(package.folder)}: {LAYER} is {package.written}; {USE}"
+        for package in unknown
     )
 
 
@@ -221,34 +245,33 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    placed = placements(mapped(arguments), inputs.texts)
-    if issues := layer_issues(placed):
+    found = placed(mapped(arguments), inputs.texts)
+    if issues := layer_issues(found.unknown):
         return Outcome(issues, 1)
     return listing(
         FrozenList(
             "\t".join((
-                str(placement.package.layer),
+                placement.package.layer,
                 placement.package.folder or ".",
                 placement.file,
             ))
-            for placement in placed
+            for placement in found.placements
         )
     )
 
 
-def mapped_line(line: str) -> Mapped | None:
+def mapped_line(line: str) -> FrozenList[Mapped]:
+    """The line's item, or none for a line that isn't one."""
     match line.split("\t"):
-        case [layer, root, path]:
-            return Mapped(layer, root, path)
+        case [name, _, path] if (layer := named_layer(name)) is not None:
+            return FrozenList((Mapped(layer, path),))
         case _:
-            return None
+            return FrozenList()
 
 
 def layer_map(text: str) -> FrozenList[Mapped]:
     return FrozenList(
-        item
-        for line in text.splitlines()
-        if (item := mapped_line(line)) is not None
+        item for line in text.splitlines() for item in mapped_line(line)
     )
 
 
@@ -366,12 +389,20 @@ def extended(rule: str, added: Sequence[object]) -> str:
     return f'{name}: ["error", ...restricted({name}), {listed}]'
 
 
-def browser() -> str:
+# The UI's bans beyond its imports: browser globals, and React's effect
+# hooks read off its default or namespace import.
+def ui_bans() -> str:
     globals_ = [{"message": IN_BROWSER, "name": name} for name in BROWSER]
     # Unicorn/prefer-global-this reports a read off window or self.
     properties = [
-        {"message": IN_BROWSER, "object": "globalThis", "property": name}
-        for name in BROWSER
+        *(
+            {"message": IN_BROWSER, "object": "globalThis", "property": name}
+            for name in BROWSER
+        ),
+        *(
+            {"message": IN_ATOMS, "object": "React", "property": name}
+            for name in EFFECT_HOOKS
+        ),
     ]
     return (
         f"{{{extended('no-restricted-globals', globals_)},"
@@ -394,7 +425,7 @@ def nested_in(package: Package, packages: Sequence[Package]) -> FrozenList[str]:
     )
 
 
-def names_in(packages: Sequence[Package], layer: str) -> FrozenList[str]:
+def names_in(packages: Sequence[Package], layer: Layer) -> FrozenList[str]:
     return FrozenList(
         package.name
         for package in packages
@@ -403,9 +434,9 @@ def names_in(packages: Sequence[Package], layer: str) -> FrozenList[str]:
 
 
 def layer_rule(package: Package, packages: Sequence[Package]) -> object:
-    if package.layer == UNDECLARED:
-        return core_rule(names_in(packages, UNDECLARED), ())
-    other, message = APART[str(package.layer)]
+    if package.layer == Layer.CORE:
+        return core_rule(names_in(packages, Layer.CORE), ())
+    other, message = APART[package.layer]
     group = tuple(
         glob
         for name in names_in(packages, other)
@@ -419,7 +450,7 @@ def layer_rule(package: Package, packages: Sequence[Package]) -> object:
                 "message": IN_ATOMS,
             }
         ]
-        if package.layer == "ui"
+        if package.layer == Layer.UI
         else []
     )
     patterns = (
@@ -443,7 +474,7 @@ def allowances(
         FrozenOrderedDict()
     )
     for placement in placed:
-        if placement.package.layer != UNDECLARED:
+        if placement.package.layer != Layer.CORE:
             continue
         allowed = FrozenList(
             found[1]
@@ -461,10 +492,10 @@ def import_overrides(
     root: str, placed: Sequence[Placement], exceptions: Exceptions
 ) -> str:
     """An override per package restricting its imports to its layer's, one
-    per UI package restricting browser globals, then one per set of modules
+    per UI package with its bans beyond imports, then one per set of modules
     that purity exceptions allow core files."""
     packages = packages_of(placed)
-    core = names_in(packages, UNDECLARED)
+    core = names_in(packages, Layer.CORE)
     layers = "".join(
         scoped(
             root,
@@ -475,18 +506,18 @@ def import_overrides(
         for package in packages
         if (rule := layer_rule(package, packages)) is not None
     )
-    browsers = "".join(
+    bans = "".join(
         scoped(
             root,
             (folder_glob(package.folder),),
             nested_in(package, packages),
-            browser(),
+            ui_bans(),
         )
         for package in packages
-        if package.layer == "ui"
+        if package.layer == Layer.UI
     )
     excepted = "".join(
         scoped(root, files, (), imports(core_rule(core, allowed)))
         for allowed, files in allowances(placed, exceptions).items()
     )
-    return layers + browsers + excepted
+    return layers + bans + excepted

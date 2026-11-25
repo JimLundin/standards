@@ -1,6 +1,7 @@
 import json
 lazy from collections.abc import Mapping
 
+from checks.core.typescript_layers import Layer
 from checks.core.typescript_measure import (
     Entry,
     Failure,
@@ -52,13 +53,24 @@ def test_each_kind_of_record_is_read_once_into_its_type() -> None:
     ))
     assert records(text) == (
         Entry(
-            "shell", "packages/shell", "packages/shell/main.ts", 5, "runMain"
+            Layer.SHELL,
+            "packages/shell",
+            "packages/shell/main.ts",
+            5,
+            "runMain",
         ),
-        Function("ui", "packages/ui", "packages/ui/src/view.tsx", 2, "View", 3),
+        Function(
+            Layer.UI, "packages/ui", "packages/ui/src/view.tsx", 2, "View", 3
+        ),
         Reached(
-            "core", CORE, f"{CORE}/src/a.ts", 3, "promised", "reaches `Promise`"
+            Layer.CORE,
+            CORE,
+            f"{CORE}/src/a.ts",
+            3,
+            "promised",
+            "reaches `Promise`",
         ),
-        Failure("core", CORE, f"{CORE}/src/gone.ts", "not in the project"),
+        Failure(Layer.CORE, CORE, f"{CORE}/src/gone.ts", "not in the project"),
     )
 
 
@@ -66,6 +78,14 @@ def test_lines_that_arent_records_are_skipped() -> None:
     text = "\n".join((
         "warning: something",
         compact({"function": "f", "decisions": "2", "layer": "core"}),
+        compact({
+            "decisions": 2,
+            "function": "f",
+            "layer": "Core",
+            "line": 1,
+            "path": f"{CORE}/src/a.ts",
+            "root": CORE,
+        }),
         "",
     ))
     assert records(text) == ()

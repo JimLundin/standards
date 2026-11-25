@@ -2,16 +2,16 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList
 
-from checks.core.exceptions import API, EXCEPTIONS, exceptions_in
+from checks.core.exceptions import API, exceptions_in
+from checks.core.typescript_layers import Layer
 from checks.core.typescript_measure import Failure, Reached, records
-from checks.core.values import Inputs, Outcome, Request, summarized, text
+from checks.core.values import Inputs, Outcome, summarized, text
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from checks.core.typescript_measure import Record
 
-CORE = "core"
 ONLY_DATA = "; the core's API takes only data"
 
 
@@ -27,12 +27,8 @@ def judged(items: Sequence[Record]) -> FrozenList[Reached | Failure]:
     return FrozenList(
         item
         for item in items
-        if isinstance(item, (Reached, Failure)) and item.layer == CORE
+        if isinstance(item, (Reached, Failure)) and item.layer == Layer.CORE
     )
-
-
-def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
-    return Request(FrozenList((EXCEPTIONS, arguments[0])))
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
