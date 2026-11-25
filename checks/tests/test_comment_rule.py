@@ -1,46 +1,23 @@
-import json
 lazy from collections.abc import Mapping
 
 import pytest
 from ordered import FrozenList
 
-from checks.core.policy import request, run
-from checks.core.values import Inputs
+from checks.core.policy import run
 from tests.helpers import entry, inputs, lines
 
 STD = "C:/standards"
-ROOT = "/work"
 RESHAPE = (
     "fix: name, type or restructure the code so it needs none,"
     " or, if it explains what we can't reshape, a `comment` exception with"
     " its reason"
 )
-METADATA = json.dumps({
-    "workspace_root": ROOT,
-    "packages": [
-        {
-            "name": "app",
-            "targets": [
-                {"kind": ["lib"], "src_path": f"{ROOT}/src/lib.rs"},
-                {"kind": ["bin"], "src_path": f"{ROOT}/src/main.rs"},
-                {"kind": ["bin"], "src_path": f"{ROOT}/src/bin/tool/main.rs"},
-            ],
-        }
-    ],
-})
-OPTION = "--metadata=/logs/metadata.json"
 
 
-def checked(
-    language: str, texts: Mapping[str, str], *options: str
-) -> FrozenList[str]:
+def checked(language: str, texts: Mapping[str, str]) -> FrozenList[str]:
     files = FrozenList(path for path in texts if path != "exceptions.toml")
-    found = run((language, STD, *options, *files), inputs(texts))
+    found = run((language, STD, *files), inputs(texts))
     return lines(found)
-
-
-def rust(texts: Mapping[str, str]) -> FrozenList[str]:
-    return checked("rust", {**texts, "/logs/metadata.json": METADATA}, OPTION)
 
 
 def failed(*places: str, why: str = "comment") -> FrozenList[str]:
@@ -83,39 +60,18 @@ def test_a_comment_marker_inside_a_literal_passes(
     assert checked(language, {file: text}) == ("All checks passed",)
 
 
-DOCUMENTED = (
-    "/// Public.\npub fn a() {}\n"
-    "/// Crate.\npub(crate) fn b() {}\n"
-    "/// Private.\nfn c() {}\n"
-)
-
-
-def test_a_doc_comment_passes_only_on_a_public_item_of_a_library() -> None:
-    assert rust({"src/lib.rs": DOCUMENTED, "src/m.rs": DOCUMENTED}) == failed(
-        "src/lib.rs:3",
-        "src/lib.rs:5",
-        "src/m.rs:3",
-        "src/m.rs:5",
-        why="doc comment on an item that isn't public in a library",
+def test_a_doc_comment_on_a_public_function_of_a_library_fails() -> None:
+    text = "/// Public.\npub fn a() {}\n"
+    assert checked("rust", {"src/lib.rs": text}) == failed(
+        "src/lib.rs:1", why="doc comment"
     )
 
 
-OUTSIDE = "doc comment outside a library"
-
-
-@pytest.mark.parametrize(
-    "file", ["src/main.rs", "src/bin/tool/main.rs", "src/bin/tool/args.rs"]
-)
-def test_a_doc_comment_of_a_binary_target_fails(file: str) -> None:
-    assert rust({"src/lib.rs": "", file: "/// Public.\npub fn a() {}\n"}) == (
-        failed(f"{file}:1", why=OUTSIDE)
+def test_an_inner_doc_comment_atop_a_library_root_fails() -> None:
+    text = "//! The crate.\n\npub fn a() {}\n"
+    assert checked("rust", {"src/lib.rs": text}) == failed(
+        "src/lib.rs:1", why="doc comment"
     )
-
-
-def test_a_doc_comment_outside_every_library_fails() -> None:
-    texts = {"tests/it.rs": "/// Public.\npub fn a() {}\n"}
-    assert rust(texts) == failed("tests/it.rs:1", why=OUTSIDE)
-    assert checked("rust", texts) == failed("tests/it.rs:1", why=OUTSIDE)
 
 
 SAFE = (
@@ -281,16 +237,3 @@ def test_a_triple_slash_directive_fails_naming_compiler_options_types() -> None:
         f"a.ts:1: {DIRECTIVE}",
         "Found 1 issues",
     )
-
-
-def test_a_doc_comment_inside_a_macro_body_fails() -> None:
-    text = "macro_rules! m {\n    () => {\n        /// Doc.\n        pub fn a() {}\n    };\n}\n"
-    assert rust({"src/lib.rs": text}) == failed(
-        "src/lib.rs:3", why="doc comment on no item, as in a macro body"
-    )
-
-
-def test_request_reads_the_metadata() -> None:
-    paths = request(("rust", STD, OPTION, "src/lib.rs"), Inputs()).paths
-    assert "/logs/metadata.json" in paths
-    assert OPTION not in paths

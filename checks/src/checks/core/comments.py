@@ -36,25 +36,10 @@ DOC_MARKERS = FrozenOrderedSet((
     "outer_doc_comment_marker",
     "inner_doc_comment_marker",
 ))
-BODIES = FrozenOrderedSet(("declaration_list", "block"))
 ATTRIBUTES = FrozenOrderedSet(("attribute_item", "inner_attribute_item"))
-SKIPPED = FrozenOrderedSet((*RUST_COMMENTS, "attribute_item"))
-PUBLIC_MEMBERS = FrozenOrderedDict({
-    "enum_variant_list": "enum_item",
-    "declaration_list": "trait_item",
-})
 STATEMENTS = FrozenOrderedSet(("expression_statement", "let_declaration"))
 UNSAFE = "unsafe_block"
-NO_LIBRARIES: FrozenOrderedSet[str] = FrozenOrderedSet()
 DOCUMENTED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
-
-
-@dataclass(frozen=True, slots=True)
-class Item:
-    kind: str
-    name: str
-    line: int
-    public: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +47,6 @@ class Comment:
     line: int
     kind: Kind
     text: str
-    item: Item | None = None
     precedes: str = ""
 
 
@@ -76,7 +60,6 @@ class Attribute:
 @dataclass(frozen=True, slots=True)
 class Source:
     text: str
-    library: bool
     comments: FrozenList[Comment]
     attributes: FrozenList[Attribute]
 
@@ -132,44 +115,6 @@ def has_doc_marker(node: Node) -> bool:
     return any(child.type in DOC_MARKERS for child in node.named_children)
 
 
-def declared_public(node: Node) -> bool:
-    return any(
-        child.type == "visibility_modifier" and node_text(child) == "pub"
-        for child in node.named_children
-    )
-
-
-def is_public(node: Node) -> bool:
-    if node.type == "source_file" or declared_public(node):
-        return True
-    parent = node.parent
-    owner = parent.parent if parent is not None else None
-    return (
-        parent is not None
-        and owner is not None
-        and PUBLIC_MEMBERS.get(parent.type) == owner.type
-        and is_public(owner)
-    )
-
-
-def documented(comment: Node) -> Node | None:
-    if comment.parent is not None and comment.parent.type == "token_tree":
-        return None
-    inner = any(
-        child.type == "inner_doc_comment_marker"
-        for child in comment.named_children
-    )
-    if inner:
-        parent = comment.parent
-        if parent is not None and parent.type in BODIES:
-            return parent.parent
-        return parent
-    sibling = comment.next_named_sibling
-    while sibling is not None and sibling.type in SKIPPED:
-        sibling = sibling.next_named_sibling
-    return sibling
-
-
 def opens_unsafe(statement: Node) -> bool:
     return any(
         node.type == UNSAFE
@@ -189,24 +134,12 @@ def preceded(comment: Node) -> str:
     return sibling.type
 
 
-def item_of(node: Node, *, library: bool) -> Item:
-    name = node.child_by_field_name("name")
-    return Item(
-        node.type,
-        "" if name is None else node_text(name),
-        node.start_point.row + 1,
-        library and is_public(node),
-    )
-
-
-def rust_comment(node: Node, *, library: bool) -> Comment:
+def rust_comment(node: Node) -> Comment:
     line, text = node.start_point.row + 1, node_text(node).strip()
-    if not has_doc_marker(node):
-        kind = "line" if node.type == "line_comment" else "block"
-        return Comment(line, kind, text, precedes=preceded(node))
-    item = documented(node)
-    found = None if item is None else item_of(item, library=library)
-    return Comment(line, "doc", text, found)
+    if has_doc_marker(node):
+        return Comment(line, "doc", text)
+    kind = "line" if node.type == "line_comment" else "block"
+    return Comment(line, kind, text, precedes=preceded(node))
 
 
 def rust_attribute(node: Node) -> Attribute:
@@ -220,16 +153,13 @@ def rust_attribute(node: Node) -> Attribute:
     return Attribute(node.start_point.row + 1, node_text(path), arguments)
 
 
-def rust_source(text: str, *, library: bool) -> Source:
+def rust_source(text: str) -> Source:
     tree = Parser(RUST).parse(text.encode())
     nodes = FrozenList(named_children(tree.root_node))
     return Source(
         text,
-        library,
         FrozenList(
-            rust_comment(node, library=library)
-            for node in nodes
-            if node.type in RUST_COMMENTS
+            rust_comment(node) for node in nodes if node.type in RUST_COMMENTS
         ),
         FrozenList(
             rust_attribute(node) for node in nodes if node.type in ATTRIBUTES
@@ -252,9 +182,9 @@ def typescript_comments(file: str, text: str) -> Iterator[Comment]:
             yield Comment(node.start_point.row + 1, typescript_kind(body), body)
 
 
-def parse(file: str, text: str, *, library: bool = False) -> Source:
+def parse(file: str, text: str) -> Source:
     if is_source("rust", file):
-        return rust_source(text, library=library)
+        return rust_source(text)
     found: FrozenList[Comment] = FrozenList()
     if is_source("python", file):
         found = FrozenList(
@@ -265,22 +195,18 @@ def parse(file: str, text: str, *, library: bool = False) -> Source:
         )
     elif is_source("typescript", file):
         found = FrozenList(typescript_comments(file, text))
-    return Source(text, library, found, FrozenList())
+    return Source(text, found, FrozenList())
 
 
-def comments(
-    file: str, text: str, *, library: bool = False
-) -> Iterator[Comment]:
-    yield from parse(file, text, library=library).comments
+def comments(file: str, text: str) -> Iterator[Comment]:
+    yield from parse(file, text).comments
 
 
 def sources(
-    language: str,
-    texts: Mapping[str, str],
-    libraries: FrozenOrderedSet[str] = NO_LIBRARIES,
+    language: str, texts: Mapping[str, str]
 ) -> FrozenOrderedDict[str, Source]:
     return FrozenOrderedDict(
-        (file, parse(file, text, library=file in libraries))
+        (file, parse(file, text))
         for file, text in texts.items()
         if is_source(language, file)
     )

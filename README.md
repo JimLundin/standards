@@ -86,10 +86,9 @@ Exceptions live only in a project's `exceptions.toml`; suppression comments and 
 The exceptions check fails every comment in a Python, Rust or TypeScript source file, by file and line: a line or block comment, a doc comment or a Python docstring. Shell scripts and config files are out of scope. A comment is prose the next reader must trust unchecked, so the fix is to name, type or restructure the code until it needs none. Rust and TypeScript are parsed with tree-sitter, so `//` inside a string, template literal or regex literal is no comment. The check keeps by itself:
 
 - a Rust `// SAFETY:` comment directly before an `unsafe` block, or before a statement whose first line opens one, which `clippy::undocumented_unsafe_blocks` requires;
-- a Rust `///` or `//!` doc comment on a `pub` item of a library target, the library's public API: a file under the folder of a lib target's root, other than a bin target's root or a file under a bin's own folder, as `cargo metadata` lists them;
 - a licence header: the file's first comment block, before any code, naming `SPDX-License-Identifier` or `Copyright`.
 
-A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppression comment is reported once, as a suppression. Any other comment that must stay takes a `comment` exception naming its file, with the reason the code can't say it.
+A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppression comment is reported once, as a suppression. Any other comment that must stay takes a `comment` exception naming its file, with the reason the code can't say it. The Rust fragment allows clippy's `missing_errors_doc` and `missing_panics_doc`, which would demand a doc comment: a function's contract is its signature and its error type.
 
 ## Rust
 

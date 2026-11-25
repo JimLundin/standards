@@ -2,7 +2,7 @@ import re
 from itertools import takewhile
 from typing import TYPE_CHECKING
 
-from ordered import FrozenList, FrozenOrderedSet
+from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core.comments import UNSAFE
 from checks.core.exceptions import COMMENT, Exceptions, Issue
@@ -65,14 +65,6 @@ def is_safety(block: FrozenList[Comment]) -> bool:
     return bool(SAFETY.match(block[0].text)) and block[-1].precedes == UNSAFE
 
 
-def is_public_doc(comment: Comment) -> bool:
-    return (
-        comment.kind == "doc"
-        and comment.item is not None
-        and comment.item.public
-    )
-
-
 def kept(
     language: str, text: str, found: FrozenList[Comment]
 ) -> Iterator[Comment]:
@@ -82,25 +74,18 @@ def kept(
         yield from (
             comment
             for comment in block
-            if whole
-            or is_public_doc(comment)
-            or is_suppression(language, comment)
+            if whole or is_suppression(language, comment)
         )
 
 
-def doc_failure(language: str, comment: Comment, *, library: bool) -> str:
-    if language == "python":
-        return "docstring"
-    if language == "typescript":
-        return "JSDoc comment"
-    if not library:
-        return "doc comment outside a library"
-    if comment.item is None:
-        return "doc comment on no item, as in a macro body"
-    return "doc comment on an item that isn't public in a library"
+DOC_COMMENTS = FrozenOrderedDict({
+    "python": "docstring",
+    "rust": "doc comment",
+    "typescript": "JSDoc comment",
+})
 
 
-def failure(language: str, comment: Comment, *, library: bool) -> str:
+def failure(language: str, comment: Comment) -> str:
     if language == "python" and TYPE_COMMENT.match(comment.text):
         return "type comment; fix: use an annotation"
     if language == "typescript" and DIRECTIVE.match(comment.text):
@@ -109,17 +94,14 @@ def failure(language: str, comment: Comment, *, library: bool) -> str:
             " `compilerOptions.types` in tsconfig.json"
         )
     if comment.kind in {"doc", "docstring"}:
-        return f"{doc_failure(language, comment, library=library)}; {RESHAPE}"
+        return f"{DOC_COMMENTS[language]}; {RESHAPE}"
     return f"comment; {RESHAPE}"
 
 
 def file_issues(language: str, file: str, source: Source) -> Iterator[Issue]:
     allowed = FrozenOrderedSet(kept(language, source.text, source.comments))
     yield from (
-        Issue(
-            f"{file}:{comment.line}",
-            failure(language, comment, library=source.library),
-        )
+        Issue(f"{file}:{comment.line}", failure(language, comment))
         for comment in source.comments
         if comment not in allowed
     )
