@@ -15,6 +15,7 @@ interface Tally {
 }
 
 const NONE = 0;
+const NEXT = 1;
 const MANY = 2;
 const FIRST_LINE = 1;
 const MODULE = "(module)";
@@ -46,34 +47,36 @@ const MEMBERS: ReadonlySet<Kind> = new Set(["constructor", "member"]);
 // Closures and members belong to the function they're written in.
 const ENCLOSED: ReadonlySet<Kind> = new Set(["closure", "member"]);
 
-const operator = ({ children: [, token] }: Syntax): Kind => token?.kind ?? "other";
+// The kinds of a node's logical operator tokens: one for a logical binary, and none for any other node.
+const logical = (node: Syntax): ReadonlyArray<Kind> =>
+  node.children.filter((child) => LOGICAL.has(child.kind)).map((child) => child.kind);
 
-// A run of one logical operator is one decision, counted at its first operator.
-const begins = (node: Syntax): boolean => {
-  const [left] = node.children;
-  return (
-    LOGICAL.has(operator(node)) && !(left?.kind === "binary" && operator(left) === operator(node))
+// A run of one logical operator is one decision, counted at its first operator: a binary of it whose operands aren't binaries of it.
+const begins = (node: Syntax): boolean =>
+  logical(node).some(
+    (operator) => !node.children.some((operand) => logical(operand).includes(operator)),
   );
-};
 
 // Whether a call's callee names a combinator that branches, through the file's imports.
-const branches = ({ children: [target] }: Syntax, known: ReadonlyArray<Binding>): boolean => {
-  const reference = target === undefined ? undefined : resolved(known, target);
-  return (
-    reference !== undefined && COMBINATORS.some((combinator) => refersTo(reference, combinator))
-  );
-};
-
-const cases = (node: Syntax): number =>
+const branches = (node: Syntax, known: ReadonlyArray<Binding>): boolean =>
   node.children
-    .filter((child) => child.kind === "cases")
-    .flatMap((block) => block.children)
-    .filter((child) => child.kind === "case").length;
+    .slice(NONE, NEXT)
+    .map((target) => {
+      const reference = resolved(known, target);
+      return (
+        reference !== undefined && COMBINATORS.some((combinator) => refersTo(reference, combinator))
+      );
+    })
+    .includes(true);
+
+// A switch's case and default clauses.
+const cases = (node: Syntax): number =>
+  node.children.filter((child) => child.kind === "cases").flatMap((block) => block.children).length;
 
 const own = (node: Syntax, known: ReadonlyArray<Binding>): boolean =>
   WRITTEN.has(node.kind) ||
-  (node.kind === "switch" && cases(node) >= MANY) ||
-  (node.kind === "binary" && begins(node)) ||
+  cases(node) >= MANY ||
+  begins(node) ||
   (node.kind === "call" && branches(node, known));
 
 const opens = (node: Syntax, parent: Kind, top: boolean): boolean =>
@@ -116,7 +119,7 @@ const visitor = (known: ReadonlyArray<Binding>): Visit => {
 
 // Each function of a source file with its decisions, after its module's own statements if they make any.
 const functions = (file: Syntax): ReadonlyArray<Measured> => {
-  const { decisions, functions: found } = visitor(bindings(file))(file, "other", true);
+  const { decisions, functions: found } = visitor(bindings(file))(file, file.kind, true);
   const module: ReadonlyArray<Measured> =
     decisions > NONE ? [{ decisions, line: FIRST_LINE, name: MODULE }] : [];
   return [...module, ...found];

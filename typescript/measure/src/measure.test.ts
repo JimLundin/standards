@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem, Path, Schema } from "effect";
 import { describe, expect, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
 import { measure } from "./measure.ts";
@@ -69,10 +69,10 @@ export const cases = (a: number): number => {
       return 2;
   }
 };
-export const oneCase = (a: number): number => {
-  switch (a) {
+export const oneCase = (a: { readonly kind: number }): number => {
+  switch (a.kind) {
     default:
-      return a;
+      return 1;
   }
 };
 export const loops = (xs: ReadonlyArray<number>): void => {
@@ -86,6 +86,7 @@ export const runs = (a: boolean, b: boolean, c: boolean): boolean => a && b && c
 export const mixed = (a: boolean, b: boolean, c: boolean): boolean => (a && b) || c;
 export const coalesced = (a?: number, b?: number): number => a ?? b ?? 0;
 export const bitwise = (a: number, b: number): boolean => (a & b) === (a | b);
+export const unparenthesized = (a: boolean, b: boolean, c: boolean): boolean => a && b || c;
 `;
 
 const closures = `export const mapped = (xs: ReadonlyArray<number>): ReadonlyArray<number> => xs.map((x) => x + 1);
@@ -125,12 +126,16 @@ export const program = E.if(true, { onTrue: () => E.void, onFalse: () => E.void 
 export const matcher = when({ _tag: "A" }, () => 1);
 export const chosen = matched({ onNone: () => 0, onSome: () => 1 });
 export const settled = R.match(R.succeed(1), { onFailure: () => 0, onSuccess: () => 1 });
+export const passed = E.map(E.void, E.when);
 `;
 
 const imitations = `import { Effect as Local } from "./effect.ts";
+import { when as whenever } from "effect/Match";
 const Option = { match: (a: number): number => a };
+const when = (a: number): number => a;
 export const local = Local.if(true, {});
 export const own = Option.match(1);
+export const mine = when(1);
 `;
 
 const view = `import { Option } from "effect";
@@ -149,6 +154,17 @@ export class Greeter extends Schema.Class<Greeter>("Greeter")({ name: Schema.Str
     return this.name ? "hi" : "";
   }
 }
+`;
+
+const named = `export class Counter { constructor(start: boolean) { if (start) {} } }
+export const { picked } = { picked: (a: boolean): number => (a ? 1 : 2) };
+export function
+late(a: boolean): number { return a ? 1 : 2; }
+export default (a: boolean): number => (a ? 1 : 2);
+`;
+
+const statements = `[1].map((x) => { const kept = x; return kept ? kept : 0; });
+[{ get value() { const inner = 1; return inner || 0; } }];
 `;
 
 const main = `import { NodeRuntime } from "@effect/platform-node";
@@ -170,6 +186,7 @@ describe("the decisions of a function", () => {
       ["mixed", 32, 2],
       ["coalesced", 33, 1],
       ["bitwise", 34, 0],
+      ["unparenthesized", 35, 2],
     ]),
   );
 
@@ -190,21 +207,26 @@ describe("the decisions of a function", () => {
       ["matcher", 11, 2],
     ]),
   );
+});
 
+describe("the combinators of a file's imports", () => {
   it.effect("counts a combinator imported under another name, or by its own name", () =>
     counts(inShell(`${shell}/src/aliased.ts`), aliased, [
       ["program", 5, 1],
       ["matcher", 6, 1],
       ["chosen", 7, 1],
       ["settled", 8, 1],
+      ["passed", 9, 0],
     ]),
   );
 
   it.effect("counts no call spelled like a combinator that isn't imported from Effect", () =>
     counts(inShell(`${shell}/src/imitations.ts`), imitations, [
-      ["Option", 2, 0],
-      ["local", 3, 0],
-      ["own", 4, 0],
+      ["Option", 3, 0],
+      ["when", 4, 0],
+      ["local", 5, 0],
+      ["own", 6, 0],
+      ["mine", 7, 0],
     ]),
   );
 });
@@ -227,8 +249,36 @@ describe("the functions of a file", () => {
     ),
   );
 
+  it.effect(
+    "names a constructor, a default export and a function without a name, at its name's line",
+    () =>
+      counts(inShell(`${shell}/src/named.ts`), named, [
+        ["Counter", 1, 0],
+        ["constructor", 1, 1],
+        ["(anonymous)", 2, 1],
+        ["late", 4, 1],
+        ["default", 5, 1],
+      ]),
+  );
+});
+
+describe("the module's own statements", () => {
   it.effect("counts the decisions of a module's own statements as the module's", () =>
     counts(inShell(`${shell}/main.ts`), main, [["(module)", 1, 1]]),
+  );
+
+  it.effect("counts the declarations in a module statement's closures as the module's", () =>
+    counts(inShell(`${shell}/src/statements.ts`), statements, [["(module)", 1, 2]]),
+  );
+});
+
+const web = { layer: "web", path: `${shell}/src/web.ts`, root: shell } as const;
+
+describe("the layer map", () => {
+  it.effect("rejects a layer other than core, shell and ui", () =>
+    Effect.map(Effect.flip(measured(web, "export {};\n")), (failure) => {
+      expect(Schema.isSchemaError(failure)).toBe(true);
+    }),
   );
 
   it.effect("reports a file it can't read", () => {

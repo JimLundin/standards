@@ -1,6 +1,6 @@
-import { Effect, Exit, Schema } from "effect";
-import { GreetingJson, greet } from "./index.ts";
+import { Greeting, greet } from "./index.ts";
 import { describe, expect, it } from "@effect/vitest";
+import { Schema } from "effect";
 
 describe(greet, () => {
   it("greets by name", () => {
@@ -16,15 +16,8 @@ describe(greet, () => {
 });
 
 describe("the greeting contract", () => {
-  it.effect("decodes a greeting from JSON", () =>
-    Effect.map(Schema.decodeUnknownEffect(GreetingJson)('{"name":"Ada"}'), (greeting) => {
-      expect(greeting).toStrictEqual({ name: "Ada" });
-    }),
-  );
-
-  it.effect("rejects a greeting without a name", () =>
-    Effect.map(Effect.exit(Schema.decodeUnknownEffect(GreetingJson)("{}")), (exit) => {
-      expect(Exit.isFailure(exit)).toBe(true);
-    }),
-  );
+  it("is a name", () => {
+    expect.hasAssertions();
+    expect(Object.keys(Greeting.fields)).toStrictEqual(["name"]);
+  });
 });

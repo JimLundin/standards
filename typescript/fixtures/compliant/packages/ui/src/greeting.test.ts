@@ -7,11 +7,11 @@ import { KeyValueStore } from "effect/persistence";
 
 const stored = Layer.effect(
   KeyValueStore.KeyValueStore,
-  Effect.tap(KeyValueStore.KeyValueStore, (store) =>
-    KeyValueStore.toSchemaStore(store, Greeting).set("greeting", {
-      name: "Ada",
-    }),
-  ),
+  Effect.gen(function* storeGreeting() {
+    const store = yield* KeyValueStore.KeyValueStore;
+    yield* KeyValueStore.toSchemaStore(store, Greeting).set("greeting", { name: "Ada" });
+    return store;
+  }),
 ).pipe(Layer.provide(KeyValueStore.layerMemory), Layer.orDie);
 
 describe("the UI's greeting", () => {

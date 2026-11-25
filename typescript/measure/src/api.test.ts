@@ -74,7 +74,12 @@ export class Runner {
   run(): number {
     return 1;
   }
+  stop(): void {}
 }
+export class Task {
+  constructor(run: () => number) {}
+}
+export const made = Task;
 `,
 );
 
@@ -129,6 +134,8 @@ export const Greeting = Schema.Struct({ name: Schema.String });
 export type Greeting = typeof Greeting.Type;
 export const pair: readonly [number, string] = [1, "a"];
 export const named: Readonly<Record<string, number>> = {};
+export const counts: Array<number> = [];
+export const tags: ReadonlySet<string> = new Set();
 export const identity = <A>(a: A): A => a;
 export const greeted = (person: Person, missing: Missing): string => person.greet() + missing.id;
 export type Shade = "light" | "dark";
@@ -168,6 +175,44 @@ export type Handler = Readonly<{ run: () => number }>;
 `,
 );
 
+// Each of TypeScript's iterators and promises that a core export may not reach, by its name.
+const LIB_NOT_DATA = [
+  "ArrayIterator",
+  "AsyncGenerator",
+  "AsyncIterableIterator",
+  "AsyncIterator",
+  "AsyncIteratorObject",
+  "Generator",
+  "IterableIterator",
+  "Iterator",
+  "IteratorObject",
+  "MapIterator",
+  "PromiseLike",
+  "SetIterator",
+] as const;
+
+const iterators = inCore(
+  "iterators",
+  LIB_NOT_DATA.map(
+    (name) => `export const of${name} = (value: ${name}<number>): number => 1;\n`,
+  ).join(""),
+);
+
+const lookalikes = inCore(
+  "lookalikes",
+  `interface Promise {
+  readonly value: number;
+}
+interface ReadonlyMap<A> {
+  readonly get: () => A;
+}
+export const kept = (promise: Promise): number => promise.value;
+export const got = (map: ReadonlyMap<number>): number => 1;
+`,
+);
+
+const reexported = inCore("reexported", `export { callback } from "./effectful.ts";\n`);
+
 describe("what a core export reaches that isn't data", () => {
   it.effect(
     "reports an export that takes a callback, returns a Promise or an Effect, takes an Iterable or is a class with methods",
@@ -177,8 +222,28 @@ describe("what a core export reaches that isn't data", () => {
         ["promised", 3, "reaches `Promise`"],
         ["effect", 4, "reaches `Effect.Effect`"],
         ["iterated", 5, "reaches `Iterable`"],
-        ["Runner", 6, "is a class with methods, `run`"],
+        ["Runner", 6, "is a class with methods, `run`, `stop`"],
+        ["made", 15, "reaches a function type, `() => number`"],
       ]),
+  );
+});
+
+describe("what a core export reaches through TypeScript's types", () => {
+  it.effect("reports each of TypeScript's iterators and promise-likes", () =>
+    reports(
+      iterators,
+      LIB_NOT_DATA.map((name, index) => [`of${name}`, index + 1, `reaches \`${name}\``]),
+    ),
+  );
+
+  it.effect("judges a project's own type by its members, though it's named like TypeScript's", () =>
+    reports(lookalikes, [["got", 8, "reaches a function type, `() => number`"]]),
+  );
+
+  it.effect("judges an export re-exported from another of the project's files in that file", () =>
+    Effect.map(judged([effectful, reexported]), (lines) => {
+      expect(lines.filter((line) => line.includes(reexported.path))).toStrictEqual([]);
+    }),
   );
 
   it.effect(

@@ -25,8 +25,10 @@ const fields = (text: string): ReadonlyArray<Readonly<Record<string, string | un
     });
 
 // The record of a measured function, in rust-decisions' format with its layer; its root is its package.
-const record = ({ layer, path, root }: Placement, { decisions, line, name }: Measured): string =>
-  JSON.stringify({ decisions, function: name, layer, line, path, root });
+const functionRecord = (
+  { layer, path, root }: Placement,
+  { decisions, line, name }: Measured,
+): string => JSON.stringify({ decisions, function: name, layer, line, path, root });
 
 // The records of what a core export reaches that isn't data, at the line of its export.
 const apiRecords = ({ layer, path, root }: Placement, found: Export): ReadonlyArray<string> =>
@@ -38,8 +40,7 @@ const apiRecords = ({ layer, path, root }: Placement, found: Export): ReadonlyAr
 const entry = ({ layer, path, root }: Placement, { call, line }: Entry): string =>
   JSON.stringify({ entry: call, layer, line, path, root });
 
-// The record of a file that couldn't be measured.
 const failure = ({ layer, path, root }: Placement, error: string): string =>
   JSON.stringify({ error, layer, path, root });
 
-export { LayerMap, Placement, apiRecords, entry, failure, fields, record };
+export { LayerMap, Placement, apiRecords, entry, failure, fields, functionRecord };

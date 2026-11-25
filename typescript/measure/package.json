@@ -1,6 +1,6 @@
 {
   "name": "@standards/measure",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "bin": {
     "typescript-measure": "./main.ts"
@@ -9,9 +9,6 @@
     "core"
   ],
   "type": "module",
-  "scripts": {
-    "test": "vitest run --mode fast"
-  },
   "dependencies": {
     "@effect/platform-node": "4.1.5",
     "@standards/measure-core": "*",
@@ -20,6 +17,8 @@
   },
   "devDependencies": {
     "@effect/vitest": "4.1.5",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@vitest/coverage-v8": "5.1.1",
     "vitest": "5.1.1"
   },

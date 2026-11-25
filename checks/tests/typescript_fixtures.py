@@ -247,12 +247,8 @@ DEFERRED = """export const defer = (task: () => void): void => {
 	queueMicrotask(task);
 };
 """
-STARTED = """const work = async (): Promise<void> => {
-	await Promise.resolve();
-};
-
-export const start = (): void => {
-	work();
+STARTED = """export const start = (load: () => Promise<void>): void => {
+	load();
 };
 """
 MASKED = """export const masked = (left: number, right: number): number => left & right;
@@ -542,11 +538,13 @@ def test_a_floating_effect_or_a_type_error_fails_types(
 
 
 # A scoped plugin's rule, such as @nkzw's, is printed as `@nkzw(rule)`.
-OWNED = """class Owned {
-	public readonly name = "owned";
-}
+OWNED = """import { Data } from "effect";
 
-export const owned = (value: unknown): boolean => value instanceof Owned;
+class Missing extends Data.TaggedError("Missing")<{
+	readonly path: string;
+}> {}
+
+export const owned = (value: unknown): boolean => value instanceof Missing;
 """
 
 
