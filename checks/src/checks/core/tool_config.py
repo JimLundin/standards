@@ -9,6 +9,7 @@ from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
     MUTATION,
+    UNUSED,
     ExceptionEntry,
     exceptions_in,
     kind,
@@ -43,14 +44,6 @@ def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
         for path, names in rules.items()
     )
     return listing((f"lint.extend-per-file-ignores = {{{pairs}}}",))
-
-
-def without(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    rule, *files = arguments
-    exceptions = exceptions_in(inputs)
-    return listing(
-        FrozenList(file for file in files if not exceptions.covers(rule, file))
-    )
 
 
 def globs(arguments: Sequence[str], inputs: Inputs) -> Outcome:
@@ -129,6 +122,18 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
+# A finding of vulture's starts with the path of the file it is in.
+def filter_vulture(_: Sequence[str], inputs: Inputs) -> Outcome:
+    exceptions = exceptions_in(inputs)
+    return listing(
+        FrozenList(
+            line
+            for line in inputs.stdin.splitlines()
+            if not exceptions.covers(UNUSED, posix(line.partition(":")[0]))
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class StrykerConfig:
     fields: Mapping[str, object]
@@ -202,10 +207,10 @@ type Step[T] = Callable[[Sequence[str], Inputs], T]
 COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
     FrozenOrderedDict({
         "ruff-config": (exceptions_only, ruff_config),
-        "without": (exceptions_only, without),
         "globs": (exceptions_only, globs),
         "oxlint-config": (exceptions_only, oxlint_config),
         "filter-mutmut": (with_stdin, filter_mutmut),
+        "filter-vulture": (with_stdin, filter_vulture),
         "stryker-mutate": (with_named, stryker_mutate),
         "stryker-config": (with_named, stryker_config),
         "nextest-config": (exceptions_only, nextest_config),
