@@ -1,4 +1,5 @@
 import json
+lazy from collections.abc import Mapping
 
 from checks.core.typescript_measure import (
     Entry,
@@ -11,7 +12,7 @@ from checks.core.typescript_measure import (
 CORE = "packages/core"
 
 
-def compact(record: dict[str, object]) -> str:
+def compact(record: Mapping[str, object]) -> str:
     return json.dumps(record, separators=(",", ":"))
 
 

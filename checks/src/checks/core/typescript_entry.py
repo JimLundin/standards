@@ -2,7 +2,7 @@ lazy from collections.abc import Sequence
 
 from ordered import FrozenList
 
-from checks.core.typescript_measure import Entry, of_kind, records
+from checks.core.typescript_measure import Entry, entries, records
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -51,7 +51,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
 
 
 def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
-    items = of_kind(records(text(inputs.texts, operands(arguments)[0])), Entry)
+    items = entries(records(text(inputs.texts, operands(arguments)[0])))
     mains = sum(item.call == RUN_MAIN for item in items)
     return summarized(
         findings(items),

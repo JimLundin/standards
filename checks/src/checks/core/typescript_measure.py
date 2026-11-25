@@ -104,5 +104,5 @@ def records(text: str) -> FrozenList[Record]:
     )
 
 
-def of_kind[T: Record](items: Sequence[Record], kind: type[T]) -> FrozenList[T]:
-    return FrozenList(item for item in items if isinstance(item, kind))
+def entries(items: Sequence[Record]) -> FrozenList[Entry]:
+    return FrozenList(item for item in items if isinstance(item, Entry))
