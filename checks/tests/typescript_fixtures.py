@@ -17,22 +17,17 @@ lazy from collections.abc import Mapping
 import pytest
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from tests.test_lib import STANDARDS, git
+from tests.helpers import STANDARDS
+from tests.test_lib import git
 
 TYPESCRIPT = STANDARDS / "typescript"
 FIXTURES = TYPESCRIPT / "fixtures"
 COMPLIANT = "compliant"
 # The standard's config files that a project copies to its root. Oxlint's
 # type-aware rules read the tsconfig.json there, which extends the
-# standard's. Oxlint runs on the standard's config, as in a project without
-# its own.
-COPIED = FrozenList((
-    "knip.json",
-    "stryker.config.json",
-    "tsconfig.base.json",
-    "vitest.config.ts",
-    "vitest.setup.ts",
-))
+# standard's. Oxlint and vitest run on the standard's configs, as in a
+# project without its own.
+COPIED = FrozenList(("knip.json", "stryker.config.json", "tsconfig.base.json"))
 OUTCOMES = FrozenOrderedSet(("ok", "flaky", "skip", "FAIL"))
 NO_FILES: FrozenOrderedDict[str, str] = FrozenOrderedDict()
 LOGS = re.compile(r"^tier: \w+, logs: (.+)$")
@@ -81,15 +76,22 @@ class Fixtures:
         tree: str = COMPLIANT,
         files: Mapping[str, str] = NO_FILES,
     ) -> Checked:
-        project = self.project(tree, files)
-        done = subprocess.run(
+        return self.run(tier, self.project(tree, files))
+
+    def run(self, tier: str, project: Path) -> Checked:
+        done = self.done(tier, project)
+        return checked(done.returncode, done.stdout)
+
+    def done(
+        self, tier: str, project: Path
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
             ("bash", str(TYPESCRIPT / "check.sh"), tier, str(project)),
             capture_output=True,
             text=True,
             check=False,
             env={**os.environ, "STANDARDS_CACHE": str(self.root / "cache")},
         )
-        return checked(done.returncode, done.stdout)
 
     def project(self, tree: str, files: Mapping[str, str]) -> Path:
         work = Path(tempfile.mkdtemp(prefix=f"{tree}.", dir=self.root))
@@ -278,6 +280,7 @@ def test_a_break_of_each_kind_of_rule_fails_lint_naming_the_rule(
     )
     findings = run.units["lint"].findings
     assert run.units["lint"].outcome == "FAIL"
+    assert run.units["lint"].summary == f"{len(breaks)} problems"
     for path, rule, _ in breaks:
         assert findings.count(rule) == 1, rule
         assert path in findings, path
@@ -469,28 +472,45 @@ def test_a_floating_effect_or_a_type_error_fails_types(
     assert diagnostic in types.findings
 
 
+# A scoped plugin's rule, such as @nkzw's, is printed as `@nkzw(rule)`.
+OWNED = """class Owned {
+	public readonly name = "owned";
+}
+
+export const owned = (value: unknown): boolean => value instanceof Owned;
+"""
+
+
+@pytest.mark.parametrize(
+    ("rule", "finding", "text"),
+    [
+        ("lint/eslint/no-bitwise", "eslint(no-bitwise)", MASKED),
+        ("lint/@nkzw/no-instanceof", "@nkzw(no-instanceof)", OWNED),
+    ],
+    ids=["plugin", "scoped-plugin"],
+)
 def test_an_exception_clears_its_rule_in_its_file_alone(
-    fixtures: Fixtures,
+    fixtures: Fixtures, rule: str, finding: str, text: str
 ) -> None:
-    excepted = "packages/core/src/masked.ts"
-    unexcepted = "packages/core/src/unmasked.ts"
+    excepted = "packages/core/src/excepted.ts"
+    unexcepted = "packages/core/src/unexcepted.ts"
     run = fixtures.check(
         "commit",
         files={
             "exceptions.toml": (
                 "[[exception]]\n"
                 f'path = "{excepted}"\n'
-                'rule = "lint/eslint/no-bitwise"\n'
+                f'rule = "{rule}"\n'
                 'reason = "a fixture"\n'
             ),
-            excepted: MASKED,
-            unexcepted: MASKED,
+            excepted: text,
+            unexcepted: text,
         },
     )
     findings = run.units["lint"].findings
     assert run.units["exceptions"].outcome == "ok"
     assert run.units["lint"].outcome == "FAIL"
-    assert findings.count("eslint(no-bitwise)") == 1
+    assert findings.count(finding) == 1
     assert unexcepted in findings
     assert excepted not in findings
 
@@ -522,15 +542,26 @@ it.effect(
 """
 
 
+# A project's own copy of the standard's vitest config, at its root.
+OWN_VITEST = FrozenOrderedDict(
+    (name, (TYPESCRIPT / name).read_text())
+    for name in ("vitest.config.ts", "vitest.setup.ts")
+)
+
+
+@pytest.mark.parametrize(
+    "own", [NO_FILES, OWN_VITEST], ids=["standard-config", "own-config"]
+)
 def test_step_runs_the_tests_fast_and_skips_the_slow_ones(
-    fixtures: Fixtures,
+    fixtures: Fixtures, own: Mapping[str, str]
 ) -> None:
     run = fixtures.check(
         "step",
         files={
+            **own,
             "packages/core/src/runs.test.ts": RUNS.replace(
                 "{fast}", "10"
-            ).replace("{slow}", "1000")
+            ).replace("{slow}", "1000"),
         },
     )
     test = run.units["test"]
@@ -538,6 +569,28 @@ def test_step_runs_the_tests_fast_and_skips_the_slow_ones(
     assert "checks 10 cases" in test.findings
     assert "1 skipped" in test.summary
     assert "Coverage report" not in test.findings
+
+
+# A property test of the mutated module, which Stryker's vitest runner runs,
+# passing in the standard's full (1000) and mutation (10) modes alone: on
+# vitest's defaults, Arbitrary runs fast-check's 100.
+MUTATED_RUNS = """import { expect, it } from "@effect/vitest";
+import { Arbitrary, Effect, Schema } from "effect";
+import { greet } from "./index.ts";
+
+const runs = Effect.map(
+	Arbitrary.checkEffect(Arbitrary.schema(Schema.String), (name) =>
+		greet({ name }).endsWith(name),
+	),
+	(result) => (result._tag === "Passed" ? result.runs : 0),
+);
+
+it.effect("checks the cases of a mode of the standard", () =>
+	Effect.map(runs, (count) => {
+		expect([10, 1000]).toContain(count);
+	}),
+);
+"""
 
 
 def test_release_runs_the_tests_in_full_with_coverage_and_mutation(
@@ -548,7 +601,8 @@ def test_release_runs_the_tests_in_full_with_coverage_and_mutation(
         files={
             "packages/core/src/runs.test.ts": RUNS.replace(
                 "{fast}", "1000"
-            ).replace("{slow}", "1000")
+            ).replace("{slow}", "1000"),
+            "packages/core/src/modes.test.ts": MUTATED_RUNS,
         },
     )
     test = run.units["test-release"]
@@ -1217,3 +1271,31 @@ def test_a_core_export_that_takes_more_than_data_fails_api_unless_excepted(
     )
     assert excepted.units["exceptions"].outcome == "ok"
     assert excepted.units["api"].outcome == "ok"
+
+
+def repin(project: Path, package: str, version: str) -> None:
+    """Sets an installed package's version, writing a new file in place of
+    the one linked to the shared install."""
+    path = project / "node_modules" / package / "package.json"
+    text = path.read_text()
+    path.unlink()
+    _ = path.write_text(
+        re.sub(r'"version": "[^"]+"', f'"version": "{version}"', text, count=1)
+    )
+
+
+@pytest.mark.parametrize(
+    ("vitest", "held"),
+    [(True, True), (False, False)],
+    ids=["with-effect-vitest", "without-effect-vitest"],
+)
+def test_effect_is_held_to_its_pin_only_beside_effect_vitest(
+    fixtures: Fixtures, *, vitest: bool, held: bool
+) -> None:
+    project = fixtures.project(COMPLIANT, NO_FILES)
+    repin(project, "effect", "4.0.0")
+    if not vitest:
+        shutil.rmtree(project / "node_modules/@effect/vitest")
+    done = fixtures.done("step", project)
+    assert ("is not EFFECT=" in done.stderr) is held, done.stderr
+    assert (done.returncode == 2) is held

@@ -41,6 +41,7 @@ PROPTEST_CASES = 16
 # A mode of vitest.config.ts and the runs of its property tests, as
 # `fast: { runs: 10 }`.
 MODE_RUNS = re.compile(r"\b(\w+):\s*\{[^{}]*?\bruns:\s*(\d+)")
+VITEST_CONFIGS = FrozenList(("vitest.config.ts", "vite.config.ts"))
 PROJECT_FILES = FrozenOrderedDict({
     "python": FrozenList(("pyproject.toml",)),
     "rust": FrozenList((
@@ -58,6 +59,7 @@ PROJECT_FILES = FrozenOrderedDict({
         "knip.json",
         "knip.jsonc",
         "vitest.config.ts",
+        "vite.config.ts",
     )),
 })
 STANDARD_FILES = FrozenOrderedDict({
@@ -619,12 +621,19 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         snapshot.standard_json(f"{folder}stryker.config.json"),
         snapshot.json("stryker.config.json"),
     )
-    yield from intensity(
-        "vitest.config.ts",
-        "arbitrary",
-        vitest_runs(snapshot.standards.get(f"{folder}vitest.config.ts")),
-        vitest_runs(snapshot.project.get("vitest.config.ts")),
+    # A project's tests run on its own vitest config, vitest.config.ts or
+    # else the vite.config.ts vitest reads, or on the standard's, so only its
+    # own can run fewer cases.
+    vitest = next(
+        (path for path in VITEST_CONFIGS if path in snapshot.project), None
     )
+    if vitest is not None:
+        yield from intensity(
+            vitest,
+            "arbitrary",
+            vitest_runs(snapshot.standards.get(f"{folder}vitest.config.ts")),
+            vitest_runs(snapshot.project.get(vitest)),
+        )
     standard_knip = snapshot.standard_json(f"{folder}knip.json")
     knip = snapshot.json("knip.json") or snapshot.json("knip.jsonc")
     for key, value in knip.items():

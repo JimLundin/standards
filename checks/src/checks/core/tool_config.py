@@ -9,10 +9,10 @@ from checks.core.exceptions import (
     EXCEPTIONS,
     FLAKY,
     MUTATION,
-    OXLINT,
     ExceptionEntry,
     exceptions_in,
     kind,
+    oxlint_rule,
 )
 from checks.core.values import (
     Inputs,
@@ -62,12 +62,11 @@ OXLINT_CONFIG = "node_modules/.cache/standards/oxlint.config.mjs"
 
 
 def oxlint_override(root: str, entry: ExceptionEntry) -> str:
-    found = OXLINT.fullmatch(entry.rule)
-    if not found:
+    rule = oxlint_rule(entry.rule)
+    if not rule:
         return ""
-    files = json.dumps([f"{root}/{entry.path}"])
-    rule = json.dumps(f"{found[1]}/{found[2]}")
-    return f'\t\t{{ files: {files}, rules: {{ {rule}: "off" }} }},\n'
+    files, key = json.dumps([f"{root}/{entry.path}"]), json.dumps(rule)
+    return f'\t\t{{ files: {files}, rules: {{ {key}: "off" }} }},\n'
 
 
 # A file URL of an absolute path, which Node imports on any platform, such as

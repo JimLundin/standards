@@ -17,3 +17,13 @@ reason = "the plugin is typed by @oxlint/plugins, whose type imports carry no ef
 path = "rules/*.ts"
 rule = "purity:@oxlint/plugins"
 reason = "a rule is typed by @oxlint/plugins' AST and context, whose type imports carry no effects"
+
+[[exception]]
+path = "index.ts"
+rule = "api"
+reason = "Oxlint's plugin API takes a plugin as an object of rules, each of visitor functions"
+
+[[exception]]
+path = "rules/*.ts"
+rule = "api"
+reason = "Oxlint's plugin API takes a rule as an object of visitor functions over its context"

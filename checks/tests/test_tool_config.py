@@ -103,6 +103,25 @@ def test_oxlint_config_extends_the_config_with_an_override_per_exception() -> (
     assert outcome.writes == {written: OXLINT_CONFIG}
 
 
+def test_oxlint_config_turns_off_a_scoped_plugins_rule() -> None:
+    texts = {
+        "exceptions.toml": entry("a.ts", "lint/@nkzw/no-instanceof")
+        + entry("b.ts", "lint/@scope/plugin/a-rule")
+    }
+    outcome = run(
+        ("oxlint-config", "/std/oxlint.config.ts"), inputs(texts, cwd="/work")
+    )
+    (config,) = outcome.writes.values()
+    assert (
+        '{ files: ["/work/a.ts"], rules: { "@nkzw/no-instanceof": "off" } },'
+        in config
+    )
+    assert (
+        '{ files: ["/work/b.ts"], rules: { "@scope/plugin/a-rule": "off" } },'
+        in config
+    )
+
+
 def test_oxlint_config_anchors_globs_at_a_windows_project_root() -> None:
     texts = {"exceptions.toml": entry("*.ts", "lint/eslint/no-var")}
     outcome = run(

@@ -34,8 +34,9 @@ versions=(
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
 	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
 )
-# The project's own vitest, Effect and Stryker run its tests, so each that
-# it installs must be at its pin.
+# The project's own vitest, @effect/vitest and Stryker run its tests, so
+# each that it installs must be at its pin, and so must the Effect beside
+# @effect/vitest. An Effect without it is the project's own dependency.
 installed() {
 	local name=$1 package=$2 install=$3
 	[ -e "node_modules/$package/package.json" ] || return 0
@@ -44,7 +45,10 @@ installed() {
 }
 if at_least step; then
 	installed VITEST vitest "npm install -D vitest@{} @vitest/coverage-v8@{}"
-	installed EFFECT effect "npm install effect@{} && npm install -D @effect/vitest@{}"
+	if [ -e node_modules/@effect/vitest/package.json ]; then
+		installed EFFECT effect "npm install effect@{} && npm install -D @effect/vitest@{}"
+		installed EFFECT @effect/vitest "npm install effect@{} && npm install -D @effect/vitest@{}"
+	fi
 fi
 if full; then
 	versions+=("--tool=mutation=${pins[STRYKER]},${pins[VITEST]},${pins[EFFECT]}")
@@ -131,7 +135,10 @@ oxlint_lint() {
 		printf '%s\n' "$oxlint_config"
 		return 1
 	fi
-	OXLINT_TSGOLINT_PATH=$tsgolint oxlint --config="$(native "$oxlint_config")" "${scripts[@]}"
+	# Oxlint picks its output format by where it runs, so the unix one,
+	# a line per finding, is named for the summary to count.
+	OXLINT_TSGOLINT_PATH=$tsgolint oxlint --format=unix --config="$(native "$oxlint_config")" \
+		"${scripts[@]}"
 	status=$?
 	rm -rf "$run"
 	return "$status"
@@ -200,7 +207,7 @@ entry() {
 exceptions_unit oxlint_policy
 unit format "last 'Format issues found in above [0-9]+ files?|All matched files use the correct format|No files found'" \
 	oxfmt_format
-unit lint "joined 'Found [0-9]+ (warnings? and [0-9]+ )?(error|warning|info)s?'" \
+unit lint "count '\[(Error|Warning)/' problems" \
 	oxlint_lint
 if [ -f tsconfig.json ]; then
 	# The types unit runs the Effect-patched tsc of @effect/tsgo at the pinned
@@ -227,6 +234,28 @@ unit api "last 'Found [0-9]+ issues|All checks passed'" api
 unit shell "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell
 unit shell-share "last 'Found [0-9]+ issues|shell makes .*|no shell'" shell_share
 unit entry "last 'Found [0-9]+ issues|[0-9]+ runMain, [0-9]+ createRoot'" entry
+
+# vitest runs on the project's own config, a vitest.config.* or the
+# vite.config.* vitest reads without one, or else on the standard's, copied
+# with the setup file it loads from beside itself into
+# node_modules/.cache/standards/, where vitest and Effect resolve from the
+# project's install. It finds the tests from the project's root, the working
+# folder. Sets `vitest_config`, the copy, or empty for the project's own.
+standard_vitest() {
+	vitest_config=
+	! compgen -G 'vitest.config.*' >/dev/null && ! compgen -G 'vite.config.*' >/dev/null ||
+		return 0
+	vitest_config=node_modules/.cache/standards/vitest.config.ts
+	mkdir -p "${vitest_config%/*}" &&
+		cp "$standards/vitest.config.ts" "$standards/vitest.setup.ts" "${vitest_config%/*}/"
+}
+
+vitest_run() {
+	local vitest_config
+	standard_vitest || return 1
+	npx --no-install vitest run ${vitest_config:+--config="$vitest_config"} "$@"
+}
+
 # Vitest runs in the mode of vitest.config.ts that the tier names: fast at
 # step, full, with coverage and the slow tests, at release.
 if [ -f package.json ] && at_least step; then
@@ -238,17 +267,39 @@ if [ -f package.json ] && at_least step; then
 	fi
 	if dry || [ -e node_modules/vitest ]; then
 		unit "$test_check" "last 'Tests +[0-9]+ [a-z]+( \| [0-9]+ [a-z]+)*'" \
-			npx --no-install vitest run --mode "$mode" --reporter=verbose
+			vitest_run --mode "$mode" --reporter=verbose
 	else
 		skipped "$test_check" "vitest not installed"
 	fi
 fi
+# Stryker's vitest runner is given the standard's vitest config, when that
+# applies, through a copy of the JSON Stryker config with `vitest.configFile`
+# set, beside the vitest config's copy.
+stryker_run() {
+	local vitest_config given=$stryker_given
+	standard_vitest || return 1
+	if [ -n "$vitest_config" ] && [[ $stryker_config == *.json ]]; then
+		given=${vitest_config%/*}/stryker.config.json
+		node -e '
+			const fs = require("fs");
+			const [config, vitest, given] = process.argv.slice(1);
+			const parsed = JSON.parse(fs.readFileSync(config, "utf8"));
+			parsed.vitest = { ...parsed.vitest, configFile: vitest };
+			fs.writeFileSync(given, JSON.stringify(parsed, null, 2));
+		' "$(native "$stryker_config")" "$vitest_config" "$given" || return 1
+	fi
+	npx --no-install stryker run ${given:+"$(native "$given")"} "$@"
+}
+
 if full; then
 	mutation=()
-	stryker_config=stryker.config.json
-	if ! compgen -G 'stryker.conf*' >/dev/null && ! compgen -G 'stryker.config.*' >/dev/null; then
+	# Stryker finds a project's own config itself, and is given the
+	# standard's otherwise.
+	stryker_config=$(compgen -G 'stryker.conf*' | head -1)
+	stryker_given=
+	if [ -z "$stryker_config" ]; then
 		stryker_config=$standards/stryker.config.json
-		mutation=("$(native "$stryker_config")")
+		stryker_given=$stryker_config
 	fi
 	if ! dry && [ ! -f "$logs/shell-files.txt" ] && command -v typescript-measure >/dev/null; then
 		shell >/dev/null 2>&1
@@ -259,7 +310,7 @@ if full; then
 	fi
 	if dry || [ -e node_modules/@stryker-mutator/core ]; then
 		unit mutation "last 'mutation score (of )?[0-9.]+'" \
-			npx --no-install stryker run "${mutation[@]}"
+			stryker_run "${mutation[@]}"
 	else
 		skipped mutation "@stryker-mutator/core not installed"
 	fi

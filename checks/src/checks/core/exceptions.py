@@ -28,7 +28,9 @@ UNPATHED = FrozenOrderedSet(("drift", FLAKY))
 IMMUTABILITY = re.compile(r"IMM\d{3}")
 PURITY = re.compile(r"PUR\d{3}(?::[\w.]+)?")
 RUST_LINT = re.compile(r"(?:clippy::)?[a-z_]+")
-OXLINT = re.compile(r"lint/([\w-]+)/([\w-]+)")
+# A plugin is a name, a scope such as `@nkzw`, or a scoped name such as
+# `@scope/name`.
+OXLINT = re.compile(r"lint/((?:@[\w-]+/|@)?[\w-]+/[\w-]+)")
 TYPESCRIPT_PURITY = re.compile(r"purity:((?:@[\w.-]+/)?[\w.-]+(?:/[\w.-]+)*)")
 
 
@@ -115,6 +117,11 @@ def exceptions_in(inputs: Inputs) -> Exceptions:
     return load(inputs.texts.get(EXCEPTIONS))
 
 
+def oxlint_rule(rule: str) -> str:
+    found = OXLINT.fullmatch(rule)
+    return found[1] if found else ""
+
+
 def kind(language: str, rule: str) -> str:
     if (
         rule == MUTATION
@@ -134,7 +141,7 @@ def kind(language: str, rule: str) -> str:
 
 
 def typescript_kind(rule: str) -> str:
-    if OXLINT.fullmatch(rule):
+    if oxlint_rule(rule):
         return "oxlint"
     return "purity" if TYPESCRIPT_PURITY.fullmatch(rule) else ""
 
