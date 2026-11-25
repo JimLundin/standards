@@ -105,6 +105,8 @@ export default defineConfig({
     "no-ternary": "off",
     // With unicorn/no-typeof-undefined and eqeqeq, it leaves no way to test for undefined.
     "no-undefined": "off",
+    // Effect's tagged data uses this discriminator as part of its contract.
+    "no-underscore-dangle": ["error", { allow: ["_tag"] }],
     // Its default, "always", merges every declaration of a scope into one; each stands alone.
     "one-var": ["error", "never"],
     // These forbid syntax for older engines than the standard's target, esnext.
@@ -144,7 +146,8 @@ export default defineConfig({
       "error",
       { additionalTestBlockFunctions: ["it.effect", "it.prop"] },
     ],
-    // Contradicts vitest/prefer-strict-boolean-matchers, which asks for toBe(true).
+    // Strict boolean matchers retain the distinction between false and any falsy value.
+    "vitest/prefer-to-be-falsy": "off",
     "vitest/prefer-to-be-truthy": "off",
     // Outside test files a top-level call is an entry point, such as NodeRuntime.runMain; test files turn it on.
     "vitest/require-hook": "off",

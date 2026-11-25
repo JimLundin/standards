@@ -1,9 +1,13 @@
 """lib.sh in fixture workspaces: a git project whose origin is a bare
 repository beside it, so recorded passes go nowhere else."""
 
+import fcntl
 import json
+import os
+import signal
 import subprocess
 from dataclasses import dataclass
+from typing import IO
 lazy from collections.abc import Sequence
 lazy from pathlib import Path
 
@@ -15,7 +19,10 @@ from tests.helpers import STANDARDS
 
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
-# marker, and one whose tool isn't installed; and the project's suites.
+# marker, first reading a line from the fifo `HOLD` when set and leaving a
+# process running whose pid it writes to `LINGER` when set, and one whose
+# tool isn't installed; and the project's suites. With `BUILD` set, it
+# sources rust/build.sh after `begin`.
 DRIVER = f"""\
 set -uo pipefail
 PATH="$ROOT/bin:$PATH"
@@ -23,9 +30,10 @@ source "$STANDARDS/lib.sh"
 arguments "$@"
 cd "$project" || exit 2
 begin python
+[ -z "${{BUILD:-}}" ] || source "$STANDARDS/rust/build.sh"
 units --toolchain=fixture --project=present,absent
 tools_of[present]=$PRESENT_TOOL
-unit present ending bash -c 'echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
+unit present ending bash -c '[ -z "${{HOLD:-}}" ] || read -r _ <"$HOLD"; [ -z "${{LINGER:-}}" ] || {{ sleep infinity & echo $! >"$LINGER"; }}; echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
 if [ -z "${{ONLY_PRESENT:-}}" ]; then
 	unit absent ending {MISSING}
 fi
@@ -44,6 +52,7 @@ tier = "commit"
 class Run:
     status: int
     lines: FrozenList[str]
+    errors: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +68,45 @@ class Workspace:
         present_tool: str = "bash",
         more: Sequence[str] = (),
     ) -> Run:
+        done = subprocess.run(
+            self.command(
+                arguments,
+                ci=ci,
+                only_present=only_present,
+                present_tool=present_tool,
+                more=more,
+            ),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return Run(
+            done.returncode, FrozenList(done.stdout.splitlines()), done.stderr
+        )
+
+    def start(self, *more: str) -> subprocess.Popen[str]:
+        """A commit run of the present unit, which ignores the recorded
+        passes, in its own process group, its stderr piped and its stdout
+        dropped."""
+        return subprocess.Popen(
+            self.command(
+                ("commit", "--no-cache"), only_present=True, more=more
+            ),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+
+    def command(
+        self,
+        arguments: Sequence[str],
+        *,
+        ci: bool = False,
+        only_present: bool = False,
+        present_tool: str = "bash",
+        more: Sequence[str] = (),
+    ) -> FrozenList[str]:
         settings = (
             f"STANDARDS={STANDARDS}",
             f"STANDARDS_CACHE={self.root / 'cache'}",
@@ -69,22 +117,25 @@ class Workspace:
             *(("ONLY_PRESENT=1",) if only_present else ()),
             *more,
         )
-        done = subprocess.run(
-            (
-                "env",
-                "-u",
-                "CI",
-                *settings,
-                "bash",
-                str(self.root / "driver.sh"),
-                *arguments,
-                str(self.project),
-            ),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return Run(done.returncode, FrozenList(done.stdout.splitlines()))
+        return FrozenList((
+            "env",
+            "-u",
+            "CI",
+            "-u",
+            "STANDARDS_LOCAL_TIERS",
+            *settings,
+            "bash",
+            str(self.root / "driver.sh"),
+            *arguments,
+            str(self.project),
+        ))
+
+    def held(self, name: str) -> tuple[Path, str]:
+        """A fifo that holds a started run inside its unit, and the setting
+        that points the run at it."""
+        fifo = self.root / name
+        os.mkfifo(fifo)
+        return fifo, f"HOLD={fifo}"
 
     def runs(self) -> int:
         marker = self.root / "marker"
@@ -205,6 +256,172 @@ def test_a_unit_needs_its_declared_tool_only_to_run(
     )
     assert recorded.status == 0
     assert outcome(recorded, "present") == ("ok passed (recorded)",)
+
+
+STEP_SUITE = """\
+[[suite]]
+name = "step-suite"
+command = "true"
+[[suite.when]]
+tier = "step"
+"""
+LOCAL_TIERS = "STANDARDS_LOCAL_TIERS=1"
+
+
+@pytest.fixture
+def stepped(workspace: Workspace) -> Workspace:
+    _ = (workspace.project / "checks.toml").write_text(STEP_SUITE)
+    return workspace
+
+
+def test_with_no_tier_only_the_commit_units_run(stepped: Workspace) -> None:
+    run = stepped.run(only_present=True, more=(LOCAL_TIERS,))
+    assert run.status == 0
+    assert outcome(run, "present") == ("ok",)
+    assert outcome(run, "step-suite") == ()
+    assert run.lines[-1].startswith("tier: commit,")
+
+
+@pytest.mark.parametrize("tier", ["step", "release"])
+def test_a_local_tier_outside_ci_stops_before_any_unit(
+    stepped: Workspace, tier: str
+) -> None:
+    temporary = stepped.root / "tmp"
+    temporary.mkdir()
+    run = stepped.run(tier, only_present=True, more=(f"TMPDIR={temporary}",))
+    assert run.status == 2
+    assert run.lines == ()
+    assert f"{tier} runs only in CI" in run.errors
+    assert LOCAL_TIERS in run.errors
+    assert stepped.runs() == 0
+    assert list(temporary.iterdir()) == []
+
+
+@pytest.mark.parametrize("allowance", [LOCAL_TIERS, "CI=true"])
+def test_step_runs_where_local_tiers_are_allowed_or_in_ci(
+    stepped: Workspace, allowance: str
+) -> None:
+    run = stepped.run("step", only_present=True, more=(allowance,))
+    assert run.status == 0
+    assert outcome(run, "present") == ("ok",)
+    assert outcome(run, "step-suite") == ("ok",)
+
+
+def test_dry_runs_of_step_need_no_allowance(stepped: Workspace) -> None:
+    allowed = stepped.run("step", only_present=True, more=(LOCAL_TIERS,))
+    assert allowed.status == 0
+    assert stepped.run("step", "--verify", only_present=True).status == 0
+    assert stepped.run("step", "--affected", only_present=True).status == 0
+    assert stepped.runs() == 1
+
+
+def waiting(run: subprocess.Popen[str]) -> str:
+    """The line where the run says it waits for another, or what it wrote to
+    stderr when it ran without waiting."""
+    assert run.stderr is not None
+    stream: IO[str] = run.stderr
+    lines: list[str] = []
+    while line := stream.readline():
+        if "waiting" in line:
+            return line
+        lines.append(line)
+    return "".join(lines)
+
+
+def test_a_second_run_waits_for_the_holder_of_the_lock(
+    workspace: Workspace,
+) -> None:
+    fifo, hold = workspace.held("hold")
+    first = workspace.start(hold)
+    with fifo.open("w") as release:
+        second = workspace.start()
+        line = waiting(second)
+        assert f"pid {first.pid}" in line
+        assert f"project {workspace.project}" in line
+        assert workspace.runs() == 0
+        _ = release.write("go\n")
+    assert first.wait() == 0
+    _, errors = second.communicate()
+    assert second.returncode == 0, errors
+    assert workspace.runs() == 2
+
+
+def test_a_holder_killed_with_sigkill_frees_the_lock(
+    workspace: Workspace,
+) -> None:
+    killed_fifo, killed_hold = workspace.held("killed")
+    killed = workspace.start(killed_hold)
+    with killed_fifo.open("w"):
+        os.killpg(killed.pid, signal.SIGKILL)
+        assert killed.wait() == -signal.SIGKILL
+    fifo, hold = workspace.held("hold")
+    after = workspace.start(hold)
+    with fifo.open("w") as release:
+        third = workspace.start()
+        assert f"pid {after.pid}" in waiting(third)
+        _ = release.write("go\n")
+    assert after.wait() == 0
+    assert third.wait() == 0
+    assert workspace.runs() == 2
+
+
+def test_a_process_a_unit_leaves_running_does_not_hold_the_lock(
+    workspace: Workspace,
+) -> None:
+    linger = workspace.root / "linger"
+    first = workspace.start(f"LINGER={linger}")
+    _, errors = first.communicate()
+    assert first.returncode == 0, errors
+    try:
+        second = workspace.start()
+        assert "holds" not in waiting(second)
+    finally:
+        os.kill(int(linger.read_text()), signal.SIGKILL)
+    assert second.wait() == 0
+    assert workspace.runs() == 2
+
+
+def test_a_run_waiting_on_an_empty_lock_file_names_an_unknown_run(
+    workspace: Workspace,
+) -> None:
+    file = workspace.root / "cache/run.lock"
+    file.parent.mkdir()
+    with file.open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        run = workspace.start()
+        line = waiting(run)
+        fcntl.flock(held, fcntl.LOCK_UN)
+    assert line.startswith("an unknown run holds ")
+    assert run.wait() == 0
+
+
+# A fake sccache whose server outlives it, as the real one's does, writing
+# the server's pid to `LINGER`.
+DAEMON_SCCACHE = """\
+#!/usr/bin/env bash
+sleep infinity &
+echo $! >"$LINGER"
+"""
+
+
+def test_a_server_build_sh_starts_after_the_lock_does_not_hold_it(
+    workspace: Workspace,
+) -> None:
+    fake = workspace.root / "bin/sccache"
+    fake.parent.mkdir()
+    _ = fake.write_text(DAEMON_SCCACHE, newline="\n")
+    fake.chmod(0o755)
+    linger = workspace.root / "linger"
+    first = workspace.start("BUILD=1", "RUSTC_WRAPPER=", f"LINGER={linger}")
+    _, errors = first.communicate()
+    assert first.returncode == 0, errors
+    try:
+        second = workspace.start()
+        assert "holds" not in waiting(second)
+    finally:
+        os.kill(int(linger.read_text()), signal.SIGKILL)
+    assert second.wait() == 0
+    assert workspace.runs() == 2
 
 
 PYTHON_SUITE = """\

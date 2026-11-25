@@ -369,6 +369,75 @@ def test_a_plain_class_fails_lint_and_an_effect_class_passes(
         assert path not in findings, findings
 
 
+NEGATED = """export const negated = (value: boolean): boolean => !value;
+"""
+BOOLEAN_ASSERTIONS = """import { describe, expect, it } from "@effect/vitest";
+import { negated } from "./negated.ts";
+
+describe(negated, () => {
+  it("negates false", () => {
+    expect.hasAssertions();
+    expect(negated(false)).toBe(true);
+  });
+
+  it("negates true", () => {
+    expect.hasAssertions();
+    expect(negated(true)).toBe(false);
+  });
+});
+"""
+
+
+@pytest.mark.parametrize("strict", [True, False], ids=["strict", "loose"])
+def test_boolean_assertions_require_strict_matchers(
+    fixtures: Fixtures, *, strict: bool
+) -> None:
+    source = (
+        BOOLEAN_ASSERTIONS
+        if strict
+        else BOOLEAN_ASSERTIONS.replace("toBe(true)", "toBeTruthy()").replace(
+            "toBe(false)", "toBeFalsy()"
+        )
+    )
+    run = fixtures.check(
+        "commit",
+        files={
+            "packages/core/src/negated.ts": NEGATED,
+            "packages/core/src/negated.test.ts": source,
+        },
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == ("ok" if strict else "FAIL"), lint.findings
+    if not strict:
+        assert (
+            lint.findings.count("vitest(prefer-strict-boolean-matchers)") == 2
+        )
+
+
+TAGGED = """interface Tagged {
+  readonly _tag: string;
+}
+
+export const tag = (value: Tagged): string => value._tag;
+"""
+
+
+def test_only_the_effect_discriminator_allows_a_leading_underscore(
+    fixtures: Fixtures,
+) -> None:
+    allowed = "packages/core/src/tagged.ts"
+    refused = "packages/core/src/private.ts"
+    run = fixtures.check(
+        "commit",
+        files={allowed: TAGGED, refused: TAGGED.replace("_tag", "_private")},
+    )
+    lint = run.units["lint"]
+    assert lint.outcome == "FAIL"
+    assert lint.findings.count("eslint(no-underscore-dangle)") == 1
+    assert refused in lint.findings
+    assert allowed not in lint.findings
+
+
 HOOKED = """import type { ReactElement } from "react";
 import { useState } from "react";
 

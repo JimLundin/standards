@@ -3,8 +3,11 @@
 
 # The server is started here rather than by the first rustc cargo wraps,
 # which can wait on it forever; one already running fails to start, which
-# is fine.
+# is fine. It outlives a check.sh run, so it starts without lib.sh's run lock.
 if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null; then
 	export RUSTC_WRAPPER=sccache
-	sccache --start-server >/dev/null 2>&1 || true
+	(
+		[ -z "${run_lock:-}" ] || exec {run_lock}>&-
+		sccache --start-server
+	) >/dev/null 2>&1 || true
 fi
