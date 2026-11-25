@@ -1,7 +1,6 @@
-logs=$(mktemp -d)
 home=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 failed=()
-tier=step
+tier=commit
 project=.
 lookup=1
 verify=
@@ -65,11 +64,14 @@ totals() {
 	plain "$1" | awk '/^Total/ { printf "%s files, %s code, %s comments, %s complexity", $2, $6, $5, $7 }'
 }
 
+in_ci() {
+	[ -n "${CI:-}" ] && [ "$CI" != false ]
+}
+
 # A unit that can't run, such as one whose tool isn't installed, is skipped;
-# in CI (`CI` set, as GitHub Actions sets it) it fails, so CI passes no tree
-# with a unit it didn't run.
+# in CI it fails, so CI passes no tree with a unit it didn't run.
 skipped() {
-	if [ -n "${CI:-}" ] && [ "$CI" != false ]; then
+	if in_ci; then
 		line "$1" FAIL "$2; CI runs every unit"
 		failed+=("$1")
 	else
@@ -104,7 +106,7 @@ step() {
 	fi
 	log="$logs/$name.log"
 	outcome=ok
-	"$@" >"$log" 2>&1 || {
+	"$@" >"$log" 2>&1 {run_lock}>&- || {
 		outcome=FAIL
 		failed+=("$name")
 	}
@@ -153,6 +155,10 @@ arguments() {
 	fi
 	if [ -n "$verify" ] && [ -n "$affected" ]; then
 		echo "--verify and --affected are two dry runs; pick one" >&2
+		exit 2
+	fi
+	if at_least step && ! dry && ! in_ci && [ "${STANDARDS_LOCAL_TIERS:-}" != 1 ]; then
+		echo "$tier runs only in CI; fix: set STANDARDS_LOCAL_TIERS=1 on a machine the owner allows" >&2
 		exit 2
 	fi
 }
@@ -232,8 +238,43 @@ pinned() {
 	exit 2
 }
 
+# One run that runs units at a time per user, across every checkout: each
+# takes an flock on one file of the cache, open on `run_lock` for the run's
+# life, so the kernel frees it when the run exits, killed or not. Until then,
+# and in a run without the lock, `run_lock` is open on /dev/null. A process
+# that can outlive the run, such as a unit's or the sccache server, starts
+# with it closed. The holder writes its pid and project into the file for a
+# run that waits on it.
+exec {run_lock}>/dev/null
+
+lock() {
+	local file
+	dry && return 0
+	if ! command -v flock >/dev/null; then
+		echo "flock not installed, so this run doesn't wait for another; fix: install util-linux" >&2
+		return 0
+	fi
+	file="$(cache_root)/run.lock"
+	mkdir -p "${file%/*}"
+	exec {run_lock}>&- {run_lock}>>"$file"
+	if ! flock -n "$run_lock"; then
+		echo "$(holder "$file") holds $(native "$file"); waiting for it to exit (fix: stop that run or let it finish)" >&2
+		flock "$run_lock"
+	fi
+	echo "run of pid $$, project $(native "$PWD")," >"$file"
+}
+
+# The run the lock file names, which is unknown until its holder writes it.
+holder() {
+	local text
+	text=$(cat "$1" 2>/dev/null)
+	echo "${text:-an unknown run}"
+}
+
 begin() {
 	language=$1
+	logs=$(mktemp -d)
+	lock
 	pinned UV uv "uv self update {}" uv --version
 	pinned PYTHON uv "uv python install {}" uv run --no-project -q python -V
 	mapfile -t tracked < <(git ls-files)
