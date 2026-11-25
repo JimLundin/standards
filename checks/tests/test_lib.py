@@ -4,11 +4,13 @@ repository beside it, so recorded passes go nowhere else."""
 import fcntl
 import json
 import os
+import select
 import signal
 import subprocess
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from typing import IO
-lazy from collections.abc import Sequence
+lazy from collections.abc import Generator, Sequence
 lazy from pathlib import Path
 
 import pytest
@@ -563,3 +565,179 @@ def test_setting_the_sccache_wrapper_starts_its_server(tmp_path: Path) -> None:
 def test_a_wrapper_the_caller_set_starts_no_server(tmp_path: Path) -> None:
     assert source_build(tmp_path, "RUSTC_WRAPPER=other") == "other\n"
     assert not (tmp_path / "calls").exists()
+
+
+PRELUDE = """\
+set -uo pipefail
+source "$LIB"
+logs="$FIXTURE/logs"
+mkdir -p "$logs"
+lock
+"""
+
+
+@contextmanager
+def running(root: Path, script: str) -> Generator[subprocess.Popen[str]]:
+    run = subprocess.Popen(
+        (
+            "env",
+            f"LIB={STANDARDS / 'lib.sh'}",
+            f"STANDARDS_CACHE={root / 'cache'}",
+            f"FIXTURE={root}",
+            "bash",
+            "-c",
+            PRELUDE + script,
+        ),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        yield run
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(run.pid, signal.SIGKILL)
+        _ = run.communicate(timeout=5)
+
+
+def test_a_unit_can_run_a_nested_checker(tmp_path: Path) -> None:
+    _ = (tmp_path / "child.sh").write_text(PRELUDE + "echo acquired\n")
+    with running(
+        tmp_path,
+        'step nested ending bash "$FIXTURE/child.sh"\nexit "${#failed[@]}"\n',
+    ) as run:
+        assert run.wait(timeout=5) == 0
+    assert (tmp_path / "logs/nested.log").read_text() == "acquired\n"
+
+
+@contextmanager
+def channel(root: Path, name: str, mode: str) -> Generator[IO[str]]:
+    path = root / name
+    os.mkfifo(path)
+    with os.fdopen(os.open(path, os.O_RDWR), mode) as stream:
+        yield stream
+
+
+def received(stream: IO[str]) -> str:
+    ready, _, _ = select.select((stream,), (), (), 5)
+    assert ready, "checker did not reach the expected lock boundary"
+    return stream.readline().strip()
+
+
+def release(stream: IO[str]) -> None:
+    _ = stream.write("go\n")
+    stream.flush()
+
+
+def test_a_nested_checker_still_blocks_an_unrelated_run(tmp_path: Path) -> None:
+    _ = (tmp_path / "child.sh").write_text(
+        PRELUDE
+        + 'echo acquired >"$FIXTURE/events"\n'
+        + 'read -r _ <"$FIXTURE/release"\n'
+    )
+    with (
+        channel(tmp_path, "events", "r") as events,
+        channel(tmp_path, "release", "w") as gate,
+        running(
+            tmp_path, 'step nested ending bash "$FIXTURE/child.sh"\n'
+        ) as outer,
+    ):
+        assert received(events) == "acquired"
+        with running(tmp_path, "true\n") as unrelated:
+            assert unrelated.stderr is not None
+            assert f"pid {outer.pid}" in received(unrelated.stderr)
+            release(gate)
+            assert outer.wait(timeout=5) == 0
+            assert unrelated.wait(timeout=5) == 0
+
+
+def test_nested_siblings_wait_for_each_other(tmp_path: Path) -> None:
+    _ = (tmp_path / "first.sh").write_text(
+        PRELUDE
+        + 'echo first >"$FIXTURE/events"\n'
+        + 'read -r _ <"$FIXTURE/release"\n'
+    )
+    _ = (tmp_path / "second.sh").write_text(
+        PRELUDE + 'echo second >"$FIXTURE/events"\n'
+    )
+    _ = (tmp_path / "siblings.sh").write_text(
+        """\
+bash "$FIXTURE/first.sh" &
+read -r _ <"$FIXTURE/launch"
+bash "$FIXTURE/second.sh" 2>"$FIXTURE/events"
+wait
+"""
+    )
+    with (
+        channel(tmp_path, "events", "r") as events,
+        channel(tmp_path, "release", "w") as gate,
+        channel(tmp_path, "launch", "w") as launch,
+        running(
+            tmp_path, 'step siblings ending bash "$FIXTURE/siblings.sh"\n'
+        ) as outer,
+    ):
+        assert received(events) == "first"
+        release(launch)
+        blocked = received(events)
+        assert "/nested/" in blocked
+        assert "waiting" in blocked
+        release(gate)
+        assert received(events) == "second"
+        assert outer.wait(timeout=5) == 0
+
+
+@pytest.mark.parametrize("owner_alive", [True, False])
+def test_a_daemon_cannot_reuse_a_finished_units_context(
+    tmp_path: Path, *, owner_alive: bool
+) -> None:
+    _ = (tmp_path / "daemon.sh").write_text(
+        'read -r _ <"$FIXTURE/launch"\n'
+        + PRELUDE
+        + 'echo acquired >"$FIXTURE/events"\n'
+    )
+    _ = (tmp_path / "unit.sh").write_text(
+        'bash "$FIXTURE/daemon.sh" >/dev/null 2>"$FIXTURE/events" &\n'
+    )
+    held = 'echo held >"$FIXTURE/events"\nread -r _ <"$FIXTURE/release"\n'
+    with (
+        channel(tmp_path, "events", "r") as events,
+        channel(tmp_path, "release", "w") as gate,
+        channel(tmp_path, "launch", "w") as launch,
+        ExitStack() as stack,
+    ):
+        holder = stack.enter_context(
+            running(
+                tmp_path, 'step daemon ending bash "$FIXTURE/unit.sh"\n' + held
+            )
+        )
+        assert received(events) == "held"
+        if not owner_alive:
+            release(gate)
+            assert holder.wait(timeout=5) == 0
+            holder = stack.enter_context(running(tmp_path, held))
+            assert received(events) == "held"
+        release(launch)
+        blocked = received(events)
+        assert f"pid {holder.pid}" in blocked
+        assert "/run.lock" in blocked
+        release(gate)
+        assert received(events) == "acquired"
+        assert holder.wait(timeout=5) == 0
+
+
+def test_nested_checkers_can_nest_again(tmp_path: Path) -> None:
+    _ = (tmp_path / "child.sh").write_text(
+        PRELUDE
+        + "if (( $1 > 0 )); then\n"
+        + '    step "nested-$1" ending bash "$FIXTURE/child.sh" "$(($1 - 1))"\n'
+        + '    exit "${#failed[@]}"\n'
+        + "fi\n"
+        + "echo acquired\n"
+    )
+    with running(
+        tmp_path,
+        'step nested ending bash "$FIXTURE/child.sh" 2\nexit "${#failed[@]}"\n',
+    ) as run:
+        assert run.wait(timeout=5) == 0
+    assert (tmp_path / "logs/nested-1.log").read_text() == "acquired\n"
