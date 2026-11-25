@@ -1,7 +1,7 @@
 import ast
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
@@ -81,11 +81,7 @@ class Snapshot:
     files: FrozenList[str]
     project: FrozenOrderedDict[str, str]
     standards: FrozenOrderedDict[str, str]
-    # The project's and the standard's configs, as their tools resolve them,
-    # under the path of each.
-    resolved: FrozenOrderedDict[str, str] = field(
-        default_factory=FrozenOrderedDict
-    )
+    resolved: FrozenOrderedDict[str, str]
 
     def toml(self, path: str) -> Mapping[str, object]:
         return parse_toml(self.project.get(path))

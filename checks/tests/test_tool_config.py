@@ -16,9 +16,10 @@ def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
         assert request((command, "mutation", "a.py"), Inputs()) == Request(
             FrozenList(("exceptions.toml",))
         )
-    assert request(("stryker-mutate", "x.json"), Inputs()) == Request(
-        FrozenList(("exceptions.toml", "x.json"))
-    )
+    for command in ("stryker-mutate", "stryker-config"):
+        assert request((command, "x.json", "v.ts"), Inputs()) == Request(
+            FrozenList(("exceptions.toml", "x.json", "v.ts"))
+        )
     assert request(("filter-mutmut",), Inputs()) == Request(
         FrozenList(("exceptions.toml",)), stdin=True
     )
@@ -225,6 +226,35 @@ def test_stryker_mutate_is_empty_without_mutation_exceptions() -> None:
         "stryker.json": json.dumps({"mutate": ["src/**"]}),
     }
     assert lines(run(("stryker-mutate", "stryker.json"), inputs(texts))) == ()
+
+
+def test_stryker_config_points_a_copy_at_the_vitest_config() -> None:
+    texts = {
+        "stryker.json": json.dumps({
+            "mutate": ["src/**"],
+            "vitest": {"related": False},
+        })
+    }
+    outcome = run(
+        ("stryker-config", "stryker.json", "cache/vitest.config.ts"),
+        inputs(texts),
+    )
+    written = "node_modules/.cache/standards/stryker.config.json"
+    assert lines(outcome) == (written,)
+    assert json.loads(outcome.writes[written]) == {
+        "mutate": ["src/**"],
+        "vitest": {"related": False, "configFile": "cache/vitest.config.ts"},
+    }
+
+
+def test_stryker_config_adds_the_vitest_table_a_config_lacks() -> None:
+    texts = {"stryker.json": json.dumps({"mutate": ["src/**"]})}
+    outcome = run(("stryker-config", "stryker.json", "v.ts"), inputs(texts))
+    (config,) = outcome.writes.values()
+    assert json.loads(config) == {
+        "mutate": ["src/**"],
+        "vitest": {"configFile": "v.ts"},
+    }
 
 
 def test_globs_lists_the_paths_an_exception_of_the_rule_covers() -> None:

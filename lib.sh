@@ -423,7 +423,6 @@ release_versions() {
 	versions+=("--tool=duplication=${pins[JSCPD]}" "--tool=volume=${pins[SCC]}")
 }
 
-# Checks the exceptions, suppressions and drift, with the options given.
 policy() {
 	checks policy "$language" "$(native "$home")" "$@" "${tracked[@]}"
 }

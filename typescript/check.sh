@@ -46,8 +46,9 @@ installed() {
 if at_least step; then
 	installed VITEST vitest "npm install -D vitest@{} @vitest/coverage-v8@{}"
 	if [ -e node_modules/@effect/vitest/package.json ]; then
-		installed EFFECT effect "npm install effect@{} && npm install -D @effect/vitest@{}"
-		installed EFFECT @effect/vitest "npm install effect@{} && npm install -D @effect/vitest@{}"
+		effect="npm install effect@{} && npm install -D @effect/vitest@{}"
+		installed EFFECT effect "$effect"
+		installed EFFECT @effect/vitest "$effect"
 	fi
 fi
 if full; then
@@ -273,20 +274,13 @@ if [ -f package.json ] && at_least step; then
 	fi
 fi
 # Stryker's vitest runner is given the standard's vitest config, when that
-# applies, through a copy of the JSON Stryker config with `vitest.configFile`
-# set, beside the vitest config's copy.
+# applies, through a copy of the JSON Stryker config beside the vitest
+# config's copy.
 stryker_run() {
 	local vitest_config given=$stryker_given
 	standard_vitest || return 1
 	if [ -n "$vitest_config" ] && [[ $stryker_config == *.json ]]; then
-		given=${vitest_config%/*}/stryker.config.json
-		node -e '
-			const fs = require("fs");
-			const [config, vitest, given] = process.argv.slice(1);
-			const parsed = JSON.parse(fs.readFileSync(config, "utf8"));
-			parsed.vitest = { ...parsed.vitest, configFile: vitest };
-			fs.writeFileSync(given, JSON.stringify(parsed, null, 2));
-		' "$(native "$stryker_config")" "$vitest_config" "$given" || return 1
+		given=$(checks stryker-config "$(native "$stryker_config")" "$vitest_config") || return 1
 	fi
 	npx --no-install stryker run ${given:+"$(native "$given")"} "$@"
 }
