@@ -1,6 +1,5 @@
 import type { Rule } from "@oxlint/plugins";
-
-const collections: ReadonlySet<string> = new Set(["Array", "Map", "Set", "WeakMap", "WeakSet"]);
+import { collections } from "./collections.ts";
 
 export const readonlyTypes: Readonly<Rule> = {
   create: (context) => ({

@@ -68,6 +68,8 @@ export default defineConfig({
     "import/no-named-export": "off",
     // Contradicts import/no-default-export.
     "import/prefer-default-export": "off",
+    // Effect's constructors are capitalised members of a capitalised module, such as Schema.Struct and Config.String.
+    "new-cap": ["error", { capIsNewExceptionPattern: String.raw`^[A-Z]\w*\.[A-Z]` }],
     // Cloudflare's import/consistent-type-specifier-style puts type imports in their own declaration.
     "no-duplicate-imports": ["error", { allowSeparateTypeImports: true }],
     "no-restricted-globals": [

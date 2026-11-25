@@ -1,6 +1,6 @@
 import type { Context, ESTree, Rule } from "@oxlint/plugins";
+import { collections } from "./collections.ts";
 
-const collections: ReadonlySet<string> = new Set(["Array", "Map", "Set", "WeakMap", "WeakSet"]);
 const readonlyTypes: ReadonlySet<string> = new Set([
   "Readonly",
   "ReadonlyArray",
