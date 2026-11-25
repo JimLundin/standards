@@ -108,7 +108,7 @@ step() {
 	fi
 	log="$logs/$name.log"
 	outcome=ok
-	"$@" >"$log" 2>&1 || {
+	"$@" >"$log" 2>&1 {held}>&- || {
 		outcome=FAIL
 		failed+=("$name")
 	}
@@ -241,14 +241,21 @@ pinned() {
 }
 
 # One run that runs units at a time per user, across every checkout: each
-# takes an flock on one file of the cache, open for the run's life, so the
-# kernel frees it when the run and its units exit, killed or not. The holder
-# writes its pid and project into the file for a run that waits on it.
+# takes an flock on one file of the cache, open on `held` for the run's
+# life, so the kernel frees it when the run exits, killed or not. Units run
+# with `held` closed, so a process one leaves running, such as a restarted
+# sccache server, doesn't keep it. The holder writes its pid and project
+# into the file for a run that waits on it. A run without the lock holds
+# /dev/null instead.
 lock() {
 	local file
-	dry && return 0
+	if dry; then
+		exec {held}>/dev/null
+		return 0
+	fi
 	if ! command -v flock >/dev/null; then
 		echo "flock not installed, so this run doesn't wait for another; fix: install util-linux" >&2
+		exec {held}>/dev/null
 		return 0
 	fi
 	file="$(cache_root)/run.lock"

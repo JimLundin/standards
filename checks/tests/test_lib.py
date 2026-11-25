@@ -18,7 +18,9 @@ from checks.core.units import pins_of
 STANDARDS = Path(__file__).resolve().parents[2]
 MISSING = "no-such-tool-of-the-standards"
 # A check script of two project units: one that runs and appends to the
-# marker, first reading a line from the fifo `HOLD` when set, and one whose tool isn't installed; and the project's suites.
+# marker, first reading a line from the fifo `HOLD` when set and leaving a
+# process running whose pid it writes to `LINGER` when set, and one whose
+# tool isn't installed; and the project's suites.
 DRIVER = f"""\
 set -uo pipefail
 PATH="$ROOT/bin:$PATH"
@@ -28,7 +30,7 @@ cd "$project" || exit 2
 begin python
 units --toolchain=fixture --project=present,absent
 tools_of[present]=$PRESENT_TOOL
-unit present ending bash -c '[ -z "${{HOLD:-}}" ] || read -r _ <"$HOLD"; echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
+unit present ending bash -c '[ -z "${{HOLD:-}}" ] || read -r _ <"$HOLD"; [ -z "${{LINGER:-}}" ] || {{ sleep infinity & echo $! >"$LINGER"; }}; echo ran >>"$MARKER"; [ -z "${{REWRITE:-}}" ] || echo x >>"$REWRITE"'
 if [ -z "${{ONLY_PRESENT:-}}" ]; then
 	unit absent ending {MISSING}
 fi
@@ -354,6 +356,22 @@ def test_a_holder_killed_with_sigkill_frees_the_lock(
         _ = release.write("go\n")
     assert after.wait() == 0
     assert third.wait() == 0
+    assert workspace.runs() == 2
+
+
+def test_a_process_a_unit_leaves_running_does_not_hold_the_lock(
+    workspace: Workspace,
+) -> None:
+    linger = workspace.root / "linger"
+    first = workspace.start(f"LINGER={linger}")
+    _, errors = first.communicate()
+    assert first.returncode == 0, errors
+    try:
+        second = workspace.start()
+        assert "holds" not in waiting(second)
+    finally:
+        os.kill(int(linger.read_text()), signal.SIGKILL)
+    assert second.wait() == 0
     assert workspace.runs() == 2
 
 
