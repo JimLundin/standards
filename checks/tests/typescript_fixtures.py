@@ -925,6 +925,42 @@ def test_a_core_import_beyond_its_allowlist_fails_lint_unless_excepted(
     assert excepted not in findings
 
 
+SUBPATH = """import { greet } from "{module}";
+
+export const {name} = (name: string): string => greet(name);
+"""
+
+
+def test_a_core_file_may_import_its_packages_own_subpaths(
+    fixtures: Fixtures,
+) -> None:
+    manifest = FIXTURES / COMPLIANT / "packages/core/package.json"
+    imported = manifest.read_text().replace(
+        '"exports": "./src/index.ts",\n',
+        '"exports": "./src/index.ts",\n'
+        '  "imports": {\n'
+        '    "#greet": "./src/internal/greet.ts",\n'
+        '    "#internal/*": "./src/internal/*"\n'
+        "  },\n",
+    )
+    run = fixtures.check(
+        "commit",
+        files={
+            "packages/core/package.json": imported,
+            "packages/core/src/internal/greet.ts": (
+                "export const greet = (name: string): string => `Hi, ${name}`;\n"
+            ),
+            "packages/core/src/named.ts": SUBPATH.replace(
+                "{module}", "#greet"
+            ).replace("{name}", "named"),
+            "packages/core/src/subpath.ts": SUBPATH.replace(
+                "{module}", "#internal/greet.ts"
+            ).replace("{name}", "subpath"),
+        },
+    )
+    assert run.units["lint"].outcome == "ok", run.units["lint"]
+
+
 def component(name: str, imports: str, body: str) -> str:
     return (
         'import type { ReactElement } from "react";\n'

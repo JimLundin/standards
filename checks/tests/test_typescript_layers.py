@@ -214,6 +214,8 @@ def test_only_a_ui_package_restricts_browser_globals() -> None:
 CORE_GROUP = (
     "**",
     "!./**",
+    "!#*",
+    "!#*/**",
     "!../**",
     "!root",
     "!root/**",
@@ -301,6 +303,12 @@ def test_the_core_imports_core_packages_and_effects_pure_modules() -> None:
         "effect/HashMap": None,
         "effect/HashSet": None,
     }
+
+
+def test_the_core_imports_its_own_packages_subpath_imports() -> None:
+    root, _, pure, _ = overrides(NESTED, *NESTED_FILES)
+    for override in (root, pure):
+        assert {"!#*", "!#*/**"} <= set(group(override))
 
 
 def test_a_purity_exception_allows_its_module_in_its_core_files() -> None:

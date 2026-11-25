@@ -282,6 +282,8 @@ def core_rule(core: Sequence[str], allowed: Sequence[str]) -> object:
     group = (
         "**",
         "!./**",
+        "!#*",
+        "!#*/**",
         "!../**",
         *modules(core),
         *exactly("effect"),
