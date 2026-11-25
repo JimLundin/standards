@@ -15,6 +15,7 @@ from checks.core.values import (
     parse_toml,
     strings,
     table,
+    text,
 )
 
 if TYPE_CHECKING:
@@ -447,10 +448,14 @@ def weaker(
 
 def js_plugins(config: Mapping[str, object]) -> FrozenList[str]:
     return FrozenList(
-        plugin
-        if isinstance(plugin, str)
-        else str(table(plugin).get("name", ""))
+        name
         for plugin in entries(config.get("jsPlugins"))
+        if isinstance(
+            name := plugin
+            if isinstance(plugin, str)
+            else table(plugin).get("name"),
+            str,
+        )
     )
 
 
@@ -561,10 +566,9 @@ def typescript_oxlint_drift(snapshot: Snapshot) -> Iterator[Issue]:
         )
 
 
-def vitest_runs(text: str | None) -> FrozenOrderedDict[str, int]:
+def vitest_runs(source: str) -> FrozenOrderedDict[str, int]:
     return FrozenOrderedDict(
-        (match[1], int(match[2]))
-        for match in MODE_RUNS.finditer(text if text is not None else "")
+        (match[1], int(match[2])) for match in MODE_RUNS.finditer(source)
     )
 
 
@@ -631,8 +635,8 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
         yield from intensity(
             vitest,
             "arbitrary",
-            vitest_runs(snapshot.standards.get(f"{folder}vitest.config.ts")),
-            vitest_runs(snapshot.project.get(vitest)),
+            vitest_runs(text(snapshot.standards, f"{folder}vitest.config.ts")),
+            vitest_runs(snapshot.project[vitest]),
         )
     standard_knip = snapshot.standard_json(f"{folder}knip.json")
     knip = snapshot.json("knip.json") or snapshot.json("knip.jsonc")

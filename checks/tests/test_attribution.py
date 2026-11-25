@@ -257,3 +257,35 @@ def test_a_dependency_s_artifact_reaches_no_root_package() -> None:
     })
     arguments = ("lint", "1", "run.log", "m.json", "--artifacts=a.jsonl")
     assert run((*arguments, "tool", "lib"), Inputs(texts)).lines == ()
+
+
+def test_the_root_package_s_artifact_reaches_it() -> None:
+    metadata = json.dumps({
+        "workspace_root": ROOT,
+        "packages": [
+            {"name": "tool", "manifest_path": f"{ROOT}/Cargo.toml"},
+            {"name": "lib", "manifest_path": f"{ROOT}/lib/Cargo.toml"},
+        ],
+    })
+    artifacts = "".join(
+        json.dumps({"reason": "compiler-artifact", "manifest_path": path})
+        + "\n"
+        for path in (f"{ROOT}/Cargo.toml", f"{ROOT}/lib/Cargo.toml")
+    )
+    texts = FrozenOrderedDict({
+        "run.log": "error: x\n --> lib/src/lib.rs:1:1\n",
+        "m.json": metadata,
+        "a.jsonl": artifacts,
+    })
+    arguments = ("lint", "1", "run.log", "m.json", "--artifacts=a.jsonl")
+    assert run((*arguments, "tool", "lib"), Inputs(texts)).lines == ("tool",)
+
+
+def test_a_failed_test_outside_the_workspace_records_nothing() -> None:
+    log = NEXTEST.replace("TIMEOUT [  60.001s] home", "FAIL [  0.001s] libc")
+    assert passing("test", "1", log, *SELECTED) == ()
+
+
+def test_a_failure_outside_the_selected_packages_records_nothing() -> None:
+    log = "error: x\n --> crates/home/src/lib.rs:1:1\n"
+    assert passing("lint", "1", log, "proto", "client") == ()

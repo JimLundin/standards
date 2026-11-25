@@ -69,8 +69,10 @@ def oxlint_override(root: str, entry: ExceptionEntry) -> str:
 # A file URL of an absolute path, which Node imports on any platform, such as
 # file:///C:/work/a.ts for a Windows path.
 def file_url(path: str) -> str:
-    drive = "" if path.startswith("/") else f"/{path[:2]}"
-    return f"file://{drive}{quote(path.removeprefix(drive[1:]))}"
+    drive, rest = (
+        ("", path) if path.startswith("/") else (f"/{path[:2]}", path[2:])
+    )
+    return f"file://{drive}{quote(rest)}"
 
 
 # Oxlint resolves an override's globs against its config's folder, which
