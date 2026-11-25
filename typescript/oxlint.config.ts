@@ -32,6 +32,7 @@ export default defineConfig({
       files: [...tests],
       rules: {
         "no-magic-numbers": "off",
+        "vitest/require-hook": "error",
       },
     },
     {
@@ -112,10 +113,14 @@ export default defineConfig({
     "react/jsx-filename-extension": ["error", { extensions: [".tsx"] }],
     // The automatic JSX runtime imports what JSX compiles to, so React needn't be in scope.
     "react/react-in-jsx-scope": "off",
-    // Contradicts typescript/promise-function-async; typescript/require-await knows a returned promise.
+    // Typescript/require-await, which knows a returned promise, checks async functions in its place.
     "require-await": "off",
     // Contradicts typescript/no-non-null-assertion.
     "typescript/non-nullable-type-assertion-style": "off",
+    // Promise-library adapters, including Effect.tryPromise callbacks, can return a Promise directly.
+    "typescript/promise-function-async": "off",
+    // Effect's data-first combinators, such as Effect.map(self, f), look to it like a callback with a thisArg.
+    "unicorn/no-array-method-this-argument": "off",
     "vitest/consistent-test-it": ["error", { fn: "it", withinDescribe: "it" }],
     // Contradicts vitest/require-hook.
     "vitest/no-hooks": "off",
@@ -129,6 +134,8 @@ export default defineConfig({
     // Strict boolean matchers retain the distinction between false and any falsy value.
     "vitest/prefer-to-be-falsy": "off",
     "vitest/prefer-to-be-truthy": "off",
+    // Outside test files a top-level call is an entry point, such as NodeRuntime.runMain; test files turn it on.
+    "vitest/require-hook": "off",
     // Vitest's testTimeout bounds every test; a test sets its own only to need another.
     "vitest/require-test-timeout": "off",
     // Vitest/prefer-describe-function-title names a describe by its function, not a string.
