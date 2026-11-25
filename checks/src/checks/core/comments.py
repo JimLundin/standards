@@ -136,6 +136,8 @@ def is_public(node: Node) -> bool:
 
 
 def documented(comment: Node) -> Node | None:
+    if comment.parent is not None and comment.parent.type == "token_tree":
+        return None
     inner = any(
         child.type == "inner_doc_comment_marker"
         for child in comment.named_children

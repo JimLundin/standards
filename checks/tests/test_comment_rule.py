@@ -10,8 +10,8 @@ from tests.helpers import entry, inputs, lines
 
 STD = "C:/standards"
 ROOT = "/work"
-FIX = (
-    "comment; fix: name, type or restructure the code so it needs none,"
+RESHAPE = (
+    "fix: name, type or restructure the code so it needs none,"
     " or, if it explains what we can't reshape, a `comment` exception with"
     " its reason"
 )
@@ -43,28 +43,28 @@ def rust(texts: Mapping[str, str]) -> FrozenList[str]:
     return checked("rust", {**texts, "/logs/metadata.json": METADATA}, OPTION)
 
 
-def failed(*places: str) -> FrozenList[str]:
+def failed(*places: str, why: str = "comment") -> FrozenList[str]:
     return FrozenList((
-        *(f"{place}: {FIX}" for place in places),
+        *(f"{place}: {why}; {RESHAPE}" for place in places),
         f"Found {len(places)} issues",
     ))
 
 
 @pytest.mark.parametrize(
-    ("language", "file", "text"),
+    ("language", "file", "text", "why"),
     [
-        ("python", "a.py", "x = 1\n# note\n"),
-        ("python", "a.py", 'def f():\n    """Note."""\n'),
-        ("rust", "a.rs", "fn f() {}\n// note\n"),
-        ("rust", "a.rs", "fn f() {}\n/* note */\n"),
-        ("typescript", "a.ts", "const a = 1;\n// note\n"),
-        ("typescript", "a.ts", "const a = 1;\n/** note */\n"),
+        ("python", "a.py", "x = 1\n# note\n", "comment"),
+        ("python", "a.py", 'def f():\n    """Note."""\n', "docstring"),
+        ("rust", "a.rs", "fn f() {}\n// note\n", "comment"),
+        ("rust", "a.rs", "fn f() {}\n/* note */\n", "comment"),
+        ("typescript", "a.ts", "const a = 1;\n// note\n", "comment"),
+        ("typescript", "a.ts", "const a = 1;\n/** note */\n", "JSDoc comment"),
     ],
 )
 def test_a_comment_fails_by_file_and_line_with_the_fix(
-    language: str, file: str, text: str
+    language: str, file: str, text: str, why: str
 ) -> None:
-    assert checked(language, {file: text}) == failed(f"{file}:2")
+    assert checked(language, {file: text}) == failed(f"{file}:2", why=why)
 
 
 @pytest.mark.parametrize(
@@ -92,8 +92,15 @@ DOCUMENTED = (
 
 def test_a_doc_comment_passes_only_on_a_public_item_of_a_library() -> None:
     assert rust({"src/lib.rs": DOCUMENTED, "src/m.rs": DOCUMENTED}) == failed(
-        "src/lib.rs:3", "src/lib.rs:5", "src/m.rs:3", "src/m.rs:5"
+        "src/lib.rs:3",
+        "src/lib.rs:5",
+        "src/m.rs:3",
+        "src/m.rs:5",
+        why="doc comment on an item that isn't public in a library",
     )
+
+
+OUTSIDE = "doc comment outside a library"
 
 
 @pytest.mark.parametrize(
@@ -101,14 +108,14 @@ def test_a_doc_comment_passes_only_on_a_public_item_of_a_library() -> None:
 )
 def test_a_doc_comment_of_a_binary_target_fails(file: str) -> None:
     assert rust({"src/lib.rs": "", file: "/// Public.\npub fn a() {}\n"}) == (
-        failed(f"{file}:1")
+        failed(f"{file}:1", why=OUTSIDE)
     )
 
 
 def test_a_doc_comment_outside_every_library_fails() -> None:
     texts = {"tests/it.rs": "/// Public.\npub fn a() {}\n"}
-    assert rust(texts) == failed("tests/it.rs:1")
-    assert checked("rust", texts) == failed("tests/it.rs:1")
+    assert rust(texts) == failed("tests/it.rs:1", why=OUTSIDE)
+    assert checked("rust", texts) == failed("tests/it.rs:1", why=OUTSIDE)
 
 
 SAFE = (
@@ -214,6 +221,47 @@ def test_a_comment_exception_is_a_known_rule_in_every_language() -> None:
     ):
         texts = {"exceptions.toml": entry(file, "comment"), file: "// x\n"}
         assert checked(language, texts) == ("All checks passed",)
+
+
+def test_a_licence_header_ends_at_the_first_line_holding_code() -> None:
+    text = "# SPDX-License-Identifier: MIT\nimport os  # x\n"
+    assert checked("python", {"a.py": text}) == failed("a.py:2")
+
+
+def test_a_docstring_naming_copyright_is_no_licence_header() -> None:
+    text = '"""Copyright 2026 Someone."""\n'
+    assert checked("python", {"a.py": text}) == failed(
+        "a.py:1", why="docstring"
+    )
+
+
+def test_a_python_type_comment_fails_naming_annotations() -> None:
+    text = "def f(a):\n    # type: (int) -> None\n    return a\n"
+    assert checked("python", {"a.py": text}) == (
+        "a.py:2: type comment; fix: use an annotation",
+        "Found 1 issues",
+    )
+
+
+DIRECTIVE = (
+    "triple-slash directive; fix: name it in `compilerOptions.types`"
+    " in tsconfig.json"
+)
+
+
+def test_a_triple_slash_directive_fails_naming_compiler_options_types() -> None:
+    text = '/// <reference types="x" />\nconst a = 1;\n'
+    assert checked("typescript", {"a.ts": text}) == (
+        f"a.ts:1: {DIRECTIVE}",
+        "Found 1 issues",
+    )
+
+
+def test_a_doc_comment_inside_a_macro_body_fails() -> None:
+    text = "macro_rules! m {\n    () => {\n        /// Doc.\n        pub fn a() {}\n    };\n}\n"
+    assert rust({"src/lib.rs": text}) == failed(
+        "src/lib.rs:3", why="doc comment on no item, as in a macro body"
+    )
 
 
 def test_request_reads_the_metadata() -> None:
