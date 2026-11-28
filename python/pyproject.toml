@@ -28,14 +28,6 @@ ignore = [
     "missing-copyright-notice",  # no copyright headers
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"**/tests/**" = [
-    "assert",
-    "implicit-namespace-package",
-    "magic-value-comparison",
-]
-"**/test_*.py" = ["assert", "magic-value-comparison"]
-
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false
 

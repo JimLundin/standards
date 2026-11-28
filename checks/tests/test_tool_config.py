@@ -1,10 +1,19 @@
 import json
-lazy from collections.abc import Sequence
+import tomllib
+lazy from collections.abc import Mapping, Sequence
 
 from ordered import FrozenList
 
 from checks.core.tools import request, run
-from checks.core.values import Inputs, Outcome, Request
+from checks.core.values import (
+    Inputs,
+    Outcome,
+    Request,
+    lookup,
+    matches,
+    strings,
+    table,
+)
 from tests.helpers import assert_lines_name_the_fix, entry, inputs, lines
 
 
@@ -43,6 +52,13 @@ def test_nextest_config_retries_each_flaky_test_once() -> None:
     assert lines(run(("nextest-config",), inputs({}))) == ()
 
 
+def ruff_ignores(texts: Mapping[str, str]) -> Mapping[str, FrozenList[str]]:
+    (line,) = lines(run(("ruff-config",), inputs(texts)))
+    config: Mapping[str, object] = tomllib.loads(line)
+    ignores = table(lookup(config, "lint.extend-per-file-ignores"))
+    return {glob: strings(rules) for glob, rules in ignores.items()}
+
+
 def test_ruff_config_groups_rules_by_path() -> None:
     texts = {
         "exceptions.toml": entry("a.py", "E501")
@@ -51,10 +67,24 @@ def test_ruff_config_groups_rules_by_path() -> None:
         + entry("a.py", "IMM001")
         + entry("a.py", "unused")
     }
-    assert lines(run(("ruff-config",), inputs(texts))) == (
-        'lint.extend-per-file-ignores = {"a.py" = ["E501", "T201"], "b.py" = ["F401"]}',
+    ignores = ruff_ignores(texts)
+    assert ignores["a.py"] == ("E501", "T201")
+    assert ignores["b.py"] == ("F401",)
+
+
+def ignored_in(path: str) -> FrozenList[str]:
+    return FrozenList(
+        rule
+        for glob, rules in ruff_ignores({}).items()
+        if matches(path, glob)
+        for rule in rules
     )
-    assert lines(run(("ruff-config",), inputs({}))) == ()
+
+
+def test_ruff_config_gives_test_files_the_test_ignores() -> None:
+    for path in ("test/helpers.py", "pkg/__tests__/a.py", "conftest.py"):
+        assert "assert" in ignored_in(path), path
+    assert ignored_in("src/testing.py") == ()
 
 
 def test_globs() -> None:
@@ -267,6 +297,47 @@ def test_an_excepted_name_matching_no_finding_is_reported() -> None:
 def test_names_in_a_file_vulture_did_not_read_are_not_reported() -> None:
     outcome = filtered(("OrderedMapping.items",), (), ("tests/test_a.py",))
     assert lines(outcome) == ()
+
+
+PROBE = "src/ordered/test_probe.py"
+PROBE_SOURCE = """\
+from ordered._ordered import OrderedMapping
+
+
+def test_keys():
+    assert OrderedMapping().keys() == ()
+"""
+
+
+def unit_over(read: str, findings: Sequence[str]) -> Outcome:
+    texts = {
+        "exceptions.toml": named_entry(
+            "src/ordered/*.py", ("OrderedMapping.keys",)
+        ),
+        ORDERED: ORDERED_SOURCE,
+        PROBE: PROBE_SOURCE,
+    }
+    stdin = "".join(f"{finding}\n" for finding in findings)
+    return run(("filter-vulture", read), inputs(texts, stdin=stdin))
+
+
+def test_a_name_is_stale_only_on_the_side_that_holds_its_item() -> None:
+    assert lines(unit_over(ORDERED, (KEYS,))) == ()
+    assert lines(unit_over(PROBE, ())) == ()
+
+
+def test_a_name_of_an_item_in_a_test_file_is_stale_on_the_tests_side() -> None:
+    texts = {
+        "exceptions.toml": named_entry("src/ordered/*.py", ("test_keys",)),
+        PROBE: PROBE_SOURCE,
+    }
+    outcome = run(("filter-vulture", PROBE), inputs(texts))
+    assert lines(outcome) == (
+        (
+            "exceptions.toml (src/ordered/*.py): unused name `test_keys`"
+            " matches no finding; fix: remove it from `names`"
+        ),
+    )
 
 
 def test_stryker_mutate_adds_excepted_globs() -> None:

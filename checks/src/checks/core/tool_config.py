@@ -16,6 +16,7 @@ from checks.core.exceptions import (
     kind,
     oxlint_rule,
 )
+from checks.core.sides import side_of, tests_of
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -33,14 +34,21 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
 
+TEST_IGNORES = FrozenList((
+    "assert",
+    "implicit-namespace-package",
+    "magic-value-comparison",
+))
+
+
 def ruff_config(_: Sequence[str], inputs: Inputs) -> Outcome:
-    rules: FrozenOrderedDict[str, FrozenList[str]] = FrozenOrderedDict()
+    rules: FrozenOrderedDict[str, FrozenList[str]] = FrozenOrderedDict(
+        (glob, TEST_IGNORES) for glob in tests_of("python")
+    )
     for entry in exceptions_in(inputs).entries:
         if kind("python", entry.rule) == "ruff":
             known = rules.get(entry.path, FrozenList())
             rules |= {entry.path: FrozenList((*known, entry.rule))}
-    if not rules:
-        return Outcome()
     pairs = ", ".join(
         f"{json.dumps(path)} = {json.dumps(list(names))}"
         for path, names in rules.items()
@@ -193,18 +201,56 @@ def named(entries: Sequence[ExceptionEntry]) -> FrozenList[ExceptionEntry]:
     )
 
 
-def stale(
-    entry: ExceptionEntry, findings: Sequence[Finding], read: Sequence[str]
-) -> FrozenList[str]:
-    if not any(matches(posix(file), entry.path) for file in read):
+def bound(node: ast.AST) -> tuple[int, str] | None:
+    match node:
+        case ast.ClassDef() | ast.FunctionDef() | ast.AsyncFunctionDef():
+            return node.lineno, node.name
+        case ast.Name(ctx=ast.Store()):
+            return node.lineno, node.id
+        case ast.Attribute(ctx=ast.Store()):
+            return node.lineno, node.attr
+        case ast.alias():
+            return node.lineno, (node.asname or node.name).partition(".")[0]
+        case ast.arg():
+            return node.lineno, node.arg
+        case _:
+            return None
+
+
+def items(text: str) -> FrozenList[str]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
         return FrozenList()
+    found = scopes(text)
+    return FrozenList(
+        qualified(found, *binding)
+        for node in ast.walk(tree)
+        if (binding := bound(node))
+    )
+
+
+def stale(
+    entry: ExceptionEntry,
+    findings: Sequence[Finding],
+    read: Sequence[str],
+    texts: Mapping[str, str],
+) -> FrozenList[str]:
+    covered = FrozenList(
+        path for file in read if matches(path := posix(file), entry.path)
+    )
+    defined = FrozenList(
+        item for path in covered for item in items(texts.get(path, ""))
+    )
+    reads_sources = any(side_of(path) == "sources" for path in covered)
     return FrozenList(
         (
             f"{EXCEPTIONS} ({entry.path}): unused name `{name}` matches no"
             " finding; fix: remove it from `names`"
         )
         for name in entry.names
-        if not any(
+        if (reads_sources or name in defined)
+        and not any(
             finding.item == name and matches(finding.file, entry.path)
             for finding in findings
         )
@@ -226,7 +272,7 @@ def filter_vulture(arguments: Sequence[str], inputs: Inputs) -> Outcome:
         + FrozenList(
             line
             for entry in named(entries)
-            for line in stale(entry, findings, arguments)
+            for line in stale(entry, findings, arguments, inputs.texts)
         )
     )
 
