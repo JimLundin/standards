@@ -1,6 +1,6 @@
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import starmap
 lazy from collections.abc import Container, Sequence
 
@@ -17,6 +17,7 @@ from checks.core.values import (
 
 EXCEPTIONS = "exceptions.toml"
 FIELDS = FrozenOrderedSet(("path", "rule", "reason"))
+NAMES = "names"
 API = "api"
 SHELL = "shell"
 FLAKY = "flaky"
@@ -47,6 +48,7 @@ class ExceptionEntry:
     path: str
     rule: str
     reason: str
+    names: FrozenList[str] = field(default_factory=FrozenList)
 
     def covers(self, rule: str, path: str) -> bool:
         return rule_covers(self.rule, rule) and matches(path, self.path)
@@ -75,17 +77,46 @@ class Exceptions:
         )
 
 
+def parse_names(
+    where: str, rule: str, names: object
+) -> FrozenList[str] | Issue:
+    if names is None:
+        return FrozenList()
+    if rule != UNUSED:
+        return Issue(
+            EXCEPTIONS,
+            (
+                f"{where} names items, which only rule `unused` takes; fix:"
+                " remove `names`"
+            ),
+        )
+    given = entries(names)
+    texts = FrozenList(item.strip() for item in given if isinstance(item, str))
+    if texts and len(texts) == len(given) and all(texts):
+        return texts
+    return Issue(
+        EXCEPTIONS,
+        (
+            f"{where} needs `names` as a list of item names such as"
+            " `Class.method`; fix: give each name as a non-empty string,"
+            " or remove `names`"
+        ),
+    )
+
+
 def parse_entry(index: int, entry: object) -> ExceptionEntry | Issue:
     fields = table(entry)
     where = f"exception {index + 1}"
-    unknown = sorted(key for key in fields if key not in FIELDS)
+    unknown = sorted(
+        key for key in fields if key not in FIELDS and key != NAMES
+    )
     if unknown:
         keys = ", ".join(unknown)
         return Issue(
             EXCEPTIONS,
             (
                 f"{where} has unknown keys: {keys}; fix: remove them, leaving"
-                " only path, rule and reason"
+                " only path, rule, reason and names"
             ),
         )
     values = FrozenList(fields.get(key) for key in FIELDS)
@@ -94,7 +125,10 @@ def parse_entry(index: int, entry: object) -> ExceptionEntry | Issue:
     )
     if len(texts) == len(values) and all(texts):
         path, rule, reason = texts
-        return ExceptionEntry(path, rule, reason)
+        names = parse_names(where, rule, fields.get(NAMES))
+        if isinstance(names, Issue):
+            return names
+        return ExceptionEntry(path, rule, reason, names)
     return Issue(
         EXCEPTIONS,
         (

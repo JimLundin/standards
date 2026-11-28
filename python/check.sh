@@ -73,8 +73,8 @@ measured() {
 
 # Vulture reads the files of one side, the sources or the tests, so a use in a
 # test never keeps a source alive. Within a side, a use in a file excepted
-# from `unused` still counts; the findings inside such files are dropped after
-# it runs. Vulture exits 3 when it finds unused code, and with another nonzero
+# from `unused` still counts; the findings such an exception covers are dropped
+# after it runs. Vulture exits 3 when it finds unused code, and with another nonzero
 # status when it fails.
 unused_findings() {
 	local findings status
@@ -84,7 +84,7 @@ unused_findings() {
 		echo "$findings"
 		return "$status"
 	fi
-	findings=$(checks filter-vulture <<<"$findings")
+	findings=$(checks filter-vulture "$@" <<<"$findings")
 	echo "$findings"
 	[ -z "$findings" ]
 }

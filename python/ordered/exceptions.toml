@@ -26,4 +26,5 @@ reason = "the tests compare the ordered types against Python's own sets"
 [[exception]]
 path = "src/ordered/_ordered.py"
 rule = "unused"
+names = ["OrderedMapping.keys", "OrderedMapping.values"]
 reason = "OrderedMapping's keys and values override Mapping's, and callers outside the package reach them through any Mapping"

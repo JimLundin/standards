@@ -1,3 +1,4 @@
+import ast
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -21,6 +22,7 @@ from checks.core.values import (
     Request,
     absolute,
     listing,
+    matches,
     parse_json,
     posix,
     strings,
@@ -118,19 +120,125 @@ def filter_mutmut(_: Sequence[str], inputs: Inputs) -> Outcome:
     )
 
 
-def vulture_finding_file(finding: str) -> str:
-    return posix(finding.partition(":")[0])
+@dataclass(frozen=True, slots=True)
+class Scope:
+    name: str
+    start: int
+    header: int
+    end: int
 
 
-def filter_vulture(_: Sequence[str], inputs: Inputs) -> Outcome:
-    exceptions = exceptions_in(inputs)
-    return listing(
-        FrozenList(
-            line
-            for line in inputs.stdin.splitlines()
-            if not exceptions.covers(UNUSED, vulture_finding_file(line))
+def scopes(text: str) -> FrozenList[Scope]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return FrozenList()
+    return FrozenList(
+        Scope(
+            node.name,
+            min(
+                (decorator.lineno for decorator in node.decorator_list),
+                default=node.lineno,
+            ),
+            node.lineno,
+            node.end_lineno or node.lineno,
+        )
+        for node in ast.walk(tree)
+        if isinstance(
+            node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
         )
     )
+
+
+def qualified(found: Sequence[Scope], line: int, name: str) -> str:
+    enclosing = sorted(
+        (
+            scope
+            for scope in found
+            if scope.start <= line <= scope.end
+            and not (scope.name == name and line <= scope.header)
+        ),
+        key=lambda scope: scope.start,
+    )
+    return ".".join((*(scope.name for scope in enclosing), name))
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    line: str
+    file: str
+    item: str
+
+
+def finding_of(line: str, texts: Mapping[str, str]) -> Finding:
+    file, _, rest = line.partition(":")
+    number, _, message = rest.partition(":")
+    name = message.partition("'")[2].partition("'")[0]
+    path = posix(file)
+    text = texts.get(path)
+    if text is None or not number.isdigit():
+        return Finding(line, path, name)
+    return Finding(line, path, qualified(scopes(text), int(number), name))
+
+
+def drops(entry: ExceptionEntry, finding: Finding) -> bool:
+    return entry.covers(UNUSED, finding.file) and (
+        not entry.names or finding.item in entry.names
+    )
+
+
+def named(entries: Sequence[ExceptionEntry]) -> FrozenList[ExceptionEntry]:
+    return FrozenList(
+        entry for entry in entries if entry.names and entry.rule == UNUSED
+    )
+
+
+def stale(
+    entry: ExceptionEntry, findings: Sequence[Finding], read: Sequence[str]
+) -> FrozenList[str]:
+    if not any(matches(posix(file), entry.path) for file in read):
+        return FrozenList()
+    return FrozenList(
+        (
+            f"{EXCEPTIONS} ({entry.path}): unused name `{name}` matches no"
+            " finding; fix: remove it from `names`"
+        )
+        for name in entry.names
+        if not any(
+            finding.item == name and matches(finding.file, entry.path)
+            for finding in findings
+        )
+    )
+
+
+def filter_vulture(arguments: Sequence[str], inputs: Inputs) -> Outcome:
+    entries = exceptions_in(inputs).entries
+    findings = FrozenList(
+        finding_of(line, inputs.texts) for line in inputs.stdin.splitlines()
+    )
+    kept = FrozenList(
+        finding.line
+        for finding in findings
+        if not any(drops(entry, finding) for entry in entries)
+    )
+    return listing(
+        kept
+        + FrozenList(
+            line
+            for entry in named(entries)
+            for line in stale(entry, findings, arguments)
+        )
+    )
+
+
+def filter_vulture_request(arguments: Sequence[str], inputs: Inputs) -> Request:
+    entries = named(exceptions_in(inputs).entries)
+    covered = FrozenList(
+        file
+        for file in arguments
+        if any(matches(posix(file), entry.path) for entry in entries)
+    )
+    return Request(FrozenList((EXCEPTIONS, *covered)), stdin=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,7 +315,7 @@ COMMANDS: FrozenOrderedDict[str, tuple[Step[Request], Step[Outcome]]] = (
         "globs": (exceptions_only, globs),
         "oxlint-config": (exceptions_only, oxlint_config),
         "filter-mutmut": (with_stdin, filter_mutmut),
-        "filter-vulture": (with_stdin, filter_vulture),
+        "filter-vulture": (filter_vulture_request, filter_vulture),
         "stryker-mutate": (with_named, stryker_mutate),
         "stryker-config": (with_named, stryker_config),
         "nextest-config": (exceptions_only, nextest_config),

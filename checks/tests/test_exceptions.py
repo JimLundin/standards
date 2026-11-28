@@ -73,9 +73,53 @@ def test_parse_entry_rejects_unknown_keys_in_order() -> None:
         "exceptions.toml",
         (
             "exception 3 has unknown keys: alpha, zeta; fix: remove them,"
-            " leaving only path, rule and reason"
+            " leaving only path, rule, reason and names"
         ),
     )
+    assert_names_the_fix(issue.message)
+
+
+def test_an_unused_exception_keeps_the_names_it_covers() -> None:
+    fields = {
+        "path": "a.py",
+        "rule": "unused",
+        "reason": "r",
+        "names": [" Mapping.keys", "Mapping.values"],
+    }
+    assert parse_entry(0, fields) == ExceptionEntry(
+        "a.py", "unused", "r", FrozenList(("Mapping.keys", "Mapping.values"))
+    )
+
+
+@pytest.mark.parametrize(
+    "names", [[], ["Mapping.keys", " "], ["Mapping.keys", 1], "Mapping.keys"]
+)
+def test_names_must_be_a_list_of_item_names(names: object) -> None:
+    fields = {"path": "a.py", "rule": "unused", "reason": "r", "names": names}
+    issue = parse_entry(1, fields)
+    assert issue == Issue(
+        "exceptions.toml",
+        (
+            "exception 2 needs `names` as a list of item names such as"
+            " `Class.method`; fix: give each name as a non-empty string,"
+            " or remove `names`"
+        ),
+    )
+    assert isinstance(issue, Issue)
+    assert_names_the_fix(issue.message)
+
+
+def test_only_an_unused_exception_takes_names() -> None:
+    fields = {"path": "a.py", "rule": "E501", "reason": "r", "names": ["f"]}
+    issue = parse_entry(0, fields)
+    assert issue == Issue(
+        "exceptions.toml",
+        (
+            "exception 1 names items, which only rule `unused` takes; fix:"
+            " remove `names`"
+        ),
+    )
+    assert isinstance(issue, Issue)
     assert_names_the_fix(issue.message)
 
 
