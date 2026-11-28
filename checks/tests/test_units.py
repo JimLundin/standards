@@ -416,3 +416,59 @@ def test_a_suite_naming_an_unpinned_tool_is_a_problem() -> None:
         "problem\tchecks.toml: suite 3 names no pinned tool `NODE`; fix: pin `NODE` in tools.env, or remove it from `tools`"
     )
     assert result.status == 1
+
+
+PYTHON_FILES = FrozenOrderedDict({
+    "pyproject.toml": "a1",
+    "exceptions.toml": "a2",
+    "uv.lock": "a3",
+    "pkg/core.py": "b1",
+    "pkg/test_core.py": "b2",
+    "tests/test_core.py": "c1",
+    "conftest.py": "c2",
+})
+
+
+def python_keys(*edits: str) -> FrozenOrderedDict[str, str]:
+    files = FrozenOrderedDict(
+        (path, "f" if path in edits else blob)
+        for path, blob in PYTHON_FILES.items()
+    )
+    arguments = (
+        "python",
+        "commit",
+        "listing",
+        "--project=lint,unused,unused-tests",
+        "--side=unused=sources",
+        "--side=unused-tests=tests",
+    )
+    result = run(
+        arguments, Inputs(FrozenOrderedDict({"listing": listing(files)}))
+    )
+    return FrozenOrderedDict(
+        (fields[1], fields[3])
+        for line in result.lines
+        if (fields := line.split("\t"))[0] == "unit"
+    )
+
+
+def python_rerun(*paths: str) -> FrozenList[str]:
+    return changed(python_keys(), python_keys(*paths))
+
+
+def test_a_source_file_reruns_the_sources_side_only() -> None:
+    assert python_rerun("pkg/core.py") == ("lint", "unused")
+
+
+def test_a_test_file_reruns_the_tests_side_only() -> None:
+    for path in ("tests/test_core.py", "pkg/test_core.py", "conftest.py"):
+        assert python_rerun(path) == ("lint", "unused-tests"), path
+
+
+def test_the_config_reruns_both_sides() -> None:
+    for path in ("pyproject.toml", "exceptions.toml"):
+        assert python_rerun(path) == ("lint", "unused", "unused-tests"), path
+
+
+def test_a_check_without_a_side_reruns_on_any_file() -> None:
+    assert all("lint" in python_rerun(path) for path in PYTHON_FILES)

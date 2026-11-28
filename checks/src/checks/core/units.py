@@ -8,6 +8,7 @@ from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core import suites
 from checks.core.cargo import Package, dependencies, owned, workspace
+from checks.core.sides import OTHER, side_of
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -143,6 +144,26 @@ def suite_inputs(
     ))
 
 
+def project_inputs(files: Sequence[File], side: str) -> str:
+    excluded = OTHER.get(side)
+    return fingerprint(
+        FrozenList(
+            file
+            for file in files
+            if excluded is None or side_of(file.path) != excluded
+        )
+    )
+
+
+def sides_of(arguments: Sequence[str]) -> FrozenOrderedDict[str, str]:
+    return FrozenOrderedDict(
+        (check, side)
+        for check, _, side in (
+            value.partition("=") for value in options(arguments, "--side=")
+        )
+    )
+
+
 def checks_of(arguments: Sequence[str], prefix: str) -> FrozenList[str]:
     return FrozenList(
         check
@@ -185,7 +206,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     )
     files = listing(text(inputs.texts, listed))
     packages = described(arguments, inputs)
-    whole = fingerprint(files)
+    sides = sides_of(arguments)
     scoped = package_inputs(files, packages)
     names = FrozenList(package.name for package in packages)
     pins = pins_of(text(inputs.texts, option(arguments, "--pins=")))
@@ -200,7 +221,13 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     return Outcome(
         FrozenList((
             *(
-                f"unit\t{check}\t{PROJECT}\t{key(context, check, PROJECT, whole)}"
+                f"unit\t{check}\t{PROJECT}\t"
+                + key(
+                    context,
+                    check,
+                    PROJECT,
+                    project_inputs(files, sides.get(check, "")),
+                )
                 for check in checks_of(arguments, "--project=")
             ),
             *(

@@ -22,3 +22,8 @@ reason = "the implementation of the names: FrozenList.__add__ keeps tuple's sign
 path = "tests/test_ordered.py"
 rule = "IMM004"
 reason = "the tests compare the ordered types against Python's own sets"
+
+[[exception]]
+path = "src/ordered/_ordered.py"
+rule = "unused"
+reason = "OrderedMapping's keys and values override Mapping's, and callers outside the package reach them through any Mapping"
