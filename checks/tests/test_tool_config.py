@@ -1,10 +1,11 @@
 import json
+lazy from collections.abc import Sequence
 
 from ordered import FrozenList
 
 from checks.core.tools import request, run
-from checks.core.values import Inputs, Request
-from tests.helpers import entry, inputs, lines
+from checks.core.values import Inputs, Outcome, Request
+from tests.helpers import assert_lines_name_the_fix, entry, inputs, lines
 
 
 def test_each_subcommand_requests_exceptions_and_what_it_names() -> None:
@@ -193,6 +194,79 @@ def test_filter_vulture_drops_findings_in_files_excepted_from_unused() -> None:
     assert lines(outcome) == (
         "app/core.py:5: unused function 'f' (60% confidence)",
     )
+
+
+ORDERED = "src/ordered/_ordered.py"
+ORDERED_SOURCE = """\
+class OrderedMapping:
+    def keys(self):
+        return ()
+
+    @property
+    def values(self):
+        return ()
+
+
+def _never_called():
+    return 1
+"""
+KEYS = f"{ORDERED}:2: unused method 'keys' (60% confidence)"
+VALUES = f"{ORDERED}:5: unused property 'values' (60% confidence)"
+NEVER_CALLED = f"{ORDERED}:10: unused function '_never_called' (60% confidence)"
+
+
+def named_entry(path: str, names: Sequence[str]) -> str:
+    return entry(path, "unused") + f"names = {json.dumps(list(names))}\n"
+
+
+def filtered(
+    names: Sequence[str], findings: Sequence[str], read: Sequence[str]
+) -> Outcome:
+    texts = {
+        "exceptions.toml": named_entry(ORDERED, names),
+        ORDERED: ORDERED_SOURCE,
+    }
+    stdin = "".join(f"{finding}\n" for finding in findings)
+    return run(("filter-vulture", *read), inputs(texts, stdin=stdin))
+
+
+def test_filter_vulture_requests_the_files_a_named_exception_covers() -> None:
+    texts = {"exceptions.toml": named_entry("src/**", ("A.f",))}
+    arguments = ("filter-vulture", "src/a.py", "tests/b.py")
+    assert request(arguments, inputs(texts)) == Request(
+        FrozenList(("exceptions.toml", "src/a.py")), stdin=True
+    )
+
+
+def test_an_exception_naming_an_item_drops_only_that_items_findings() -> None:
+    findings = (KEYS, VALUES, NEVER_CALLED)
+    outcome = filtered(("OrderedMapping.keys",), findings, (ORDERED,))
+    assert lines(outcome) == (VALUES, NEVER_CALLED)
+
+
+def test_a_name_qualifies_a_decorated_item_by_its_class() -> None:
+    names = ("OrderedMapping.keys", "OrderedMapping.values")
+    outcome = filtered(names, (KEYS, VALUES, NEVER_CALLED), (ORDERED,))
+    assert lines(outcome) == (NEVER_CALLED,)
+
+
+def test_an_excepted_name_matching_no_finding_is_reported() -> None:
+    names = ("OrderedMapping.keys", "OrderedMapping.items")
+    outcome = filtered(names, (KEYS,), (ORDERED,))
+    assert lines(outcome) == (
+        (
+            f"exceptions.toml ({ORDERED}): unused name `OrderedMapping.items`"
+            " matches no finding; fix: remove it from `names`"
+        ),
+    )
+    assert_lines_name_the_fix(
+        line.partition(": ")[2] for line in lines(outcome)
+    )
+
+
+def test_names_in_a_file_vulture_did_not_read_are_not_reported() -> None:
+    outcome = filtered(("OrderedMapping.items",), (), ("tests/test_a.py",))
+    assert lines(outcome) == ()
 
 
 def test_stryker_mutate_adds_excepted_globs() -> None:
