@@ -169,15 +169,23 @@ def rerun(*paths: str, tier: str = "commit") -> FrozenList[str]:
 PROJECT_UNITS = ("exceptions .", "format .")
 
 
-def test_request_reads_the_listing_the_suites_the_metadata_and_the_pins() -> (
+def test_request_reads_the_listing_suites_exceptions_metadata_and_pins() -> (
     None
 ):
     arguments = ("rust", "step", "l", "--metadata=m.json", "--pins=t.env")
     assert request(arguments, Inputs()) == (
-        Request(FrozenList(("l", "checks.toml", "m.json", "t.env")))
+        Request(
+            FrozenList((
+                "l",
+                "checks.toml",
+                "exceptions.toml",
+                "m.json",
+                "t.env",
+            ))
+        )
     )
     assert request(("python", "step", "l"), Inputs()) == Request(
-        FrozenList(("l", "checks.toml"))
+        FrozenList(("l", "checks.toml", "exceptions.toml"))
     )
 
 
@@ -429,7 +437,9 @@ PYTHON_FILES = FrozenOrderedDict({
 })
 
 
-def python_keys(*edits: str) -> FrozenOrderedDict[str, str]:
+def python_keys(
+    *edits: str, exceptions: str = ""
+) -> FrozenOrderedDict[str, str]:
     files = FrozenOrderedDict(
         (path, "f" if path in edits else blob)
         for path, blob in PYTHON_FILES.items()
@@ -442,9 +452,8 @@ def python_keys(*edits: str) -> FrozenOrderedDict[str, str]:
         "--side=unused=sources",
         "--side=unused-tests=tests",
     )
-    result = run(
-        arguments, Inputs(FrozenOrderedDict({"listing": listing(files)}))
-    )
+    texts = {"listing": listing(files), "exceptions.toml": exceptions}
+    result = run(arguments, Inputs(FrozenOrderedDict(texts)))
     return FrozenOrderedDict(
         (fields[1], fields[3])
         for line in result.lines
@@ -468,6 +477,20 @@ def test_a_test_file_reruns_the_tests_side_only() -> None:
 def test_the_config_reruns_both_sides() -> None:
     for path in ("pyproject.toml", "exceptions.toml"):
         assert python_rerun(path) == ("lint", "unused", "unused-tests"), path
+
+
+def test_a_named_unused_exception_keys_its_files_on_both_sides() -> None:
+    exceptions = (
+        '[[exception]]\npath = "pkg/*.py"\nrule = "unused"\nreason = "r"\n'
+        'names = ["f"]\n'
+    )
+    for path in ("pkg/core.py", "pkg/test_core.py"):
+        before = python_keys(exceptions=exceptions)
+        after = python_keys(path, exceptions=exceptions)
+        assert changed(before, after) == ("lint", "unused", "unused-tests")
+    before = python_keys(exceptions=exceptions)
+    after = python_keys("tests/test_core.py", exceptions=exceptions)
+    assert changed(before, after) == ("lint", "unused-tests")
 
 
 def test_a_check_without_a_side_reruns_on_any_file() -> None:

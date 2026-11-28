@@ -162,6 +162,12 @@ def load(text: str | None) -> Exceptions:
     )
 
 
+def named(entries: Sequence[ExceptionEntry]) -> FrozenList[ExceptionEntry]:
+    return FrozenList(
+        entry for entry in entries if entry.names and entry.rule == UNUSED
+    )
+
+
 def exceptions_in(inputs: Inputs) -> Exceptions:
     return load(inputs.texts.get(EXCEPTIONS))
 

@@ -14,9 +14,10 @@ from checks.core.exceptions import (
     ExceptionEntry,
     exceptions_in,
     kind,
+    named,
     oxlint_rule,
 )
-from checks.core.sides import side_of, tests_of
+from checks.core.sides import SIDES, side_of, tests_of
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -24,10 +25,13 @@ from checks.core.values import (
     absolute,
     listing,
     matches,
+    operands,
+    option,
     parse_json,
     posix,
     strings,
     table,
+    text,
 )
 
 if TYPE_CHECKING:
@@ -195,12 +199,6 @@ def drops(entry: ExceptionEntry, finding: Finding) -> bool:
     )
 
 
-def named(entries: Sequence[ExceptionEntry]) -> FrozenList[ExceptionEntry]:
-    return FrozenList(
-        entry for entry in entries if entry.names and entry.rule == UNUSED
-    )
-
-
 def bound(node: ast.AST) -> tuple[int, str] | None:
     match node:
         case ast.ClassDef() | ast.FunctionDef() | ast.AsyncFunctionDef():
@@ -233,23 +231,31 @@ def items(text: str) -> FrozenList[str]:
 def stale(
     entry: ExceptionEntry,
     findings: Sequence[Finding],
-    read: Sequence[str],
+    arguments: Sequence[str],
     texts: Mapping[str, str],
 ) -> FrozenList[str]:
+    side = SIDES.get(option(arguments, "--side="))
     covered = FrozenList(
-        path for file in read if matches(path := posix(file), entry.path)
+        path
+        for file in operands(arguments)
+        if matches(path := posix(file), entry.path)
+    )
+    here = FrozenList(path for path in covered if side_of(path) == side)
+    if not here:
+        return FrozenList()
+    defined_here = FrozenList(
+        item for path in here for item in items(text(texts, path))
     )
     defined = FrozenList(
-        item for path in covered for item in items(texts.get(path, ""))
+        item for path in covered for item in items(text(texts, path))
     )
-    reads_sources = any(side_of(path) == "sources" for path in covered)
     return FrozenList(
         (
             f"{EXCEPTIONS} ({entry.path}): unused name `{name}` matches no"
             " finding; fix: remove it from `names`"
         )
         for name in entry.names
-        if (reads_sources or name in defined)
+        if (name in defined_here or name not in defined)
         and not any(
             finding.item == name and matches(finding.file, entry.path)
             for finding in findings
@@ -281,7 +287,7 @@ def filter_vulture_request(arguments: Sequence[str], inputs: Inputs) -> Request:
     entries = named(exceptions_in(inputs).entries)
     covered = FrozenList(
         file
-        for file in arguments
+        for file in operands(arguments)
         if any(matches(posix(file), entry.path) for entry in entries)
     )
     return Request(FrozenList((EXCEPTIONS, *covered)), stdin=True)

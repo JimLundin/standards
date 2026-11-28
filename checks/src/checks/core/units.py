@@ -8,6 +8,7 @@ from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core import suites
 from checks.core.cargo import Package, dependencies, owned, workspace
+from checks.core.exceptions import EXCEPTIONS, exceptions_in, named
 from checks.core.sides import OTHER, SIDES, Side, side_of
 from checks.core.values import (
     Inputs,
@@ -144,13 +145,17 @@ def suite_inputs(
     ))
 
 
-def project_inputs(files: Sequence[File], side: Side | None) -> str:
+def project_inputs(
+    files: Sequence[File], side: Side | None, shared: Sequence[str]
+) -> str:
     excluded = OTHER.get(side) if side else None
     return fingerprint(
         FrozenList(
             file
             for file in files
-            if excluded is None or side_of(file.path) != excluded
+            if excluded is None
+            or side_of(file.path) != excluded
+            or any_match(file.path, shared)
         )
     )
 
@@ -220,6 +225,7 @@ def request(arguments: Sequence[str], _inputs: Inputs) -> Request:
         FrozenList((
             operands(arguments)[2],
             suites.SUITES,
+            EXCEPTIONS,
             *options(arguments, "--metadata="),
             *options(arguments, "--pins="),
         ))
@@ -242,6 +248,9 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
     files = listing(text(inputs.texts, listed))
     packages = described(arguments, inputs)
     sides = sides_of(arguments)
+    shared = FrozenList(
+        entry.path for entry in named(exceptions_in(inputs).entries)
+    )
     scoped = package_inputs(files, packages)
     names = FrozenList(package.name for package in packages)
     pins = pins_of(text(inputs.texts, option(arguments, "--pins=")))
@@ -261,7 +270,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
                     context,
                     check,
                     PROJECT,
-                    project_inputs(files, sides.sides.get(check)),
+                    project_inputs(files, sides.sides.get(check), shared),
                 )
                 for check in checks_of(arguments, "--project=")
             ),

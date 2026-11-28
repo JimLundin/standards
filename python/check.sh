@@ -74,17 +74,19 @@ measured() {
 # Vulture reads the files of one side, the sources or the tests, so a use in a
 # test never keeps a source alive. Within a side, a use in a file excepted
 # from `unused` still counts; the findings such an exception covers are dropped
-# after it runs. Vulture exits 3 when it finds unused code, and with another nonzero
-# status when it fails.
+# after it runs. The filter reads every Python file, so it knows which side
+# defines an item an exception names. Vulture exits 3 when it finds unused code,
+# and with another nonzero status when it fails.
 unused_findings() {
-	local findings status
+	local side=$1 findings status
+	shift
 	findings=$(uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "$@" 2>&1)
 	status=$?
 	if ((status != 0 && status != 3)); then
 		echo "$findings"
 		return "$status"
 	fi
-	findings=$(checks filter-vulture "$@" <<<"$findings")
+	findings=$(checks filter-vulture "--side=$side" "${sources[@]}" <<<"$findings")
 	echo "$findings"
 	[ -z "$findings" ]
 }
@@ -137,11 +139,11 @@ unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
 if ((${#source_files[@]} > 0)); then
 	tools_of[unused]=uvx
-	unit unused "count ': unused ' findings" unused_findings "${source_files[@]}"
+	unit unused "count ': unused ' findings" unused_findings sources "${source_files[@]}"
 fi
 if ((${#test_files[@]} > 0)); then
 	tools_of[unused-tests]=uvx
-	unit unused-tests "count ': unused ' findings" unused_findings "${test_files[@]}"
+	unit unused-tests "count ': unused ' findings" unused_findings tests "${test_files[@]}"
 fi
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
 	imports=(uvx -q --from "import-linter==${pins[IMPORT_LINTER]}" lint-imports)

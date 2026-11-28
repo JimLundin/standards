@@ -257,12 +257,14 @@ def filtered(
         ORDERED: ORDERED_SOURCE,
     }
     stdin = "".join(f"{finding}\n" for finding in findings)
-    return run(("filter-vulture", *read), inputs(texts, stdin=stdin))
+    return run(
+        ("filter-vulture", "--side=sources", *read), inputs(texts, stdin=stdin)
+    )
 
 
 def test_filter_vulture_requests_the_files_a_named_exception_covers() -> None:
     texts = {"exceptions.toml": named_entry("src/**", ("A.f",))}
-    arguments = ("filter-vulture", "src/a.py", "tests/b.py")
+    arguments = ("filter-vulture", "--side=sources", "src/a.py", "tests/b.py")
     assert request(arguments, inputs(texts)) == Request(
         FrozenList(("exceptions.toml", "src/a.py")), stdin=True
     )
@@ -309,35 +311,60 @@ def test_keys():
 """
 
 
-def unit_over(read: str, findings: Sequence[str]) -> Outcome:
+def unit(
+    side: str, path: str, names: Sequence[str], findings: Sequence[str]
+) -> FrozenList[str]:
     texts = {
-        "exceptions.toml": named_entry(
-            "src/ordered/*.py", ("OrderedMapping.keys",)
-        ),
+        "exceptions.toml": named_entry(path, names),
         ORDERED: ORDERED_SOURCE,
         PROBE: PROBE_SOURCE,
     }
     stdin = "".join(f"{finding}\n" for finding in findings)
-    return run(("filter-vulture", read), inputs(texts, stdin=stdin))
+    arguments = ("filter-vulture", f"--side={side}", ORDERED, PROBE)
+    return lines(run(arguments, inputs(texts, stdin=stdin)))
+
+
+def stale_name(path: str, name: str) -> str:
+    return (
+        f"exceptions.toml ({path}): unused name `{name}` matches no finding;"
+        " fix: remove it from `names`"
+    )
+
+
+BOTH = "src/ordered/*.py"
+TESTS_ONLY = "src/ordered/test_*.py"
 
 
 def test_a_name_is_stale_only_on_the_side_that_holds_its_item() -> None:
-    assert lines(unit_over(ORDERED, (KEYS,))) == ()
-    assert lines(unit_over(PROBE, ())) == ()
+    names = ("OrderedMapping.keys",)
+    assert unit("sources", BOTH, names, (KEYS,)) == ()
+    assert unit("tests", BOTH, names, ()) == ()
 
 
-def test_a_name_of_an_item_in_a_test_file_is_stale_on_the_tests_side() -> None:
-    texts = {
-        "exceptions.toml": named_entry("src/ordered/*.py", ("test_keys",)),
-        PROBE: PROBE_SOURCE,
-    }
-    outcome = run(("filter-vulture", PROBE), inputs(texts))
-    assert lines(outcome) == (
-        (
-            "exceptions.toml (src/ordered/*.py): unused name `test_keys`"
-            " matches no finding; fix: remove it from `names`"
-        ),
-    )
+def test_a_name_of_an_item_in_a_test_file_is_stale_only_on_the_tests_side() -> (
+    None
+):
+    names = ("test_keys",)
+    assert unit("tests", BOTH, names, ()) == (stale_name(BOTH, "test_keys"),)
+    assert unit("sources", BOTH, names, ()) == ()
+
+
+def test_a_name_no_file_defines_is_stale_on_every_side_its_path_covers() -> (
+    None
+):
+    names = ("OrderedMapping.items",)
+    stale = (stale_name(BOTH, "OrderedMapping.items"),)
+    assert unit("sources", BOTH, names, ()) == stale
+    assert unit("tests", BOTH, names, ()) == stale
+
+
+def test_a_typo_in_an_exception_covering_only_tests_fails_unused_tests() -> (
+    None
+):
+    names = ("test_kyes",)
+    stale = (stale_name(TESTS_ONLY, "test_kyes"),)
+    assert unit("tests", TESTS_ONLY, names, ()) == stale
+    assert unit("sources", TESTS_ONLY, names, ()) == ()
 
 
 def test_stryker_mutate_adds_excepted_globs() -> None:
