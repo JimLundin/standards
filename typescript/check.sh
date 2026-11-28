@@ -24,6 +24,7 @@ versions=(
 	"--tool=lint=${pins[OXLINT]},${pins[OXLINT_TSGOLINT]},${pins[CLOUDFLARE_OXLINT_CONFIG]}"
 	"--tool=types=${pins[TYPESCRIPT]}"
 	"--tool=unused=${pins[KNIP]}"
+	"--tool=unused-tests=${pins[KNIP]}"
 	"--tool=test=${pins[VITEST]},${pins[EFFECT]}"
 	"--tool=test-release=${pins[VITEST]},${pins[EFFECT]}"
 )
@@ -51,7 +52,7 @@ if full; then
 fi
 release_versions
 units "--toolchain=$(node --version 2>&1)" "${versions[@]}" \
-	--project=exceptions,format,lint,types,unused,test,test-release,mutation,duplication,volume
+	--project=exceptions,format,lint,types,unused,unused-tests,test,test-release,mutation,duplication,volume
 
 project=$(pwd)
 # oxfmt finds a project's own config itself, and is given the standard's
@@ -171,9 +172,16 @@ if [ -f tsconfig.json ]; then
 	unit types "count 'error TS' errors" \
 		npx -y -p "typescript@${pins[TYPESCRIPT]}" tsc -p "$(native "$logs/tsconfig.json")"
 fi
+knip_run() {
+	npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress "$@"
+}
+
+knip_findings="joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'"
 if [ -f package.json ]; then
-	unit unused "joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'" \
-		npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress
+	unit unused "$knip_findings" knip_run --production
+	if at_least step; then
+		unit unused-tests "$knip_findings" knip_run
+	fi
 fi
 # vitest runs on the project's own config, a vitest.config.* or the
 # vite.config.* vitest reads without one, or else on the standard's, copied

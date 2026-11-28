@@ -163,11 +163,12 @@ def fixtures(tmp_path_factory: pytest.TempPathFactory) -> Fixtures:
 
 
 COMMIT_UNITS = FrozenList(("exceptions", "format", "lint", "types", "unused"))
+STEP_UNITS = FrozenList((*COMMIT_UNITS, "unused-tests", "test"))
 
 
 @pytest.mark.parametrize(
     ("tier", "units"),
-    [("commit", COMMIT_UNITS), ("step", FrozenList((*COMMIT_UNITS, "test")))],
+    [("commit", COMMIT_UNITS), ("step", STEP_UNITS)],
     ids=["commit", "step"],
 )
 def test_the_compliant_tree_passes_every_unit(
@@ -177,6 +178,71 @@ def test_the_compliant_tree_passes_every_unit(
     assert run.failing() == {}
     assert FrozenList(run.units) == units
     assert run.status == 0
+
+
+INDEX = (FIXTURES / COMPLIANT / "packages/core/src/index.ts").read_text()
+CASING = """export const upper = (text: string): string => text.toUpperCase();
+
+export const lower = (text: string): string => text.toLowerCase();
+"""
+CASED = """import { describe, expect, it } from "@effect/vitest";
+import { lower } from "./casing.ts";
+
+describe(lower, () => {
+  it("lowers a name", () => {
+    expect.hasAssertions();
+    expect(lower("Ada")).toBe("ada");
+  });
+});
+"""
+
+
+def casing(exported: str) -> FrozenOrderedDict[str, str]:
+    return FrozenOrderedDict({
+        "packages/core/src/casing.ts": CASING,
+        "packages/core/src/casing.test.ts": CASED,
+        "packages/core/src/index.ts": (
+            f'export {{ {exported} }} from "./casing.ts";\n{INDEX}'
+        ),
+    })
+
+
+def test_an_export_only_a_test_imports_fails_unused_naming_it(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=casing("upper"))
+    unused = run.units["unused"]
+    assert unused.outcome == "FAIL"
+    assert re.search(
+        r"^lower +packages/core/src/casing\.ts", unused.findings, re.MULTILINE
+    )
+
+
+def test_an_export_the_index_also_imports_passes_unused(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("commit", files=casing("lower, upper"))
+    assert run.units["unused"].outcome == "ok", run.units["unused"].findings
+
+
+HELPER = FrozenOrderedDict({
+    "packages/core/test/named.ts": 'export const named = "Ada";\n'
+})
+
+
+def test_a_test_helper_no_test_imports_fails_unused_tests_naming_it(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check("step", files=HELPER)
+    unused_tests = run.units["unused-tests"]
+    assert unused_tests.outcome == "FAIL"
+    assert "packages/core/test/named.ts" in unused_tests.findings
+
+
+def test_unused_tests_does_not_run_at_commit(fixtures: Fixtures) -> None:
+    run = fixtures.check("commit", files=HELPER)
+    assert "unused" in run.units
+    assert "unused-tests" not in run.units
 
 
 # Indented by tabs; oxfmt indents by two spaces.
