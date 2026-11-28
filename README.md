@@ -51,7 +51,7 @@ The trees under `typescript/fixtures/` are the inputs of the `typescript-fixture
 A tier runs as units, each a check over a scope:
 
 - in Rust, the lint, `no_std` core, API, shell and test checks of each package, and the exceptions, format, shell share and release checks of the whole project;
-- in Python and TypeScript, each check of the project, where Python's dead code is two units: `unused` over the source files and `unused-tests` over the test files;
+- in Python and TypeScript, each check of the project, where dead code is two units, `unused` and `unused-tests`: in Python over the source files and over the test files, and in TypeScript knip's production run at `commit` and its default run at `step`;
 - each suite in `checks.toml`.
 
 A unit's key hashes the check, the git tree of the standards, the toolchain's version (`cargo -V` and `rustc -V`, `uv --version` or `node --version`), the pinned version of the tool the check runs, and the git blobs of the files it reads:
