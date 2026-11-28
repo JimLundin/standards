@@ -25,9 +25,9 @@ FIXTURES = TYPESCRIPT / "fixtures"
 COMPLIANT = "compliant"
 # The standard's config files that a project copies to its root. Oxlint's
 # type-aware rules read the tsconfig.json there, which extends the
-# standard's. Oxlint and vitest run on the standard's configs, as in a
+# standard's. Oxlint, knip and vitest run on the standard's configs, as in a
 # project without its own.
-COPIED = FrozenList(("knip.json", "stryker.config.json", "tsconfig.base.json"))
+COPIED = FrozenList(("stryker.config.json", "tsconfig.base.json"))
 OUTCOMES = FrozenOrderedSet(("ok", "flaky", "skip", "FAIL"))
 NO_FILES: FrozenOrderedDict[str, str] = FrozenOrderedDict()
 LOGS = re.compile(r"^tier: \w+, logs: (.+)$")
@@ -243,6 +243,56 @@ def test_unused_tests_does_not_run_at_commit(fixtures: Fixtures) -> None:
     run = fixtures.check("commit", files=HELPER)
     assert "unused" in run.units
     assert "unused-tests" not in run.units
+
+
+NAMED = """import { describe, expect, it } from "@effect/vitest";
+import { named } from "../test/named.ts";
+
+describe("named", () => {
+  it("names Ada", () => {
+    expect.hasAssertions();
+    expect(named).toBe("Ada");
+  });
+});
+"""
+
+
+def test_a_test_helper_a_test_imports_passes_unused(fixtures: Fixtures) -> None:
+    files = {**HELPER, "packages/core/src/named.test.ts": NAMED}
+    run = fixtures.check("commit", files=files)
+    assert run.units["unused"].outcome == "ok", run.units["unused"].findings
+
+
+def test_a_negated_knip_pattern_fails_exceptions_naming_it(
+    fixtures: Fixtures,
+) -> None:
+    run = fixtures.check(
+        "commit", files={"knip.json": '{ "project": ["!src/**!"] }\n'}
+    )
+    exceptions = run.units["exceptions"]
+    assert exceptions.outcome == "FAIL"
+    assert "`!src/**!`" in exceptions.findings
+
+
+def with_unused_dev_dependency() -> str:
+    path = FIXTURES / COMPLIANT / "packages/core/package.json"
+    used = '"@types/react": "19.3.0"'
+    text = path.read_text()
+    assert used in text
+    return text.replace(used, f'{used},\n    "left-pad": "1.3.0"')
+
+
+def test_an_unused_dev_dependency_fails_only_unused_tests(
+    fixtures: Fixtures,
+) -> None:
+    files = {"packages/core/package.json": with_unused_dev_dependency()}
+    step = fixtures.check("step", files=files)
+    assert step.units["unused-tests"].outcome == "FAIL"
+    assert "left-pad" in step.units["unused-tests"].findings
+    commit = fixtures.check("commit", files=files)
+    assert commit.units["unused"].outcome == "ok", commit.units[
+        "unused"
+    ].findings
 
 
 # Indented by tabs; oxfmt indents by two spaces.

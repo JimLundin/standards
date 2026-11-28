@@ -6,6 +6,7 @@ from ordered import FrozenOrderedDict
 from checks.core import (
     attribution,
     immutability,
+    knip,
     policy,
     purity,
     rust_api,
@@ -24,6 +25,7 @@ TOOLS = FrozenOrderedDict({
     "core-clippy": (rust_core.clippy_request, rust_core.clippy_run),
     "core-libraries": (rust_layers.request, rust_layers.run),
     "immutability": (immutability.request, immutability.run),
+    "knip-config": (knip.request, knip.run),
     "passed": (attribution.request, attribution.run),
     "policy": (policy.request, policy.run),
     "purity": (purity.request, purity.run),

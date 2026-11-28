@@ -13,6 +13,22 @@ def test_files_under_tests_named_test_or_conftest_are_tests() -> None:
         assert side_of(path) == "tests", path
 
 
+def test_files_under_a_test_folder_are_tests_in_either_language() -> None:
+    for path in (
+        "pkg/test/x.py",
+        "src/__tests__/a.ts",
+        "test/oxlint.ts",
+        "src/a.spec.ts",
+        "src/a.test.tsx",
+    ):
+        assert side_of(path) == "tests", path
+
+
+def test_every_other_typescript_file_is_a_source() -> None:
+    for path in ("src/testing.ts", "src/contest.ts", "src/index.mjs"):
+        assert side_of(path) == "sources", path
+
+
 def test_every_other_python_file_is_a_source() -> None:
     for path in ("pkg/core.py", "pkg/testing.py", "pkg/core_test_utils.py"):
         assert side_of(path) == "sources", path
@@ -20,7 +36,12 @@ def test_every_other_python_file_is_a_source() -> None:
 
 
 def test_a_file_that_is_not_python_has_no_side() -> None:
-    for path in ("tests/data.json", "pyproject.toml", "pkg/test_core.rs"):
+    for path in (
+        "tests/data.json",
+        "pyproject.toml",
+        "pkg/test_core.rs",
+        "src/a.spec.css",
+    ):
         assert side_of(path) is None, path
 
 

@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
-from checks.core.exceptions import Issue
+from checks.core.exceptions import UNUSED, Issue
+from checks.core.knip import config_of, negations
 from checks.core.values import (
     entries,
     is_list,
@@ -727,15 +728,28 @@ def typescript_drift(snapshot: Snapshot) -> Iterator[Issue]:
             vitest_runs(snapshot.project[vitest]),
         )
     standard_knip = snapshot.standard_json(f"{folder}knip.json")
-    knip = snapshot.json("knip.json") or snapshot.json("knip.jsonc")
-    for key, value in knip.items():
+    knip = config_of(snapshot.project)
+    for key, value in knip.fields.items():
         if key.startswith("ignore"):
             yield from extra(
-                "knip.json",
+                knip.path,
                 key,
                 strings(value) or FrozenList((str(value),)),
                 strings(standard_knip.get(key)),
             )
+    yield from (
+        Issue(
+            negation.files,
+            (
+                f"{knip.path} {negation.where} negates `{negation.pattern}`,"
+                " which takes these files out of the dead-code checks; fix:"
+                " remove the pattern, or, if it can't apply, an `unused`"
+                f" exception for `{negation.files}` with its reason"
+            ),
+            UNUSED,
+        )
+        for negation in negations(knip.fields)
+    )
 
 
 DRIFT = FrozenOrderedDict({

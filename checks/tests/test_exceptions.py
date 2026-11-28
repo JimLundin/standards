@@ -194,6 +194,7 @@ def test_validate_names_the_fix_for_each_entry_that_applies_to_nothing() -> (
         ("python", "PUR001:attrs.x", "purity"),
         ("python", "PUR001:", "ruff"),
         ("python", "unused", "unused"),
+        ("typescript", "unused", "unused"),
         ("python", "E501", "ruff"),
         ("rust", "clippy::shadow_reuse", "attribute"),
         ("rust", "dead_code", "attribute"),

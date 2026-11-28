@@ -146,9 +146,15 @@ def kind(language: str, rule: str) -> str:
         return python_kind(rule)
     if language == "rust" and RUST_LINT.fullmatch(rule):
         return "attribute"
-    if language == "typescript" and oxlint_rule(rule):
-        return "oxlint"
+    if language == "typescript":
+        return typescript_kind(rule)
     return ""
+
+
+def typescript_kind(rule: str) -> str:
+    if oxlint_rule(rule):
+        return "oxlint"
+    return UNUSED if rule == UNUSED else ""
 
 
 def python_kind(rule: str) -> str:

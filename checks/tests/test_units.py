@@ -472,3 +472,31 @@ def test_the_config_reruns_both_sides() -> None:
 
 def test_a_check_without_a_side_reruns_on_any_file() -> None:
     assert all("lint" in python_rerun(path) for path in PYTHON_FILES)
+
+
+def side_problems(*sides: str) -> Outcome:
+    arguments = ("python", "commit", "listing", "--project=unused", *sides)
+    return run(
+        arguments, Inputs(FrozenOrderedDict({"listing": listing(PYTHON_FILES)}))
+    )
+
+
+def test_an_unknown_side_is_a_problem() -> None:
+    result = side_problems("--side=unused=test")
+    assert result.lines[-1] == (
+        "problem\t--side=unused=test: unknown side `test`; fix: name `sources` or `tests`"
+    )
+    assert result.status == 1
+
+
+def test_a_side_for_a_check_outside_the_project_checks_is_a_problem() -> None:
+    result = side_problems("--side=unused-tests=tests")
+    assert result.lines[-1] == (
+        "problem\t--side=unused-tests=tests: `unused-tests` is not a check of"
+        " --project; fix: add it to --project, or remove the side"
+    )
+    assert result.status == 1
+
+
+def test_known_sides_of_project_checks_are_no_problem() -> None:
+    assert side_problems("--side=unused=sources").status == 0

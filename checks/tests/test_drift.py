@@ -913,12 +913,12 @@ def test_typescript_project_that_weakens_every_check() -> None:
             "arbitrary `fast` runs fewer than 10 cases; fix: set its runs to at least 10",
         ),
         (
-            "knip.json",
+            "knip.jsonc",
             "ignore:gen/**",
             "ignore adds `gen/**`; fix: remove `gen/**` from ignore",
         ),
         (
-            "knip.json",
+            "knip.jsonc",
             "ignoreDependencies:lodash",
             "ignoreDependencies adds `lodash`; fix: remove `lodash` from ignoreDependencies",
         ),

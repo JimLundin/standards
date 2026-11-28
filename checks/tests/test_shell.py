@@ -36,6 +36,7 @@ def test_tools_dispatch_to_each_tool() -> None:
         "core-clippy",
         "core-libraries",
         "immutability",
+        "knip-config",
         "passed",
         "policy",
         "purity",

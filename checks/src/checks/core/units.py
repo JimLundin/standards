@@ -8,7 +8,7 @@ from ordered import FrozenList, FrozenOrderedDict, FrozenOrderedSet
 
 from checks.core import suites
 from checks.core.cargo import Package, dependencies, owned, workspace
-from checks.core.sides import OTHER, side_of
+from checks.core.sides import OTHER, SIDES, Side, side_of
 from checks.core.values import (
     Inputs,
     Outcome,
@@ -144,8 +144,8 @@ def suite_inputs(
     ))
 
 
-def project_inputs(files: Sequence[File], side: str) -> str:
-    excluded = OTHER.get(side)
+def project_inputs(files: Sequence[File], side: Side | None) -> str:
+    excluded = OTHER.get(side) if side else None
     return fingerprint(
         FrozenList(
             file
@@ -155,12 +155,47 @@ def project_inputs(files: Sequence[File], side: str) -> str:
     )
 
 
-def sides_of(arguments: Sequence[str]) -> FrozenOrderedDict[str, str]:
-    return FrozenOrderedDict(
-        (check, side)
-        for check, _, side in (
-            value.partition("=") for value in options(arguments, "--side=")
+@dataclass(frozen=True, slots=True)
+class Sides:
+    sides: FrozenOrderedDict[str, Side]
+    problems: FrozenList[str]
+
+
+def parsed_side(value: str) -> tuple[str, Side | None]:
+    check, _, side = value.partition("=")
+    return check, SIDES.get(side)
+
+
+def side_problem(value: str, projects: Sequence[str]) -> str:
+    option = f"--side={value}"
+    check, _, side = value.partition("=")
+    if side not in SIDES:
+        return (
+            f"{option}: unknown side `{side}`; fix: name `sources` or `tests`"
         )
+    if check not in projects:
+        return (
+            f"{option}: `{check}` is not a check of --project; fix: add it to"
+            " --project, or remove the side"
+        )
+    return ""
+
+
+def sides_of(arguments: Sequence[str]) -> Sides:
+    projects = checks_of(arguments, "--project=")
+    values = options(arguments, "--side=")
+    sides: FrozenOrderedDict[str, Side] = FrozenOrderedDict({
+        check: side
+        for check, side in map(parsed_side, values)
+        if side and check in projects
+    })
+    return Sides(
+        sides,
+        FrozenList(
+            problem
+            for value in values
+            if (problem := side_problem(value, projects))
+        ),
     )
 
 
@@ -226,7 +261,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
                     context,
                     check,
                     PROJECT,
-                    project_inputs(files, sides.get(check, "")),
+                    project_inputs(files, sides.sides.get(check)),
                 )
                 for check in checks_of(arguments, "--project=")
             ),
@@ -255,6 +290,7 @@ def run(arguments: Sequence[str], inputs: Inputs) -> Outcome:
             *(f"package\t{name}" for name in names),
             *(f"suite\t{suite.name}\t{suite.command}" for suite, _ in chosen),
             *(f"problem\t{problem}" for problem in loaded.problems),
+            *(f"problem\t{problem}" for problem in sides.problems),
         )),
-        1 if loaded.problems else 0,
+        1 if loaded.problems or sides.problems else 0,
     )

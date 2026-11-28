@@ -1,8 +1,10 @@
-from ordered import FrozenList
+import json
+
+from ordered import FrozenList, FrozenOrderedDict
 
 from checks.core.policy import request, run
 from checks.core.values import Inputs, Outcome, Request
-from tests.helpers import entry, inputs, lines
+from tests.helpers import assert_lines_name_the_fix, entry, inputs, lines
 
 STD = "C:/standards"
 NEEDS = (
@@ -165,4 +167,34 @@ def test_policy_ignores_attributes_outside_rust() -> None:
         "a.ts": '#[expect(clippy::a, reason = "x")]\n',
     }
     outcome = run(("typescript", STD, "a.ts"), inputs(texts))
+    assert outcome == Outcome(FrozenList(("All checks passed",)), 0)
+
+
+KNIP_NEGATIONS = FrozenOrderedDict({
+    "knip.json": json.dumps({
+        "project": ["**/*.ts!", "!src/**!"],
+        "workspaces": {"packages/core": {"entry": ["!test/**"]}},
+    })
+})
+NEGATED_FILES = ("src/a.ts", "packages/core/test/b.ts")
+
+
+def test_a_negated_knip_pattern_fails_exceptions_naming_it() -> None:
+    outcome = run(("typescript", STD, *NEGATED_FILES), inputs(KNIP_NEGATIONS))
+    found = lines(outcome)
+    assert outcome.status == 1
+    assert len(found) == 3
+    assert found[0].startswith("src/**: knip.json project negates `!src/**!`")
+    workspace = "packages/core/test/**: knip.json workspaces.packages/core"
+    assert found[1].startswith(f"{workspace}.entry negates `!test/**`")
+    assert_lines_name_the_fix(found[:2])
+
+
+def test_an_unused_exception_covers_a_negated_knip_pattern() -> None:
+    texts = {
+        **KNIP_NEGATIONS,
+        "exceptions.toml": entry("src/**", "unused")
+        + entry("packages/core/**", "unused"),
+    }
+    outcome = run(("typescript", STD, *NEGATED_FILES), inputs(texts))
     assert outcome == Outcome(FrozenList(("All checks passed",)), 0)

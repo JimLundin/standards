@@ -176,9 +176,18 @@ knip_run() {
 	npx -y -p "node@${pins[NODE]}" -p "knip@${pins[KNIP]}" knip --no-progress "$@"
 }
 
+# Production mode runs on the project's knip config with the standard's test
+# files negated in every workspace, which `checks knip-config` writes.
+knip_production() {
+	local config
+	mkdir -p node_modules/.cache/standards
+	config=$(checks knip-config) || return 1
+	knip_run --production --config "$(native "$config")"
+}
+
 knip_findings="joined '^(Unused|Unlisted|Duplicate) [^(]+\([0-9]+\)'"
 if [ -f package.json ]; then
-	unit unused "$knip_findings" knip_run --production
+	unit unused "$knip_findings" knip_production
 	if at_least step; then
 		unit unused-tests "$knip_findings" knip_run
 	fi
