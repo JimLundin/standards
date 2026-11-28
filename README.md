@@ -51,12 +51,12 @@ The trees under `typescript/fixtures/` are the inputs of the `typescript-fixture
 A tier runs as units, each a check over a scope:
 
 - in Rust, the lint, `no_std` core, API, shell and test checks of each package, and the exceptions, format, shell share and release checks of the whole project;
-- in Python and TypeScript, each check of the project;
+- in Python and TypeScript, each check of the project, where Python's dead code is two units: `unused` over the source files and `unused-tests` over the test files;
 - each suite in `checks.toml`.
 
 A unit's key hashes the check, the git tree of the standards, the toolchain's version (`cargo -V` and `rustc -V`, `uv --version` or `node --version`), the pinned version of the tool the check runs, and the git blobs of the files it reads:
 
-- A whole-project unit reads every file.
+- A whole-project unit reads every file, except a Python unit with a side. `checks units` takes `--side=<check>=sources|tests` for a project check: the `sources` side reads every file but the Python test files, and the `tests` side every file but the Python source files. Python's `unused` unit has the `sources` side and `unused-tests` the `tests` side, so a test edit reruns only `unused-tests`, a source edit only `unused`, and an edit to config such as `pyproject.toml` or `exceptions.toml` both.
 - A Rust package reads every file in its folder, Rust or not, such as its manifest and test fixtures; every file of its workspace dependencies, from `cargo metadata`; and every project file outside the packages and the docs (`*.md`, `docs/`, licences, `.github/`), such as `Cargo.lock`, the root `Cargo.toml` or `rust-toolchain.toml`.
 
 So a test fixture reruns its package and the packages that depend on it, and a lockfile or root manifest change reruns every package.
@@ -113,6 +113,8 @@ A shebang and Rust's `#[expect(..., reason = "...")]` are not comments. A suppre
 **Layers and purity.** An exhaustive import-linter layers contract puts the core at the bottom, so it imports nothing else of the app. The purity check holds the core to pure standard modules, no effectful builtins such as `open`, `input` or `eval`, and a public API that takes only data: no `Callable`, `Iterable`, `IO`, `type[...]`, `Protocol` or ABC of its own, and no `async`. A pure third-party package takes a `PUR001:<module>` exception.
 
 **Ordered collections.** `python/ordered` is a small package of collections whose iteration order is part of their type: `OrderedCollection`, `OrderedSequence`, `OrderedSet` and `OrderedMapping` extend the collection ABCs with that promise, and `FrozenList`, `FrozenOrderedSet` and `FrozenOrderedDict` implement them, with set and merge operations that keep the left operand's order. Projects copy it or depend on it, and the core may import it.
+
+**Dead code.** Vulture checks the source files and the test files apart, so a use in a test never keeps a source item alive. The test files are the tracked `.py` and `.pyw` files matching `**/tests/**`, `**/test_*.py` or `**/conftest.py`; every other one is a source file. `checks sides` sorts them, and the same globs pick each unit's key. Both units run in `commit` at the `VULTURE` pin. `unused` runs over the sources and reports anything only tests use; `unused-tests` runs over the tests and reports dead test helpers, fixtures and imports. Each drops the findings in files an `unused` exception covers.
 
 **Immutability.** The immutability check makes `ordered` the vocabulary: no set literals, set comprehensions, `set()` or `frozenset()`, since they iterate in hash order; no `set`, `frozenset`, `AbstractSet` or `Collection` in annotations, since they promise no order; and `FrozenList` and `FrozenOrderedDict` in place of `tuple[T, ...]`, `frozendict` and `MappingProxyType`. Plain `Sequence`, `Mapping` and `Container` stay for inputs that don't depend on order.
 

@@ -12,6 +12,7 @@ from checks.core import (
     rust_core,
     rust_layers,
     rust_shell,
+    sides,
     tool_config,
     units,
 )
@@ -31,6 +32,7 @@ TOOLS = FrozenOrderedDict({
     "rust-roots": (rust_shell.roots_request, rust_shell.roots),
     "rust-shell": (rust_shell.request, rust_shell.run),
     "rust-shell-share": (rust_shell.request, rust_shell.share_run),
+    "sides": (sides.request, sides.run),
     "units": (units.request, units.run),
     **tool_config.COMMANDS,
 })

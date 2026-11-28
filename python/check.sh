@@ -14,6 +14,7 @@ versions=(
 	"--tool=lint=${pins[RUFF]}"
 	"--tool=types=${pins[BASEDPYRIGHT]}"
 	"--tool=unused=${pins[VULTURE]}"
+	"--tool=unused-tests=${pins[VULTURE]}"
 	"--tool=imports=${pins[IMPORT_LINTER]}"
 )
 release_versions
@@ -23,13 +24,24 @@ if [ -f uv.lock ]; then
 	python=$(uv run --frozen -q python -V 2>&1)
 fi
 units "--toolchain=$(uv --version 2>&1) $python" "${versions[@]}" \
-	--project=exceptions,format,lint,types,test,test-release,immutability,purity,unused,imports,mutation,duplication,volume
+	--project=exceptions,format,lint,types,test,test-release,immutability,purity,unused,unused-tests,imports,mutation,duplication,volume \
+	--side=unused=sources --side=unused-tests=tests
 
 ruff_config=(--config "$config")
 if grep -qs '^\[tool\.ruff' pyproject.toml; then
 	ruff_config=()
 fi
 mapfile -t sources < <(git ls-files '*.py' '*.pyw')
+source_files=()
+test_files=()
+if ((${#sources[@]} > 0)); then
+	while IFS=$'\t' read -r side file; do
+		case $side in
+		sources) source_files+=("$file") ;;
+		tests) test_files+=("$file") ;;
+		esac
+	done < <(printf '%s\n' "${sources[@]}" | checks sides)
+fi
 ruff_exceptions=$(checks ruff-config)
 if [ -n "$ruff_exceptions" ]; then
 	ruff_config+=(--config "$ruff_exceptions")
@@ -59,13 +71,14 @@ measured() {
 		uv run --frozen -q python -m coverage report
 }
 
-# Vulture reads every source, so a use in a file excepted from `unused` still
-# counts; the findings inside such files are dropped after it runs. Vulture
-# exits 3 when it finds unused code, and with another nonzero status when it
-# fails.
+# Vulture reads the files of one side, the sources or the tests, so a use in a
+# test never keeps a source alive. Within a side, a use in a file excepted
+# from `unused` still counts; the findings inside such files are dropped after
+# it runs. Vulture exits 3 when it finds unused code, and with another nonzero
+# status when it fails.
 unused_findings() {
 	local findings status
-	findings=$(uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "${sources[@]}" 2>&1)
+	findings=$(uvx -q --python 3.15 "vulture==${pins[VULTURE]}" "$@" 2>&1)
 	status=$?
 	if ((status != 0 && status != 3)); then
 		echo "$findings"
@@ -122,9 +135,13 @@ unit immutability "last 'Found [0-9]+ issues|All checks passed'" \
 	checks immutability "${sources[@]}"
 unit purity "last 'Found [0-9]+ issues|All checks passed'" \
 	checks purity "${sources[@]}"
-if ((${#sources[@]} > 0)); then
+if ((${#source_files[@]} > 0)); then
 	tools_of[unused]=uvx
-	unit unused "count ': unused ' findings" unused_findings
+	unit unused "count ': unused ' findings" unused_findings "${source_files[@]}"
+fi
+if ((${#test_files[@]} > 0)); then
+	tools_of[unused-tests]=uvx
+	unit unused-tests "count ': unused ' findings" unused_findings "${test_files[@]}"
 fi
 if grep -qs "tool.importlinter" pyproject.toml || [ -f .importlinter ]; then
 	imports=(uvx -q --from "import-linter==${pins[IMPORT_LINTER]}" lint-imports)
